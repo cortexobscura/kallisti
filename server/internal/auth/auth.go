@@ -61,6 +61,9 @@ type Service struct {
 	// temporary accounts at the same time (0: defaultMaxGuests).
 	GuestAccounts bool
 	MaxGuests     int
+	// ServerPassword: guests may need the Mumble server's password (Murmur:
+	// unknown, so true). The login page leaves out its field otherwise.
+	ServerPassword bool
 	// Revoke closes the open connections whose account ID and session
 	// (SessionKey) match, when sessions end. Nil: none.
 	Revoke func(match func(accountID int64, session string) bool)
@@ -154,6 +157,8 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.URL.Path == "/api/server" && r.Method == http.MethodGet:
+		writeJSON(w, http.StatusOK, map[string]bool{"password": a.ServerPassword})
 	case r.URL.Path == "/api/challenge" && r.Method == http.MethodGet:
 		a.challenge(w)
 	case r.URL.Path == "/api/accounts" && r.Method == http.MethodPost:

@@ -498,3 +498,20 @@ func TestStalledBodiesTimeOut(t *testing.T) {
 		}
 	}
 }
+
+func TestServerSaysIfGuestsNeedAServerPassword(t *testing.T) {
+	for _, needed := range []bool{false, true} {
+		a, srv := setup(t)
+		a.ServerPassword = needed
+		resp, err := http.Get(srv.URL + "/api/server")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var v map[string]any
+		json.NewDecoder(resp.Body).Decode(&v)
+		resp.Body.Close()
+		if resp.StatusCode != 200 || v["password"] != needed {
+			t.Fatalf("ServerPassword %v: %d %v", needed, resp.StatusCode, v)
+		}
+	}
+}

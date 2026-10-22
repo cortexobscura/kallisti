@@ -97,6 +97,7 @@ func run() error {
 		Now:               time.Now,
 		AllowedOrigins:    cfg.AllowedOrigins,
 		TrustForwardedFor: cfg.TrustForwardedFor,
+		ServerPassword:    cfg.Builtin == nil || cfg.Builtin.Password != "",
 	}
 	accounts.Fedi = fediLogin(cfg)
 	// Before the built-in server listens: Mumble messages may bring images.
@@ -220,7 +221,7 @@ func run() error {
 	}()
 	mux := http.NewServeMux()
 	mux.Handle("/api/upload", fileHandler)
-	for _, path := range []string{"/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/stream-key", "/api/fedi", "/api/fedi/"} {
+	for _, path := range []string{"/api/server", "/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/stream-key", "/api/fedi", "/api/fedi/"} {
 		mux.Handle(path, accounts)
 	}
 	mux.Handle("/files/", fileHandler)
