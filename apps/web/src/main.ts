@@ -2,6 +2,7 @@ import { mount } from "svelte";
 import App from "./App.svelte";
 import { currentWindow, isDesktop, openInBrowser } from "./lib/desktop";
 import { openLinksOutside } from "./lib/externalLinks";
+import { watchKeyboard } from "./lib/keyboard";
 import { watchWindowHidden } from "./lib/windowHidden";
 import "./app.css";
 
@@ -15,6 +16,12 @@ if (isDesktop()) openLinksOutside((url) => openInBrowser(url).catch((err) => con
 void (isDesktop() ? currentWindow() : Promise.resolve(null))
   .catch(() => null)
   .then((win) => watchWindowHidden((hidden) => document.documentElement.toggleAttribute("data-window-hidden", hidden), { doc: document, win }));
+
+if (window.visualViewport)
+  watchKeyboard((open) => document.documentElement.toggleAttribute("data-keyboard", open), {
+    viewport: window.visualViewport,
+    layoutHeight: () => document.documentElement.clientHeight,
+  });
 
 // iOS lets the installed app pinch-zoom despite touch-action (app.css):
 // its own gesture events stop it there.

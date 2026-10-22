@@ -40,6 +40,11 @@
   --safe-left: env(safe-area-inset-left, 0px);
 }
 
+/* The keyboard covers the home indicator (lib/keyboard.ts). */
+:root[data-keyboard] {
+  --safe-bottom: 0px;
+}
+
 /* The installed app is an app: no pinch zoom of the whole page. */
 @media (display-mode: standalone) {
   html {

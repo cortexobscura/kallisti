@@ -2280,3 +2280,7 @@ From `meta/research/discord-comparison.md`.
 - Reproduced in the iOS 27.0 simulator (iOS 26.5 shows no blur): with `black-translucent`, the installed app blurs the header whatever is at the top, and the page is only `screen - status bar` tall (812 of 874pt) while it starts under the status bar, so a 62pt gap stays at the bottom.
 - Without the meta tag, iOS draws its own status bar and the page fits below it (no gap, `--safe-top` 0). Then the fixed-strip rule works: an 11px fixed strip with `background-clip: text` (invisible) gives the status bar the chat colour and no blur. Checked on iOS 27.0 and 26.5.
 - Existing installs keep the status bar style they were added with: remove the app from the home screen and add it again.
+
+## Keyboard gap on iOS
+
+- With the keyboard open, the composer kept the home indicator space (34pt) below it, above the keyboard. `lib/keyboard.ts` says the keyboard is open when the visual viewport is more than 150px shorter than the layout (zoom taken out); then `html[data-keyboard]` sets `--safe-bottom` to 0. Checked in the iOS 27 simulator. The empty typing row (24px) stays below the composer.
