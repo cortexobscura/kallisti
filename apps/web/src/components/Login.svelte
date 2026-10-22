@@ -41,9 +41,9 @@
 
   type Mode = "guest" | "login" | "create";
   const MODES: [Mode, string][] = [
-    ["guest", "Guest"],
     ["login", "Log in"],
     ["create", "Create account"],
+    ["guest", "Guest"],
   ];
   // A guest who tried an account's name gets the Log in tab right away.
   let mode = $state<Mode>(untrack(() => modeForError(error)));
