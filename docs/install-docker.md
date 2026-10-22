@@ -55,7 +55,7 @@ docker compose -f deploy/compose.yml up -d --remove-orphans
 
 For the built-in Mumble server when public port 80 cannot be opened, use
 `deploy/compose-dns01.yaml` instead of `deploy/compose.yml`. It builds Caddy
-2.11.3 with the Cloudflare DNS plugin, obtains the same certificate through
+2.11.7 with the Cloudflare DNS plugin, obtains the same certificate through
 DNS-01, and keeps HTTPS 443, native Mumble TCP/UDP 64738, WHIP UDP 8189,
 certificate sync, and the `deploy_` volumes. It does not publish HTTP port 80;
 HTTP URLs will not redirect to HTTPS. Run only one Compose variant at a time.
