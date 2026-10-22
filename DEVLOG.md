@@ -2284,3 +2284,4 @@ From `meta/research/discord-comparison.md`.
 ## Keyboard gap on iOS
 
 - With the keyboard open, the composer kept the home indicator space (34pt) below it, above the keyboard. `lib/keyboard.ts` says the keyboard is open when the visual viewport is more than 150px shorter than the layout (zoom taken out); then `html[data-keyboard]` sets `--safe-bottom` to 0. Checked in the iOS 27 simulator. The empty typing row (24px) stays below the composer.
+- Then the empty typing row also collapses to 4px while the keyboard is open (it moves the composer up when someone starts typing; on a phone the space counts more). A ResizeObserver on the message list keeps a reader at the bottom when the list gets shorter or taller (keyboard, window). Checked in the iOS 27 simulator; no unit test for the scroll (DOM layout).

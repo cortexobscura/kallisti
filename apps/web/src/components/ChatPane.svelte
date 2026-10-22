@@ -286,6 +286,14 @@
   const keepBottom = () => {
     if (list && atBottom) list.scrollTop = list.scrollHeight;
   };
+  // The list gets shorter or taller (the keyboard, the window): a reader at
+  // the bottom stays there too.
+  $effect(() => {
+    if (!list) return;
+    const observer = new ResizeObserver(keepBottom);
+    observer.observe(list);
+    return () => observer.disconnect();
+  });
   let shown = { target: "", firstAt: 0 };
   $effect.pre(() => {
     void [messages.length, target];
