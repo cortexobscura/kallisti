@@ -151,9 +151,10 @@ export type StreamKey = { enabled: boolean; exists: boolean };
 // Where OBS sends a stream (WHIP), on the Kallisti server.
 export const whipUrl = (base: string) => `${base}/api/whip`;
 
-// The login screen opens on "Log in" when a guest tried an account's name.
+// The login screen opens on "Log in", and also when a guest tried an
+// account's name; on "Guest" after other errors (a guest's name in use).
 export const modeForError = (error: string | null): "guest" | "login" =>
-  error?.includes("belongs to an account") ? "login" : "guest";
+  !error || error.includes("belongs to an account") ? "login" : "guest";
 
 // What a logged-in user can do from the settings (temporary: a guest
 // account, which gets its first password without an old one).

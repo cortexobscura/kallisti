@@ -76,9 +76,13 @@ export const launch = async ({ init, cpu = 1 } = {}) => {
   return { cdp, evaluate, waitFor, close };
 };
 
+const GUEST_TAB = `[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Guest")`;
+
 // Logs in as a guest with the name (the app's login page).
 export const loginAsGuest = async ({ evaluate, waitFor }, name) => {
-  await waitFor(`!!document.querySelector("input[required]")`);
+  await waitFor(`!!${GUEST_TAB}`);
+  await evaluate(`${GUEST_TAB}.click()`); // "Log in" comes first
+  await waitFor(`${GUEST_TAB}.getAttribute("aria-pressed") === "true"`);
   await evaluate(
     `(() => { const i = document.querySelector("input[required]"); i.value = ${JSON.stringify(name)}; i.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector("button[type=submit]").click(); })()`,
   );

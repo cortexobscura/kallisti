@@ -88,7 +88,7 @@ describe("modeForError", () => {
   it("opens the login tab when a name belongs to an account", () => {
     expect(modeForError("This name belongs to an account. Log in to use it.")).toBe("login");
     expect(modeForError("This name is already in use.")).toBe("guest");
-    expect(modeForError(null)).toBe("guest");
+    expect(modeForError(null)).toBe("login");
   });
 });
 

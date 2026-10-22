@@ -73,7 +73,9 @@ const click = (el) => call("POST", `${s}/element/${el[ELEMENT]}/click`, {});
 
 try {
   await call("POST", `${s}/url`, { url: appUrl });
-  const name = await waitFor("the guest form", `return document.querySelector("input[required]")`);
+  // "Log in" comes first.
+  await click(await waitFor("the Guest tab", `return [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Guest") ?? null`));
+  const name = await waitFor("the guest form", `return document.querySelector("button[aria-pressed=true]")?.textContent.trim() === "Guest" ? document.querySelector("input[required]") : null`);
   await call("POST", `${s}/element/${name[ELEMENT]}/value`, { text: `${browser}${Math.floor(Math.random() * 1000)}` });
   await click(await waitFor("the join button", `return document.querySelector("button[type=submit]")`));
   const general = await waitFor(
