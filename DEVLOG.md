@@ -2289,3 +2289,4 @@ From `meta/research/discord-comparison.md`.
 ## No server password field without a server password
 
 - GET /api/server gives `{"password": bool}`: true with Murmur (unknown) or the built-in server with MUMBLE_PASSWORD. The login page shows the server password field only after a true answer or a failed request (older servers), so Kallisti servers without a password never show it.
+- The login screen opens on "Log in" (guests on "Guest" after a guest error such as a name in use). The server password field is on the Guest tab only: the built-in server checks it only for names without an account. The perf and voice scripts click the Guest tab first.
