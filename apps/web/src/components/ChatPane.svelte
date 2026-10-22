@@ -1137,7 +1137,7 @@
         {/if}
       </div>
     {/if}
-    <p class="typing ellipsis" aria-live="polite">{typing}</p>
+    <p class="typing ellipsis" class:idle={!typing} aria-live="polite">{typing}</p>
   </form>
 </main>
 
@@ -1922,6 +1922,10 @@
     font-size: 13px;
     line-height: 24px;
     color: var(--text-muted);
+  }
+  /* But with the keyboard open (lib/keyboard.ts) space counts more. */
+  :global(html[data-keyboard]) .typing.idle {
+    height: 4px;
   }
   .error {
     margin: 0 0 8px;
