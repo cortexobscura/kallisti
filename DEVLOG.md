@@ -2285,3 +2285,7 @@ From `meta/research/discord-comparison.md`.
 
 - With the keyboard open, the composer kept the home indicator space (34pt) below it, above the keyboard. `lib/keyboard.ts` says the keyboard is open when the visual viewport is more than 150px shorter than the layout (zoom taken out); then `html[data-keyboard]` sets `--safe-bottom` to 0. Checked in the iOS 27 simulator. The empty typing row (24px) stays below the composer.
 - Then the empty typing row also collapses to 4px while the keyboard is open (it moves the composer up when someone starts typing; on a phone the space counts more). A ResizeObserver on the message list keeps a reader at the bottom when the list gets shorter or taller (keyboard, window). Checked in the iOS 27 simulator; no unit test for the scroll (DOM layout).
+
+## No server password field without a server password
+
+- GET /api/server gives `{"password": bool}`: true with Murmur (unknown) or the built-in server with MUMBLE_PASSWORD. The login page shows the server password field only after a true answer or a failed request (older servers), so Kallisti servers without a password never show it.

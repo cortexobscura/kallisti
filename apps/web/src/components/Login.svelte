@@ -118,6 +118,13 @@
     }
   };
 
+  // The server password field, once the server says guests may need one
+  // (most have none: no field that comes and goes).
+  let askServerPassword = $state(false);
+  $effect(() => {
+    if (desktop?.kind !== "mumble") void api.serverPassword().then((ask) => (askServerPassword = ask));
+  });
+
   // Fediverse logins: the server's switch; the instance from last time.
   let fediOn = $state(false);
   $effect(() => {
@@ -283,7 +290,7 @@
           />
         </label>
       {/if}
-      {#if !mumbleOnly}
+      {#if !mumbleOnly && askServerPassword}
       <label>
         Server password <span class="optional">(only if the server has one)</span>
         <input bind:value={serverPassword} type="password" autocomplete="off" />
