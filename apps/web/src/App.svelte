@@ -484,10 +484,12 @@
 {/if}
 
 <style>
-  /* The installed iOS app (iOS 26 and later): the system blurs the top of
-     the web view unless a fixed, nearly full-width box with one opaque
-     background colour sits there (WebKit's
-     LocalFrameView::fixedContainerEdges); then it uses that colour. */
+  /* The installed iOS app (iOS 26 and later) blurs the page below the
+     status bar unless a fixed box at least 90% wide, over 10px tall, with
+     one background colour sits at the top (WebKit's
+     LocalFrameView::fixedContainerEdges); then the status bar gets that
+     colour. Only with iOS's own status bar, not black-translucent.
+     background-clip: text keeps the box itself invisible. */
   .status-bar {
     display: none;
   }
@@ -498,8 +500,9 @@
         position: fixed;
         inset: 0 0 auto;
         z-index: 40;
-        height: var(--safe-top);
-        background: var(--bg-main);
+        height: 11px;
+        background-color: var(--bg-main);
+        background-clip: text;
         pointer-events: none;
       }
     }

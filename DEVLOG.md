@@ -2274,3 +2274,9 @@ From `meta/research/discord-comparison.md`.
 ## iOS 26 edge blur: a fixed strip, not extra space
 
 - The 2.5rem clearance hid the blur, but the gap above the header was too large. WebKit's source (`LocalFrameView::fixedContainerEdges`) has the rule: it samples 4px inside each edge, and if a fixed box at least 90% of the viewport wide and over 10px tall with one opaque background colour is there, it uses that colour and draws no blur. Apple documents none of this. The installed app now has a fixed `.status-bar` strip of `--safe-top` height in `--bg-main`, and the clearance is gone. Needs a check on an iPhone.
+
+## iOS 27 edge blur and bottom gap: no black-translucent
+
+- Reproduced in the iOS 27.0 simulator (iOS 26.5 shows no blur): with `black-translucent`, the installed app blurs the header whatever is at the top, and the page is only `screen - status bar` tall (812 of 874pt) while it starts under the status bar, so a 62pt gap stays at the bottom.
+- Without the meta tag, iOS draws its own status bar and the page fits below it (no gap, `--safe-top` 0). Then the fixed-strip rule works: an 11px fixed strip with `background-clip: text` (invisible) gives the status bar the chat colour and no blur. Checked on iOS 27.0 and 26.5.
+- Existing installs keep the status bar style they were added with: remove the app from the home screen and add it again.

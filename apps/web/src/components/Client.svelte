@@ -2004,8 +2004,8 @@
   .layout.thread {
     grid-template-columns: var(--rail) 240px 1fr minmax(320px, 420px);
   }
-  /* iOS (see app.css --safe-top): each column runs under the status bar
-     and the home indicator in its own colour, its content stays clear of
+  /* iOS (see app.css --safe-top): each column runs under the home
+     indicator and the notch in its own colour, its content stays clear of
      them. A transparent border shows the background and, unlike padding,
      stays out of the scrolling area. */
   .left > :global(nav),

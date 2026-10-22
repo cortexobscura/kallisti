@@ -30,8 +30,9 @@
   -webkit-font-smoothing: antialiased;
   scrollbar-color: var(--border) transparent;
   scrollbar-width: thin;
-  /* iOS home screen app (viewport-fit=cover, see index.html): the status
-     bar, the home indicator and the notch in landscape. 0 elsewhere.
+  /* iOS home screen app (viewport-fit=cover, see index.html): the home
+     indicator and the notch in landscape. iOS keeps the status bar out of
+     the page (no black-translucent, see App.svelte). 0 elsewhere.
      Tests set these to see the layout with insets. */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
