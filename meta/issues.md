@@ -11,6 +11,7 @@
 - [ ] [Desktop app: native notifications](issues/desktop-native-notifications.md)
 - [ ] [Paste an image in the desktop app](issues/desktop-paste-image.md)
 - [ ] [Streams: temporal layers for slow viewers](issues/stream-temporal-layers.md)
+- [ ] [Streams from OBS: simulcast](issues/whip-simulcast.md)
 - [ ] [Disconnects when the app is in the background](issues/background-disconnects.md)
 - [ ] [Request ids for manage requests](issues/request-ids.md)
 - [ ] [Mobile apps (Android and iOS) with background calls](issues/mobile-apps.md) (not started)
