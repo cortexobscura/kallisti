@@ -1,6 +1,6 @@
 # Docker and Podman deployment
 
-For installation commands, use [Installing with Docker or Podman](../install-docker.md). Run Compose from the repository root. The Compose files in `deploy/` support the built-in Mumble server with Caddy (`compose.yml`), the same server with Cloudflare DNS-01 and no published HTTP port 80 (`compose-dns01.yaml`), an external Murmur with Caddy (`compose.murmur.yml`), or an existing reverse proxy (`compose.behind-proxy.yml`). Only run one variant per installation.
+For installation commands, use [Installing with Docker or Podman](../install-docker.md). Run Compose from the repository root. The Compose files in `deploy/` support the built-in Mumble server with Caddy (`compose.yml`), the same server with Cloudflare DNS-01 and no published HTTP port 80 (`compose.yml` plus `compose.dns01.yml`), an external Murmur with Caddy (`compose.murmur.yml`), or an existing reverse proxy (`compose.behind-proxy.yml`). Only run one variant per installation.
 
 ## Traffic and data
 
@@ -13,7 +13,7 @@ For installation commands, use [Installing with Docker or Podman](../install-doc
 
 Caddy requests and renews the web certificate for `DOMAIN`. For the built-in server with bundled Caddy, `cert-sync` checks every 60 seconds. It copies a certificate only when the name, remaining validity (at least 48 hours) and private key match. It switches the pair together; Kallisti reads the renewed files on each new Mumble TLS connection. Before the first issuance it uses its persistent self-signed certificate. Check `docker compose -f deploy/compose.yml logs cert-sync` if native Mumble clients still see a certificate warning after the website has HTTPS. The existing-proxy variant cannot read an external proxy's certificates: either accept the self-signed Mumble certificate or provide a protected certificate and key under `/data` using `MUMBLE_CERT_FILE` and `MUMBLE_KEY_FILE`.
 
-The DNS-01 variant builds Caddy 2.11.7 with the pinned Cloudflare plugin. Its scoped API token comes from an operator-managed file outside the repository, mounted read-only as a Compose secret. Caddy reads it at startup into its process environment; it is not included in `docker compose config`, but Docker administrators can still access it. A missing or empty file stops Caddy. DNS-01 does not need public port 80; HTTP requests to that port will not redirect. Use a DNS-only Cloudflare record if native Mumble or WHIP clients use `DOMAIN` because Cloudflare's web proxy does not forward those ports. See [DNS-01 setup](../install-docker.md#cloudflare-dns-01-without-public-http-port-80) for permissions, token handling, and the startup command.
+The DNS-01 override requires Docker Compose 2.24.4 or later for `!override`. Run it with `-f deploy/compose.yml -f deploy/compose.dns01.yml` in that order. It builds Caddy 2.11.7 with the pinned Cloudflare plugin. Its scoped API token comes from an operator-managed file outside the repository, mounted read-only as a Compose secret. Caddy reads it at startup into its process environment; it is not included in `docker compose config`, but Docker administrators can still access it. A missing or empty file stops Caddy. DNS-01 does not need public port 80; HTTP requests to that port will not redirect. Use a DNS-only Cloudflare record if native Mumble or WHIP clients use `DOMAIN` because Cloudflare's web proxy does not forward those ports. See [DNS-01 setup](../install-docker.md#cloudflare-dns-01-without-public-http-port-80) for permissions, token handling, and the startup command.
 
 The external Murmur variant keeps its previous default of accepting self-signed certificates. Set `MUMBLE_INSECURE_TLS=0` in `deploy/.env` when Murmur has a trusted certificate and you want upstream identity checks. Protect `.env`: the SuperUser password is passed as an environment variable and is visible to administrators with Docker access. Docker access also gives access to both data volumes and the certificate key.
 
@@ -21,7 +21,7 @@ Caddy adds HSTS, framing and content-type protections, compresses responses, and
 
 ## Operations
 
-Check the rendered configuration before starting a variant (replace `compose.yml` with the selected variant):
+Check the rendered configuration before starting a variant (use both files in order for DNS-01; use the selected single file for other variants):
 
 ```sh
 docker compose -f deploy/compose.yml config --quiet

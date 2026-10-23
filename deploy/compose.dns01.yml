@@ -1,0 +1,29 @@
+# Apply on top of compose.yml for Cloudflare DNS-01 without public HTTP port 80.
+services:
+  caddy:
+    # Do not tag the custom build as the base Caddy image.
+    image: !reset null
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.caddy-dns01
+    ports: !override
+      - "443:443"
+    # The token is read at startup, not expanded into the Compose configuration.
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        CF_API_TOKEN=$$(cat /run/secrets/cloudflare_api_token)
+        if [ -z "$$CF_API_TOKEN" ]; then
+          echo "Cloudflare token file is empty" >&2
+          exit 1
+        fi
+        export CF_API_TOKEN
+        exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    secrets:
+      - cloudflare_api_token
+    volumes:
+      - ./Caddyfile.dns01:/etc/caddy/Caddyfile:ro
+
+secrets:
+  cloudflare_api_token:
+    file: ${CLOUDFLARE_API_TOKEN_FILE:?Set CLOUDFLARE_API_TOKEN_FILE to an absolute path outside the repository}
