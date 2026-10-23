@@ -238,7 +238,7 @@ func (h *Hub) Watch(viewerSession, streamer uint32) error {
 		return errors.New("no such stream")
 	case !ok || channel != st.channel:
 		return errors.New("join the stream's voice channel to watch")
-	case viewerSession == owner(streamer):
+	case viewerSession == owner(streamer) && st.ingest == nil: // OBS's has no self-preview
 		return errors.New("that is your own stream")
 	}
 	st.viewers[viewerSession] = &viewer{needKey: true, asked: true}

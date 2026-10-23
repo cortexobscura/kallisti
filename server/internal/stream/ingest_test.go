@@ -198,3 +198,22 @@ func TestIngestConfigure(t *testing.T) {
 		t.Fatal("a config above the limits")
 	}
 }
+
+// A stream from OBS has no self-preview: its streamer may watch it, not a
+// screen share of their own.
+func TestOwnIngestMayBeWatched(t *testing.T) {
+	h, _, sinks := setup()
+	var k hooks
+	in, _ := h.StartIngest(1, obs, k.hooks())
+	if err := h.Watch(1, 1); err != nil {
+		t.Fatal(err)
+	}
+	in.Frame(true, 1, []byte{1})
+	if len(sinks[1].frames) != 1 {
+		t.Fatalf("own frames %v", sinks[1].frames)
+	}
+	h.Start(3, Config{Codec: "vp8", Width: 640, Height: 360})
+	if err := h.Watch(3, 3); err == nil {
+		t.Fatal("watched an own screen share")
+	}
+}
