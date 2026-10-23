@@ -75,3 +75,10 @@ export const cannotPlay = (codec: string) =>
   codec.startsWith("avc1")
     ? "This browser cannot play H.264 video (streams from OBS are H.264). Try another browser, for example Chrome, Edge or Firefox."
     : "This browser cannot play this stream.";
+
+// What a click on a LIVE badge does. Own streams with a self-preview (a
+// screen share, the camera) are not watched; one from OBS has none.
+export const watchAction = ({ playable, own, selfPreview }: { playable: boolean; own: boolean; selfPreview: boolean }) =>
+  own && selfPreview ? "none" : playable ? "watch" : "unsupported";
+
+export const CANNOT_STREAM = "This browser cannot play streams. Lockdown Mode, for example, turns off what they need (WebCodecs).";

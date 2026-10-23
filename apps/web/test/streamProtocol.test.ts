@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cannotPlay, decodeFrame, decodeWatch, encodeFrame, fitSize, pickCodec, previewSize } from "../src/lib/stream/protocol";
+import { cannotPlay, decodeFrame, watchAction, decodeWatch, encodeFrame, fitSize, pickCodec, previewSize } from "../src/lib/stream/protocol";
 
 describe("stream frames", () => {
   it("go up with flags and a timestamp, and come down with the streamer's session", () => {
@@ -108,5 +108,18 @@ describe("resample", () => {
     expect(out.length).toBe(480);
     expect(out[0]).toBe(0);
     expect(out[240]).toBeCloseTo(0.5, 2);
+  });
+});
+
+describe("watchAction", () => {
+  it("watches others' streams", () => {
+    expect(watchAction({ playable: true, own: false, selfPreview: false })).toBe("watch");
+  });
+  it("says so when the browser cannot play streams", () => {
+    expect(watchAction({ playable: false, own: false, selfPreview: false })).toBe("unsupported");
+  });
+  it("watches an own stream without a self-preview (from OBS), not an own share", () => {
+    expect(watchAction({ playable: true, own: true, selfPreview: false })).toBe("watch");
+    expect(watchAction({ playable: true, own: true, selfPreview: true })).toBe("none");
   });
 });

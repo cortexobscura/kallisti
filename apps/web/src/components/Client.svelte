@@ -83,7 +83,7 @@
   import StreamPreview from "./StreamPreview.svelte";
   import StreamStage from "./StreamStage.svelte";
   import { shareSources } from "../lib/stream/client.svelte";
-  import { ownerOf } from "../lib/stream/protocol";
+  import { CANNOT_STREAM, isCamera, ownerOf, watchAction } from "../lib/stream/protocol";
   import { KINDS, qualityOptions, type Kind, type Quality } from "../lib/stream/quality";
   import { goLiveEntries, isLive, streamBlock, type GoLiveAction } from "../lib/stream/goLive";
   import ChannelMenu from "./ChannelMenu.svelte";
@@ -1161,9 +1161,15 @@
   const shareable = $derived(shareSources(phone));
   const liveSessions = $derived(new Set(text.streams.map((s) => s.session)));
   let pendingWatch = $state<number | null>(null);
+  let cannotStream = $state(0); // shown each time (a counter for the toast)
   const watchStream = (session: number) => {
     const s = text.streams.find((x) => x.session === session);
-    if (!s || !streamClient || ownerOf(session) === me?.session) return;
+    if (!s) return;
+    const own = ownerOf(session) === me?.session;
+    const selfPreview = isCamera(session) || (streamClient?.sharing.screen ?? false);
+    const action = watchAction({ playable: !!streamClient, own, selfPreview });
+    if (action === "unsupported") cannotStream++;
+    if (action !== "watch" || !streamClient) return;
     if (voiceOn && channelId === s.channel) void streamClient.watch(session);
     else {
       pendingWatch = session;
@@ -1384,6 +1390,9 @@
 {/if}
 {#if text.notice}
   {#key text.notice.n}<Toast text={text.notice.text} />{/key}
+{/if}
+{#if cannotStream}
+  {#key cannotStream}<Toast text={CANNOT_STREAM} />{/key}
 {/if}
 
 <svelte:window onkeydown={onKey} onkeyup={onKey} onblur={() => capture?.setPttDown(false)} />
@@ -1736,7 +1745,7 @@
       recording={recorded}
       live={liveSessions}
       previews={text.streamPreviews}
-      onWatch={streamClient ? watchStream : undefined}
+      onWatch={watchStream}
       directs={directList}
       currentDirect={directChatId}
       onOpenDirect={openDirect}
