@@ -58,6 +58,7 @@ func (s *session) open(o offer, sdp string, voice uint32) (string, error) {
 		},
 		Ended: s.end,
 	})
+	s.feed.still = s.h.Preview
 	api, err := s.h.api(o)
 	if err != nil {
 		return "", err

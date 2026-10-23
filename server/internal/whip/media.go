@@ -1,6 +1,9 @@
 package whip
 
 import (
+	"bytes"
+	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -130,6 +133,40 @@ type feed struct {
 	// The stream starts and stops under mu: a stop while it starts wins.
 	mu      sync.Mutex
 	stopped bool
+	// still makes a JPEG of a keyframe for the preview (nil: none); one at
+	// a time, at most every previewEvery (previewAt: the pictures').
+	still      func(ctx context.Context, keyframe []byte) ([]byte, error)
+	previewAt  time.Time
+	previewing atomic.Bool
+	// done ends a preview in the making when the stream stops (a late one
+	// would land on the session's next stream).
+	done   context.Context
+	cancel context.CancelFunc
+}
+
+const (
+	previewEvery   = 15 * time.Second // as browsers send theirs
+	previewTimeout = 20 * time.Second
+)
+
+// previewDue: a keyframe now makes a preview.
+func previewDue(last, now time.Time, busy bool) bool {
+	return !busy && now.Sub(last) >= previewEvery
+}
+
+// makePreview makes a keyframe the stream's preview (a failure keeps the
+// one before).
+func (f *feed) makePreview(key []byte) {
+	defer f.previewing.Store(false)
+	ctx, cancel := context.WithTimeout(f.done, previewTimeout)
+	defer cancel()
+	pic, err := f.still(ctx, key)
+	if err == nil && f.done.Err() == nil {
+		err = f.hub.SetPreview(f.session, "data:image/jpeg;base64,"+base64.StdEncoding.EncodeToString(pic))
+	}
+	if err != nil {
+		slog.Debug("no preview of a stream from OBS", "session", f.session, "err", err)
+	}
 }
 
 const soundsPerSec = 100 // as from a stream connection
@@ -141,6 +178,7 @@ func newFeed(hub *stream.Hub, session uint32, audio bool, bytesPerSec int, hooks
 	if audio {
 		f.audio = "opus"
 	}
+	f.done, f.cancel = context.WithCancel(context.Background())
 	return f
 }
 
@@ -180,6 +218,11 @@ func (f *feed) picture(t timed) error {
 		return nil
 	}
 	in.Frame(t.key, t.ts, t.data)
+	if now := f.now(); t.key && f.still != nil && previewDue(f.previewAt, now, f.previewing.Load()) {
+		f.previewAt = now
+		f.previewing.Store(true)
+		go f.makePreview(bytes.Clone(t.data))
+	}
 	return nil
 }
 
@@ -197,6 +240,7 @@ func (f *feed) sound(p *rtp.Packet, arrival int64) {
 
 // stop ends the stream, if it started.
 func (f *feed) stop() {
+	f.cancel()
 	f.mu.Lock()
 	f.stopped = true
 	f.mu.Unlock()

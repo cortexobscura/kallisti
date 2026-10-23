@@ -238,7 +238,7 @@ func run() error {
 		})
 		if cfg.Builtin.WHIPPort != 0 {
 			// Chat and voice go on without it (a name that did not resolve).
-			if wh, err := startWHIP(cfg.Builtin, builtinServer, accounts); err != nil {
+			if wh, err := startWHIP(cfg.Builtin, builtinServer, accounts, fileHandler.Previews); err != nil {
 				slog.Error("streams from OBS are off", "err", err)
 			} else {
 				defer wh.Close()
@@ -310,6 +310,12 @@ func startPush(cfg config.Config, db *store.Store, accounts *auth.Service, hub *
 	hub.Push = svc.Notify
 	return svc, nil
 }
+
+// Stream previews from OBS: as browsers make theirs (stream.previewSize).
+const (
+	streamPreviewWidth  = 320
+	streamPreviewHeight = 1024
+)
 
 // Previews: ffmpeg processes at once, and new uploads waiting for one.
 const (
@@ -389,7 +395,7 @@ func fediLogin(cfg config.Config) *auth.FediLogin {
 
 // startWHIP takes streams from OBS on the UDP port (WHIP_UDP_PORT), with
 // the accounts' stream keys.
-func startWHIP(cfg *config.Builtin, b *builtin, accounts *auth.Service) (*whip.Handler, error) {
+func startWHIP(cfg *config.Builtin, b *builtin, accounts *auth.Service, previews *thumbs.Maker) (*whip.Handler, error) {
 	settings, udp, err := whip.Listen(cfg.WHIPPort, cfg.WHIPPublicIP)
 	if err != nil {
 		return nil, err
@@ -402,6 +408,11 @@ func startWHIP(cfg *config.Builtin, b *builtin, accounts *auth.Service) (*whip.H
 		},
 		Session: b.sessionOf,
 		Closer:  udp,
+	}
+	if previews != nil { // with ffmpeg, as upload previews
+		h.Preview = func(ctx context.Context, keyframe []byte) ([]byte, error) {
+			return previews.Still(ctx, keyframe, streamPreviewWidth, streamPreviewHeight)
+		}
 	}
 	accounts.StreamKeys, accounts.StreamKeyChanged = true, h.EndAccount
 	slog.Info("streams from OBS (WHIP)", "udp_port", cfg.WHIPPort, "public_ip", cfg.WHIPPublicIP)

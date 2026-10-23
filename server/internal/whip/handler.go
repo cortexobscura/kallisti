@@ -6,6 +6,7 @@ package whip
 
 import (
 	"cmp"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -44,6 +45,9 @@ type Handler struct {
 	// keyframe, and then between pictures (0: the defaults).
 	OfferTimeout, ConnectTimeout, KeyTimeout, MediaTimeout time.Duration
 	Closer                                                 io.Closer // the UDP port (see Listen), closed by Close; nil: none
+	// Preview makes a JPEG of a keyframe for the stream's preview (nil:
+	// none).
+	Preview func(ctx context.Context, keyframe []byte) ([]byte, error)
 
 	mu       sync.Mutex
 	sessions map[string]*session
