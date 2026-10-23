@@ -35,7 +35,9 @@ import (
 const (
 	timeout      = 10 * time.Second
 	maxRedirects = 3
-	maxBody      = 64 << 10
+	// maxBody: the most bytes of a JSON answer. Pleroma and Akkoma put the
+	// user's front-end settings into verify_credentials: hundreds of KB.
+	maxBody = 2 << 20
 	// maxAvatar: the most bytes of an avatar picture downloaded.
 	maxAvatar = 2 << 20
 )

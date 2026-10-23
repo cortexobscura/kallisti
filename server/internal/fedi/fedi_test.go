@@ -147,7 +147,7 @@ func TestOddAnswersAreRefused(t *testing.T) {
 	for name, h := range map[string]http.HandlerFunc{
 		"not json": func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("<html>")) },
 		"too big": func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(`{"id":"1","username":"` + strings.Repeat("a", 200_000) + `"}`))
+			w.Write([]byte(`{"id":"1","username":"alice","note":"` + strings.Repeat("a", 3<<20) + `"}`))
 		},
 		"no id":        func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"username":"alice"}`)) },
 		"null id":      func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"id":null,"username":"alice"}`)) },
@@ -163,12 +163,21 @@ func TestOddAnswersAreRefused(t *testing.T) {
 		}
 		srv.Close()
 	}
-	// Numeric ids (some servers) are fine.
+	// Pleroma puts the user's front-end settings into the account: large.
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"id":"9","username":"lain","pleroma":{"settings_store":{"pleroma-fe":"` + strings.Repeat("x", 500_000) + `"}}}`))
+	}))
+	u, _ := url.Parse(srv.URL)
+	if acc, err := testClient(srv).VerifyCredentials(ctx, fedi.Instance{Host: u.Host, Base: srv.URL}, "t"); err != nil || acc.Username != "lain" {
+		t.Errorf("a large Pleroma account: %+v %v", acc, err)
+	}
+	srv.Close()
+	// Numeric ids (some servers) are fine.
+	srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"id":17,"username":"bob"}`))
 	}))
 	defer srv.Close()
-	u, _ := url.Parse(srv.URL)
+	u, _ = url.Parse(srv.URL)
 	if acc, err := testClient(srv).VerifyCredentials(ctx, fedi.Instance{Host: u.Host, Base: srv.URL}, "t"); err != nil || acc.ID != "17" {
 		t.Fatalf("numeric id: %+v %v", acc, err)
 	}
