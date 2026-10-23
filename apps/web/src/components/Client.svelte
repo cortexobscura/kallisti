@@ -84,6 +84,7 @@
   import StreamStage from "./StreamStage.svelte";
   import { shareSources } from "../lib/stream/client.svelte";
   import { CANNOT_STREAM, isCamera, ownerOf, watchAction } from "../lib/stream/protocol";
+  import { REWATCH_MS, rewatch, type Lost } from "../lib/stream/rewatch";
   import { KINDS, qualityOptions, type Kind, type Quality } from "../lib/stream/quality";
   import { goLiveEntries, isLive, streamBlock, type GoLiveAction } from "../lib/stream/goLive";
   import ChannelMenu from "./ChannelMenu.svelte";
@@ -1193,16 +1194,42 @@
       });
     }
   });
-  // Streams that ended, or are in a channel we left, are not watched.
-  $effect(() => {
-    if (!streamClient) return;
-    const here = new Set(text.streams.filter((s) => voiceOn && s.channel === channelId).map((s) => s.session));
-    untrack(() => {
-      for (const s of streamClient.watching) if (!here.has(s)) streamClient.unwatch(s);
-    });
-  });
   // A user's name, also from a stream id.
   const nameOfSession = (session: number) => server.users[ownerOf(session)]?.name ?? "someone";
+  // Streams that ended, or are in a channel we left, are not watched. One
+  // that ended may come back from the same user (see lib/stream/rewatch).
+  const watchedNames = new Map<number, string>();
+  const dropped = new Map<number, Lost>(); // not watched any more: lost if it ends
+  let lostStreams: Lost[] = [];
+  $effect(() => {
+    if (!streamClient) return;
+    const here = text.streams
+      .filter((s) => voiceOn && s.channel === channelId)
+      .map((s) => ({ id: s.session, name: nameOfSession(s.session), camera: isCamera(s.session) }));
+    const live = new Set(text.streams.map((s) => s.session));
+    const watching = streamClient.watching;
+    untrack(() => {
+      const now = Date.now();
+      const isHere = (id: number) => here.some((h) => h.id === id);
+      for (const id of watching) if (!isHere(id)) streamClient.unwatch(id);
+      // The user list can lose the streamer before the stream list: the
+      // first known name counts.
+      for (const h of here) if (watching.includes(h.id) && !watchedNames.has(h.id) && server.users[ownerOf(h.id)]) watchedNames.set(h.id, h.name);
+      for (const [id, name] of watchedNames) {
+        if (watching.includes(id) && isHere(id)) continue;
+        watchedNames.delete(id);
+        dropped.set(id, { name, camera: isCamera(id), until: now + REWATCH_MS });
+      }
+      // Closed by the user, the stream goes on; ended, it leaves the list.
+      for (const [id, l] of dropped) {
+        if (!live.has(id) && voiceOn) lostStreams = [...lostStreams, l];
+        if (!live.has(id) || now >= l.until) dropped.delete(id);
+      }
+      const back = rewatch(lostStreams, here, now);
+      lostStreams = back.lost;
+      for (const id of back.watch) void streamClient.watch(id);
+    });
+  });
   $effect(() => {
     streamClient?.setPreviews(prefs.streamPreviews);
   });
