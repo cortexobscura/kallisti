@@ -122,8 +122,8 @@ func (v *videoIn) push(p *rtp.Packet, arrival int64) []timed {
 // sizes. Pictures come from one goroutine, sound from another.
 type feed struct {
 	hub     *stream.Hub
-	session uint32
-	audio   string // "opus" or ""
+	session atomic.Uint32 // the owner's voice session; 0: waiting for one (see orphan)
+	audio   string        // "opus" or ""
 	hooks   stream.IngestHooks
 	bytes   *rate.Limiter
 	sounds  *rate.Limiter
@@ -164,25 +164,40 @@ func (f *feed) makePreview(key []byte) {
 	defer cancel()
 	pic, err := f.still(ctx, key)
 	if err == nil && f.done.Err() == nil {
-		err = f.hub.SetPreview(f.session, "data:image/jpeg;base64,"+base64.StdEncoding.EncodeToString(pic))
+		err = f.hub.SetPreview(f.session.Load(), "data:image/jpeg;base64,"+base64.StdEncoding.EncodeToString(pic))
 	}
 	if err != nil {
-		slog.Debug("no preview of a stream from OBS", "session", f.session, "err", err)
+		slog.Debug("no preview of a stream from OBS", "session", f.session.Load(), "err", err)
 	}
 }
 
 const soundsPerSec = 100 // as from a stream connection
 
 func newFeed(hub *stream.Hub, session uint32, audio bool, bytesPerSec int, hooks stream.IngestHooks) *feed {
-	f := &feed{hub: hub, session: session, hooks: hooks, now: time.Now, sClock: clock{rate: 48_000},
+	f := &feed{hub: hub, hooks: hooks, now: time.Now, sClock: clock{rate: 48_000},
 		bytes:  rate.NewLimiter(rate.Limit(bytesPerSec), 2*bytesPerSec),
 		sounds: rate.NewLimiter(soundsPerSec, soundsPerSec/2)}
 	if audio {
 		f.audio = "opus"
 	}
+	f.session.Store(session)
 	f.done, f.cancel = context.WithCancel(context.Background())
 	return f
 }
+
+// orphan: the hub ended the stream (its voice session left, moved, or lost
+// Speak). Pictures wait until rebind gives the owner's voice session again
+// (a browser refresh is a new session); the next keyframe starts the stream
+// there. Called under the hub's lock (an Ended hook).
+func (f *feed) orphan() {
+	f.session.Store(0)
+	f.ingest.Store(nil)
+}
+
+func (f *feed) rebind(voice uint32) { f.session.Store(voice) }
+
+// waiting: for a voice session, after orphan.
+func (f *feed) waiting() bool { return f.session.Load() == 0 }
 
 // started: the stream is live (it had its first keyframe).
 func (f *feed) started() bool { return f.ingest.Load() != nil }
@@ -206,8 +221,8 @@ func (f *feed) picture(t timed) error {
 		changed, f.config = c != f.config, c
 	}
 	switch {
-	case in == nil && (!t.key || f.config.Codec == ""):
-		return nil // waiting for a keyframe (asked for, see session)
+	case in == nil && (!t.key || f.config.Codec == "" || f.waiting()):
+		return nil // waiting for a keyframe (asked for, see session), or for the owner
 	case in == nil:
 		var err error
 		if in, err = f.start(); err != nil {
@@ -261,11 +276,12 @@ func (f *feed) start() (*stream.Ingest, error) {
 	if f.stopped {
 		return nil, errors.New("stopped")
 	}
-	in, err := f.hub.StartIngest(f.session, f.config, f.hooks)
+	in, err := f.hub.StartIngest(f.session.Load(), f.config, f.hooks)
 	if err != nil {
 		return nil, sizeError(err, f.config)
 	}
 	f.ingest.Store(in)
-	slog.Info("stream from OBS is live", "session", f.session, "codec", f.config.Codec, "width", f.config.Width, "height", f.config.Height, "audio", f.config.Audio)
+	f.previewAt = time.Time{} // a preview for the new stream soon
+	slog.Info("stream from OBS is live", "session", f.session.Load(), "codec", f.config.Codec, "width", f.config.Width, "height", f.config.Height, "audio", f.config.Audio)
 	return in, nil
 }

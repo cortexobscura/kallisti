@@ -41,7 +41,16 @@ func loopback(t *testing.T) webrtc.SettingEngine {
 // setup: alice (key "alice-key") is session 1, bob ("bob-key") session 3
 // (no Speak), carol ("carol-key") is not connected; session 2 watches.
 func setup(t *testing.T) (*Handler, *httptest.Server, *stream.Hub, *viewer) {
-	hub, _, w := hubWithViewer()
+	h, srv, hub, _, w := setupVoice(t)
+	return h, srv, hub, w
+}
+
+// setupVoice is setup with the voice channels and alice's session (0: not
+// connected), to change.
+func setupVoice(t *testing.T) (*Handler, *httptest.Server, *stream.Hub, *testVoice, *viewer) {
+	hub, v, w := hubWithViewer()
+	tv := &testVoice{voice: v}
+	tv.alice.Store(1)
 	h := &Handler{
 		Settings: loopback(t), Hub: hub, BytesPerSecond: 1 << 20, MaxSessions: 2,
 		Account: func(key string) (string, bool) {
@@ -49,8 +58,8 @@ func setup(t *testing.T) (*Handler, *httptest.Server, *stream.Hub, *viewer) {
 			return name, ok && key != "-key"
 		},
 		Session: func(name string) (uint32, bool) {
-			s, ok := map[string]uint32{"alice": 1, "bob": 3}[name]
-			return s, ok
+			s, ok := map[string]uint32{"alice": tv.alice.Load(), "bob": 3}[name]
+			return s, ok && s != 0
 		},
 	}
 	srv := httptest.NewServer(h)
@@ -58,7 +67,24 @@ func setup(t *testing.T) (*Handler, *httptest.Server, *stream.Hub, *viewer) {
 		srv.Close()
 		h.Close()
 	})
-	return h, srv, hub, w
+	return h, srv, hub, tv, w
+}
+
+type testVoice struct {
+	*voice
+	alice atomic.Uint32
+}
+
+// move puts a session in a channel (0: out of voice) and tells the hub.
+func (v *testVoice) move(hub *stream.Hub, session, to uint32) {
+	v.mu.Lock()
+	if to == 0 {
+		delete(v.channels, session)
+	} else {
+		v.channels[session] = to
+	}
+	v.mu.Unlock()
+	hub.Moved(session, to)
 }
 
 func request(t *testing.T, method, url, key, ctype, body string) (*http.Response, string) {
@@ -228,15 +254,64 @@ func TestStreamFromOBS(t *testing.T) {
 	}
 }
 
-func TestStreamEndsWhenTheOwnerLeaves(t *testing.T) {
-	h, srv, hub, _ := setup(t)
+// A browser refresh: the owner's voice session leaves, a new one comes; the
+// stream goes on with it, for the viewers too.
+func TestStreamOutlivesARefresh(t *testing.T) {
+	h, srv, hub, v, w := setupVoice(t)
 	o := newOBS(t)
 	o.connect(t, srv.URL, "alice-key")
 	stop := make(chan struct{})
 	defer close(stop)
 	go o.send(clipFrames(t), stop)
 	eventually(t, "the stream", func() bool { return len(hub.Streams()) == 1 })
-	hub.Moved(1, 6)
+	v.alice.Store(0)
+	v.move(hub, 1, 0)
+	if len(hub.Streams()) != 0 {
+		t.Fatal("the stream went on without its voice session")
+	}
+	time.Sleep(1500 * time.Millisecond) // the refresh
+	before := len(w.pictures())
+	v.mu.Lock()
+	v.channels[4] = 5
+	v.mu.Unlock()
+	v.alice.Store(4)
+	eventually(t, "the stream on the new session", func() bool {
+		s := hub.Streams()
+		return len(s) == 1 && s[0].Session == 4 && s[0].Channel == 5
+	})
+	eventually(t, "pictures again", func() bool { return len(w.pictures()) > before })
+	if h.Sessions() != 1 {
+		t.Fatalf("%d sessions", h.Sessions())
+	}
+}
+
+// A move takes the stream along.
+func TestStreamFollowsAMove(t *testing.T) {
+	_, srv, hub, v, _ := setupVoice(t)
+	o := newOBS(t)
+	o.connect(t, srv.URL, "alice-key")
+	stop := make(chan struct{})
+	defer close(stop)
+	go o.send(clipFrames(t), stop)
+	eventually(t, "the stream", func() bool { return len(hub.Streams()) == 1 })
+	v.move(hub, 1, 6)
+	eventually(t, "the stream in the new channel", func() bool {
+		s := hub.Streams()
+		return len(s) == 1 && s[0].Session == 1 && s[0].Channel == 6
+	})
+}
+
+func TestStreamEndsWhenTheOwnerLeaves(t *testing.T) {
+	h, srv, hub, v, _ := setupVoice(t)
+	h.RejoinTimeout = 300 * time.Millisecond
+	o := newOBS(t)
+	o.connect(t, srv.URL, "alice-key")
+	stop := make(chan struct{})
+	defer close(stop)
+	go o.send(clipFrames(t), stop)
+	eventually(t, "the stream", func() bool { return len(hub.Streams()) == 1 })
+	v.alice.Store(0)
+	v.move(hub, 1, 0)
 	eventually(t, "the session's end", func() bool { return h.Sessions() == 0 })
 	eventually(t, "OBS's connection closed", func() bool {
 		s := o.pc.ConnectionState()

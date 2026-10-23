@@ -42,9 +42,10 @@ type Handler struct {
 	BytesPerSecond int
 	MaxSessions    int
 	// For the offer's body, until the peer connects, then until its first
-	// keyframe, and then between pictures (0: the defaults).
-	OfferTimeout, ConnectTimeout, KeyTimeout, MediaTimeout time.Duration
-	Closer                                                 io.Closer // the UDP port (see Listen), closed by Close; nil: none
+	// keyframe, between pictures, and for the owner's voice session after
+	// the stream ended (0: the defaults).
+	OfferTimeout, ConnectTimeout, KeyTimeout, MediaTimeout, RejoinTimeout time.Duration
+	Closer                                                                io.Closer // the UDP port (see Listen), closed by Close; nil: none
 	// Preview makes a JPEG of a keyframe for the stream's preview (nil:
 	// none).
 	Preview func(ctx context.Context, keyframe []byte) ([]byte, error)
@@ -63,6 +64,7 @@ const (
 	connectTimeout = 15 * time.Second
 	keyTimeout     = 15 * time.Second
 	mediaTimeout   = 10 * time.Second
+	rejoinTimeout  = 20 * time.Second // a browser refresh, a reconnect
 	gatherTimeout  = 5 * time.Second
 )
 

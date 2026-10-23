@@ -19,8 +19,10 @@ import (
 )
 
 // session is one stream from OBS: a WebRTC connection that feeds a stream
-// ingest. It ends on DELETE, when the connection fails, when the hub ends
-// the stream (the owner left the channel, or Speak), or on a timeout.
+// ingest. It ends on DELETE, when the connection fails, or on a timeout.
+// When the hub ends the stream (the owner left, moved, or lost Speak), it
+// waits a while for the owner's voice session (again, or a new one after a
+// browser refresh) and goes on there.
 type session struct {
 	h           *Handler
 	id, account string
@@ -31,6 +33,7 @@ type session struct {
 	lastPicture atomic.Int64  // the last picture's arrival (see arrival)
 	sound       atomic.Bool   // a sound track is read
 	pli         chan struct{} // a keyframe is wanted
+	orphaned    chan struct{} // the hub ended the stream
 	connected   chan struct{}
 	connectOnce sync.Once
 	done        chan struct{} // closed by end
@@ -43,7 +46,7 @@ const pliEvery = time.Second // keyframe requests while none came
 
 func newSession(h *Handler, id, account string) *session {
 	return &session{h: h, id: id, account: account, begun: time.Now(),
-		pli: make(chan struct{}, 1), connected: make(chan struct{}), done: make(chan struct{}), opened: make(chan struct{})}
+		pli: make(chan struct{}, 1), orphaned: make(chan struct{}, 1), connected: make(chan struct{}), done: make(chan struct{}), opened: make(chan struct{})}
 }
 
 // open answers the offer.
@@ -56,7 +59,13 @@ func (s *session) open(o offer, sdp string, voice uint32) (string, error) {
 			default:
 			}
 		},
-		Ended: s.end,
+		Ended: func() {
+			s.feed.orphan()
+			select {
+			case s.orphaned <- struct{}{}:
+			default:
+			}
+		},
 	})
 	s.feed.still = s.h.Preview
 	api, err := s.h.api(o)
@@ -133,6 +142,17 @@ func (s *session) run() {
 		return
 	}
 	noKeyBy := time.Now().Add(cmp.Or(s.h.KeyTimeout, keyTimeout))
+	var rejoinBy time.Time
+	// rejoin gives the stream the owner's voice session, if there is one.
+	rejoin := func(now time.Time) bool {
+		voice, ok := s.h.Session(s.account)
+		if ok {
+			s.feed.rebind(voice)
+			noKeyBy = now.Add(cmp.Or(s.h.KeyTimeout, keyTimeout))
+			s.keyframe()
+		}
+		return ok
+	}
 	tick := time.NewTicker(pliEvery)
 	defer tick.Stop()
 	s.keyframe()
@@ -143,7 +163,17 @@ func (s *session) run() {
 			return
 		case <-s.pli:
 			s.keyframe()
+		case <-s.orphaned:
+			rejoinBy = time.Now().Add(cmp.Or(s.h.RejoinTimeout, rejoinTimeout))
+			rejoin(time.Now())
 		case now := <-tick.C:
+			if s.feed.waiting() {
+				if !rejoin(now) && now.After(rejoinBy) {
+					slog.Info("stream from OBS: the owner left voice", "account", s.account)
+					return
+				}
+				continue
+			}
 			if s.feed.started() {
 				if time.Duration(s.arrival()-s.lastPicture.Load())*time.Microsecond > cmp.Or(s.h.MediaTimeout, mediaTimeout) {
 					slog.Info("stream from OBS: no pictures", "account", s.account)
