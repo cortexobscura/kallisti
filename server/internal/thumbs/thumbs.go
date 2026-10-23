@@ -256,9 +256,16 @@ func (m *Maker) Make(ctx context.Context, j Job) (string, error) {
 
 // exec runs ffmpeg with no environment but PATH (none of the server's
 // secrets); it is killed when ctx ends.
-func (m *Maker) exec(ctx context.Context, args []string) error {
+func (m *Maker) exec(ctx context.Context, args []string) error { return m.execIO(ctx, args, nil, nil) }
+
+// execIO is exec with stdin (nil: none) and stdout (nil: discarded).
+func (m *Maker) execIO(ctx context.Context, args []string, stdin []byte, stdout io.Writer) error {
 	cmd := exec.CommandContext(ctx, m.tool.Command[0], slices.Concat(m.tool.Command[1:], args)...)
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+	cmd.Stdout = stdout
 	cmd.WaitDelay = time.Second
 	var stderr limited
 	cmd.Stderr = &stderr
