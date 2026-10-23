@@ -252,3 +252,5 @@
   - [x] [Streams: a message when the browser cannot play them](issues/stream-unsupported-message.md)
   - [x] [Watch your own WHIP stream](issues/watch-own-whip-stream.md)
   - [x] [Previews for WHIP streams](issues/whip-stream-previews.md)
+- [x] [WHIP streams: sound drops after a while](issues/whip-av-drift.md)
+- [x] [WHIP streams survive a browser refresh](issues/whip-survives-refresh.md)
