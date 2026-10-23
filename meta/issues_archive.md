@@ -248,3 +248,7 @@
 - [x] [Phone: a simpler top bar with a channel sheet](issues/phone-header.md)
 - [x] [Desktop: GPU use while the window is minimised](issues/hidden-window-gpu.md)
 - [x] [Login: no server password field when the server has none](issues/login-hide-server-password.md)
+- [x] [WHIP streams: viewing problems](issues/whip-stream-viewing.md)
+  - [x] [Streams: a message when the browser cannot play them](issues/stream-unsupported-message.md)
+  - [x] [Watch your own WHIP stream](issues/watch-own-whip-stream.md)
+  - [x] [Previews for WHIP streams](issues/whip-stream-previews.md)

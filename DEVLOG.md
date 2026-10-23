@@ -2290,3 +2290,9 @@ From `meta/research/discord-comparison.md`.
 
 - GET /api/server gives `{"password": bool}`: true with Murmur (unknown) or the built-in server with MUMBLE_PASSWORD. The login page shows the server password field only after a true answer or a failed request (older servers), so Kallisti servers without a password never show it.
 - The login screen opens on "Log in" (guests on "Guest" after a guest error such as a name in use). The server password field is on the Guest tab only: the built-in server checks it only for names without an account. The perf and voice scripts click the Guest tab first.
+
+## WHIP streams: viewing
+
+- A click on LIVE did nothing in two cases: the streamer's own stream (a WHIP stream belongs to the account's voice session, and nobody could watch their own stream), and a browser without WebCodecs (Safari in Lockdown Mode: no stream client, so no handler). Now an own stream from OBS may be watched (server: `Hub.Watch` allows it for an ingest; client: `watchAction`, and the sidebar's own badge is a button while `obsLive`), and a browser without WebCodecs says so in a toast.
+- WebKit decodes our H.264 (Annex B, no description) fine: checked in the iOS 27 simulator's Safari.
+- WHIP streams had no preview: browsers make their own. With ffmpeg (as for upload previews), the server now makes a 320px JPEG of a keyframe (`thumbs.Maker.Still`, stdin to stdout, `-f h264`, pipe only): at the first keyframe, then at most every 15 s, one at a time; a stop cancels one in the making. Checked end to end with the server in podman (the sandbox blocks UDP) and ffmpeg's WHIP muxer on the host: the viewer got the preview, the streamer watched their own stream, and a browser without VideoDecoder got the message.
