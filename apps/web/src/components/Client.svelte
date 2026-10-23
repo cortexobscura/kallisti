@@ -1745,6 +1745,7 @@
       recording={recorded}
       live={liveSessions}
       previews={text.streamPreviews}
+      obsLive={goLive.obsLive}
       onWatch={watchStream}
       directs={directList}
       currentDirect={directChatId}

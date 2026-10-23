@@ -35,6 +35,7 @@
     directs = [],
     live = new Set(),
     previews = {},
+    obsLive = false,
     onWatch,
     currentDirect = null,
     onOpenDirect,
@@ -84,6 +85,9 @@
     live?: ReadonlySet<number>;
     // Thumbnails of the streams (shown on the LIVE button).
     previews?: Readonly<Record<number, string>>;
+    // Our own screen stream comes from OBS: no self-preview, so it may be
+    // watched.
+    obsLive?: boolean;
     onWatch?: (session: number) => void;
     // Stored direct chats as listed, pinned ones first (see lib/directList;
     // mentions: unread messages).
@@ -186,7 +190,7 @@
             </button>
             {#each [streamId(user.session, false), streamId(user.session, true)].filter((id) => live.has(id)) as id (id)}
               {@const what = isCamera(id) ? "camera" : "screen"}
-              {#if user.session === server.session}
+              {#if user.session === server.session && !(obsLive && !isCamera(id))}
                 <span class="live" title="You are sharing your {what}">{@render badge(id)}</span>
               {:else}
                 <span class="live-wrap">
