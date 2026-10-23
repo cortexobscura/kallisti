@@ -3,6 +3,7 @@ package stream
 import (
 	"encoding/binary"
 	"errors"
+	"sync/atomic"
 )
 
 // Ingest is a stream that the server feeds itself (WHIP from OBS) for a
@@ -12,8 +13,13 @@ type Ingest struct {
 	h       *Hub
 	session uint32
 	hooks   IngestHooks
-	stopped bool // by Stop (no Ended hook)
+	stopped bool        // by Stop (no Ended hook)
+	ended   atomic.Bool // the hub ended it (see Ended)
 }
+
+// Ended: the hub ended the stream. Its Ended hook can come before
+// StartIngest's caller has it.
+func (in *Ingest) Ended() bool { return in.ended.Load() }
 
 // IngestHooks are called under the hub's lock: they must not block or call
 // the hub.

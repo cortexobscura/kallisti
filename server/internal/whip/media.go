@@ -199,13 +199,24 @@ func (f *feed) rebind(voice uint32) { f.session.Store(voice) }
 // waiting: for a voice session, after orphan.
 func (f *feed) waiting() bool { return f.session.Load() == 0 }
 
+// live is the stream's ingest, nil once the hub ended it (an end can come
+// between StartIngest and its store in start).
+func (f *feed) live() *stream.Ingest {
+	in := f.ingest.Load()
+	if in != nil && in.Ended() {
+		f.ingest.CompareAndSwap(in, nil)
+		return nil
+	}
+	return in
+}
+
 // started: the stream is live (it had its first keyframe).
-func (f *feed) started() bool { return f.ingest.Load() != nil }
+func (f *feed) started() bool { return f.live() != nil }
 
 // picture forwards a picture; an error ends the session (the stream
 // cannot start, or a new size is refused).
 func (f *feed) picture(t timed) error {
-	in := f.ingest.Load()
+	in := f.live()
 	if t.lost && in != nil {
 		in.Dropped()
 	}
@@ -225,11 +236,14 @@ func (f *feed) picture(t timed) error {
 		return nil // waiting for a keyframe (asked for, see session), or for the owner
 	case in == nil:
 		var err error
-		if in, err = f.start(); err != nil {
+		if in, err = f.start(); err != nil || in == nil {
 			return err
 		}
 	case changed:
 		if err := in.Configure(f.config); err != nil {
+			if in.Ended() { // orphaned meanwhile: the next keyframe starts it again
+				return nil
+			}
 			return sizeError(err, f.config)
 		}
 	}
@@ -276,12 +290,16 @@ func (f *feed) start() (*stream.Ingest, error) {
 	if f.stopped {
 		return nil, errors.New("stopped")
 	}
-	in, err := f.hub.StartIngest(f.session.Load(), f.config, f.hooks)
+	voice := f.session.Load()
+	if voice == 0 { // orphaned meanwhile: not yet
+		return nil, nil
+	}
+	in, err := f.hub.StartIngest(voice, f.config, f.hooks)
 	if err != nil {
 		return nil, sizeError(err, f.config)
 	}
 	f.ingest.Store(in)
 	f.previewAt = time.Time{} // a preview for the new stream soon
-	slog.Info("stream from OBS is live", "session", f.session.Load(), "codec", f.config.Codec, "width", f.config.Width, "height", f.config.Height, "audio", f.config.Audio)
+	slog.Info("stream from OBS is live", "session", voice, "codec", f.config.Codec, "width", f.config.Width, "height", f.config.Height, "audio", f.config.Audio)
 	return in, nil
 }

@@ -116,12 +116,8 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	voice, ok := h.Session(name)
-	if !ok {
-		http.Error(w, "connect to Kallisti and join a voice channel first", http.StatusForbidden)
-		return
-	}
-	if err := h.Hub.MayStream(voice); err != nil {
+	voice, err := h.voiceFor(name)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -302,4 +298,14 @@ func (h *Handler) api(o offer) (*webrtc.API, error) {
 		return nil, err
 	}
 	return webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithInterceptorRegistry(i), webrtc.WithSettingEngine(h.Settings)), nil
+}
+
+// voiceFor is the account's voice session, if it may stream there now (a
+// session can also be in text only).
+func (h *Handler) voiceFor(name string) (uint32, error) {
+	voice, ok := h.Session(name)
+	if !ok {
+		return 0, errors.New("connect to Kallisti and join a voice channel first")
+	}
+	return voice, h.Hub.MayStream(voice)
 }

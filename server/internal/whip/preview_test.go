@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pion/rtp"
+
 	"kallisti.chat/server/internal/stream"
 )
 
@@ -96,5 +98,37 @@ func TestStopEndsAPreview(t *testing.T) {
 	case <-landed:
 		t.Fatal("a preview after the stop")
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// An ingest the hub ended before start stored it is not kept: the next
+// keyframe starts the stream again.
+func TestAnEndedIngestIsNotKept(t *testing.T) {
+	h, v, _ := hubWithViewer()
+	f := newFeed(h, 1, false, 1<<20, stream.IngestHooks{Keyframe: func() {}, Ended: func() {}})
+	frames := clipFrames(t)
+	vin := newVideoIn()
+	feedAll := func(pkts []*rtp.Packet) {
+		for i, p := range pkts {
+			for _, pic := range vin.push(p, int64(i)*1000) {
+				f.picture(pic)
+			}
+		}
+	}
+	feedAll(packets(frames, 0, 0))
+	in := f.ingest.Load()
+	if in == nil {
+		t.Fatal("no stream")
+	}
+	v.mu.Lock()
+	v.channels[1] = 6
+	v.mu.Unlock()
+	h.Moved(1, 6) // the hub ends it; the hook here does not orphan (as if it came too early)
+	if f.started() {
+		t.Fatal("an ended ingest counts as started")
+	}
+	feedAll(packets(frames, 100, 90_000))
+	if s := h.Streams(); len(s) != 1 || s[0].Channel != 6 {
+		t.Fatalf("streams %v", s)
 	}
 }

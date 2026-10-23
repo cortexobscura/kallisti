@@ -143,9 +143,11 @@ func (s *session) run() {
 	}
 	noKeyBy := time.Now().Add(cmp.Or(s.h.KeyTimeout, keyTimeout))
 	var rejoinBy time.Time
-	// rejoin gives the stream the owner's voice session, if there is one.
+	// rejoin gives the stream the owner's voice session, once it may stream
+	// there (after a refresh the new tab is in text only for a moment).
 	rejoin := func(now time.Time) bool {
-		voice, ok := s.h.Session(s.account)
+		voice, err := s.h.voiceFor(s.account)
+		ok := err == nil
 		if ok {
 			s.feed.rebind(voice)
 			noKeyBy = now.Add(cmp.Or(s.h.KeyTimeout, keyTimeout))

@@ -145,8 +145,8 @@ func TestIngestEnds(t *testing.T) {
 	in, _ := h.StartIngest(1, obs, k.hooks())
 	h.Watch(2, 1)
 	h.Moved(1, 6)
-	if k.ended != 1 || len(h.Streams()) != 0 || !slices.Contains(sinks[2].types(), "ended") {
-		t.Fatalf("ended %d, streams %v", k.ended, h.Streams())
+	if k.ended != 1 || !in.Ended() || len(h.Streams()) != 0 || !slices.Contains(sinks[2].types(), "ended") {
+		t.Fatalf("ended %d (%v), streams %v", k.ended, in.Ended(), h.Streams())
 	}
 	in.Stop() // too late: nothing to do
 	if k.ended != 1 {

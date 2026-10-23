@@ -460,8 +460,11 @@ func (h *Hub) endLocked(id uint32) bool {
 	}
 	if st.ingest == nil {
 		h.toStreamer(id, map[string]any{"type": "stopped"})
-	} else if !st.ingest.stopped {
-		st.ingest.hooks.Ended()
+	} else {
+		st.ingest.ended.Store(true)
+		if !st.ingest.stopped {
+			st.ingest.hooks.Ended()
+		}
 	}
 	return true
 }

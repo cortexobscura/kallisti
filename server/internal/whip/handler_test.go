@@ -46,7 +46,7 @@ func setup(t *testing.T) (*Handler, *httptest.Server, *stream.Hub, *viewer) {
 }
 
 // setupVoice is setup with the voice channels and alice's session (0: not
-// connected), to change.
+// connected; out of voice she is still connected), to change.
 func setupVoice(t *testing.T) (*Handler, *httptest.Server, *stream.Hub, *testVoice, *viewer) {
 	hub, v, w := hubWithViewer()
 	tv := &testVoice{voice: v}
@@ -264,17 +264,19 @@ func TestStreamOutlivesARefresh(t *testing.T) {
 	defer close(stop)
 	go o.send(clipFrames(t), stop)
 	eventually(t, "the stream", func() bool { return len(hub.Streams()) == 1 })
-	v.alice.Store(0)
 	v.move(hub, 1, 0)
 	if len(hub.Streams()) != 0 {
 		t.Fatal("the stream went on without its voice session")
 	}
+	v.alice.Store(4)                    // the new tab, in text only at first
 	time.Sleep(1500 * time.Millisecond) // the refresh
+	if h.Sessions() != 1 || len(hub.Streams()) != 0 {
+		t.Fatalf("before voice: %d sessions, streams %v", h.Sessions(), hub.Streams())
+	}
 	before := len(w.pictures())
 	v.mu.Lock()
 	v.channels[4] = 5
 	v.mu.Unlock()
-	v.alice.Store(4)
 	eventually(t, "the stream on the new session", func() bool {
 		s := hub.Streams()
 		return len(s) == 1 && s[0].Session == 4 && s[0].Channel == 5
@@ -310,8 +312,11 @@ func TestStreamEndsWhenTheOwnerLeaves(t *testing.T) {
 	defer close(stop)
 	go o.send(clipFrames(t), stop)
 	eventually(t, "the stream", func() bool { return len(hub.Streams()) == 1 })
-	v.alice.Store(0)
-	v.move(hub, 1, 0)
+	v.move(hub, 1, 0) // still connected, in text only
+	time.Sleep(100 * time.Millisecond)
+	if h.Sessions() != 1 {
+		t.Fatal("ended before the rejoin time")
+	}
 	eventually(t, "the session's end", func() bool { return h.Sessions() == 0 })
 	eventually(t, "OBS's connection closed", func() bool {
 		s := o.pc.ConnectionState()
