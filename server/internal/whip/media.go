@@ -94,8 +94,9 @@ func (d *h264Depacketizer) Unmarshal(payload []byte) ([]byte, error) {
 // were lost or broken (viewers need a keyframe).
 type timed struct {
 	picture
-	ts   uint64
-	lost bool
+	ts      uint64
+	arrival int64 // µs since the session began
+	lost    bool
 }
 
 func (v *videoIn) push(p *rtp.Packet, arrival int64) []timed {
@@ -111,7 +112,7 @@ func (v *videoIn) push(p *rtp.Packet, arrival int64) []timed {
 			out = append(out, timed{lost: true})
 			continue
 		}
-		out = append(out, timed{picture: pic, ts: ts, lost: s.PrevDroppedPackets > 0})
+		out = append(out, timed{picture: pic, ts: ts, arrival: arrival, lost: s.PrevDroppedPackets > 0})
 	}
 	return out
 }
@@ -129,7 +130,8 @@ type feed struct {
 	now     func() time.Time
 	config  stream.Config // the pictures' goroutine's
 	ingest  atomic.Pointer[stream.Ingest]
-	sClock  clock // the sound goroutine's
+	sClock  clock  // the sound goroutine's
+	av      avSync // pictures on the sound's timeline
 	// The stream starts and stops under mu: a stop while it starts wins.
 	mu      sync.Mutex
 	stopped bool
@@ -195,6 +197,9 @@ func (f *feed) picture(t timed) error {
 	if t.data == nil {
 		return nil
 	}
+	if f.audio != "" {
+		t.ts = uint64(f.av.picture(int64(t.ts), t.arrival))
+	}
 	changed := false
 	if t.codec != "" {
 		c := stream.Config{Codec: t.codec, Width: t.width, Height: t.height, Audio: f.audio}
@@ -233,6 +238,7 @@ func sizeError(err error, c stream.Config) error {
 // sound forwards an Opus packet (once the stream is live).
 func (f *feed) sound(p *rtp.Packet, arrival int64) {
 	ts := f.sClock.micros(p.Timestamp, arrival)
+	f.av.noteSound(int64(ts), arrival)
 	if in := f.ingest.Load(); in != nil && len(p.Payload) > 0 && f.sounds.Allow() {
 		in.Sound(ts, p.Payload)
 	}
