@@ -51,6 +51,40 @@ docker compose -f deploy/compose.yml up -d --remove-orphans
   would keep port 64738). Murmur's registrations, channels and ACLs are not
   taken over.
 
+### Cloudflare DNS-01 without public HTTP port 80
+
+For the built-in Mumble server when public port 80 cannot be opened, add
+`deploy/compose.dns01.yml` on top of `deploy/compose.yml` with Docker Compose
+2.24.4 or later (`!override` is required). It builds Caddy 2.11.7 with the
+Cloudflare DNS plugin, obtains the same certificate through
+DNS-01, and keeps HTTPS 443, native Mumble TCP/UDP 64738, WHIP UDP 8189,
+certificate sync, and the `deploy_` volumes. It does not publish HTTP port 80;
+HTTP URLs will not redirect to HTTPS. Run only one Compose variant at a time.
+
+Create a Cloudflare API token limited to the relevant zone with `Zone.Zone:Read`
+and `Zone.DNS:Edit` permissions. Store it as a nonempty, single-line file **outside
+this repository**, readable only by the deployment operator (for example,
+mode 0600). Add `CLOUDFLARE_API_TOKEN_FILE=/absolute/path/to/token` to
+`deploy/.env` alongside `DOMAIN` and your other settings; do not put the token
+itself in `.env` or in a command line. The path must exist on the machine
+running Compose. The token is mounted read-only, loaded into Caddy's process
+environment at startup, and is still accessible to Docker administrators;
+protect Docker access and the token file. Caddy fails to start if the file is
+missing or empty.
+
+```sh
+docker compose -f deploy/compose.yml -f deploy/compose.dns01.yml config --quiet
+docker compose -f deploy/compose.yml -f deploy/compose.dns01.yml up -d --build --remove-orphans
+```
+
+Use a DNS-only Cloudflare record for `DOMAIN` if Mumble clients connect to
+that name: Cloudflare's web proxy does not forward native Mumble or WHIP
+traffic. Point the name to this host, open HTTPS 443 and the native ports,
+and verify both HTTPS and a Mumble connection. Watch `caddy` and `cert-sync`
+logs if issuance or native TLS fails. Before switching back to
+`deploy/compose.yml`, open port 80 for its usual HTTP-based certificate
+issuance; keep the `deploy_` data volumes and your `.env`.
+
 ## In front of an existing Murmur
 
 `deploy/compose.murmur.yml` runs Kallisti and Caddy, without a Mumble port:

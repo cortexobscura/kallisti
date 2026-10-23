@@ -1,0 +1,19 @@
+# DNS-01 issues certificates without exposing HTTP port 80; native Mumble bypasses this proxy.
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+	request_body {
+		max_size 11MB
+	}
+	# Access logs are off: file URLs contain bearer keys.
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+	}
+	reverse_proxy kallisti:8080
+}

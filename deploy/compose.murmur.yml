@@ -35,7 +35,7 @@ services:
       - kallisti-data:/data # database, uploads
 
   caddy:
-    image: docker.io/library/caddy:2.11.3-alpine
+    image: docker.io/library/caddy:2.11.7-alpine
     restart: unless-stopped
     read_only: true
     security_opt:
