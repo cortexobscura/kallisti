@@ -1,0 +1,153 @@
+package sidecar
+
+import (
+	"fmt"
+	"testing"
+
+	"kallisti.chat/server/internal/mumble"
+	"kallisti.chat/server/internal/store"
+)
+
+func addSticker(t *testing.T, h *Hub, name, pack string) store.Sticker {
+	t.Helper()
+	s, err := h.store.AddSticker(store.Sticker{Name: name, Pack: pack, Description: "a " + name, Emoji: "👋", Type: "image/png", Data: []byte("\x89PNG"), Author: "admin"}, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestReadyAndChangesSendTheStickers(t *testing.T) {
+	h := newHub(t, "general")
+	s := addSticker(t, h, "wave", "hello")
+	h.StickersChanged()
+	c := h.Connect()
+	defer c.Close()
+	c.SetIdentity(mumble.Identity{Session: 4, Name: "alice"})
+	m := next(t, c)
+	list, _ := m["stickers"].([]any)
+	if len(list) != 1 {
+		t.Fatalf("ready %v", m["stickers"])
+	}
+	got := list[0].(map[string]any)
+	if got["id"] != float64(s.ID) || got["name"] != "wave" || got["pack"] != "hello" || got["description"] != "a wave" || got["emoji"] != "👋" || got["url"] != fmt.Sprintf("/api/stickers/%d", s.ID) {
+		t.Fatalf("sticker %v", got)
+	}
+	addSticker(t, h, "cat", "")
+	h.StickersChanged()
+	if m := next(t, c); m["type"] != "stickers" || len(m["stickers"].([]any)) != 2 {
+		t.Fatalf("change %v", m)
+	}
+}
+
+func TestReadyHasAnEmptyStickerList(t *testing.T) {
+	h := newHub(t, "general")
+	c := h.Connect()
+	defer c.Close()
+	c.SetIdentity(mumble.Identity{Session: 4, Name: "alice"})
+	if m := next(t, c); m["stickers"] == nil || len(m["stickers"].([]any)) != 0 {
+		t.Fatalf("got %v", m["stickers"])
+	}
+}
+
+func TestStickerTokensAreForManagers(t *testing.T) {
+	h := newHub(t, "general")
+	h.SetVoice(&fakeVoice{}, "")
+	admin := readyAs(t, h, 1, "admin")
+	bob := readyAs(t, h, 2, "bob")
+	addSticker(t, h, "taken", "")
+	h.StickersChanged()
+	next(t, admin)
+	next(t, bob)
+	bob.Handle([]byte(`{"type":"sticker-token","name":"wave"}`))
+	if m := next(t, bob); m["type"] != "error" || m["about"] != "manage" {
+		t.Fatalf("bob got %v", m)
+	}
+	long := fmt.Sprintf("%0101d", 0)
+	for _, bad := range []string{`"name":"Wave"`, `"name":"taken"`, `"name":"wave","emoji":"abc"`, `"name":"wave","description":"` + long + `"`, `"name":"wave","pack":"` + long + `"`} {
+		admin.Handle([]byte(`{"type":"sticker-token",` + bad + `}`))
+		if m := next(t, admin); m["type"] != "error" || m["about"] != "manage" {
+			t.Fatalf("%s: %v", bad, m)
+		}
+	}
+	admin.Handle([]byte(`{"type":"sticker-token","name":"wave","description":"Hello","emoji":"👋","pack":"greetings"}`))
+	m := next(t, admin)
+	token, _ := m["token"].(string)
+	if m["type"] != "upload-token" || token == "" {
+		t.Fatalf("got %v", m)
+	}
+	// For one sticker upload, not for emoji or files.
+	st, ok := h.RedeemStickerToken(token)
+	if !ok || st.Author != "admin" || st.Name != "wave" || st.Description != "Hello" || st.Emoji != "👋" || st.Pack != "greetings" {
+		t.Fatalf("redeem: %+v %v", st, ok)
+	}
+	if _, ok := h.RedeemStickerToken(token); ok {
+		t.Fatal("redeemed twice")
+	}
+	admin.Handle([]byte(`{"type":"sticker-token","name":"wave"}`))
+	token = next(t, admin)["token"].(string)
+	if _, _, ok := h.RedeemEmojiToken(token); ok {
+		t.Fatal("a sticker token added an emoji")
+	}
+	admin.Handle([]byte(`{"type":"sticker-token","name":"wave"}`))
+	if _, ok := h.RedeemUploadToken(next(t, admin)["token"].(string)); ok {
+		t.Fatal("a sticker token uploaded a file")
+	}
+	admin.Handle([]byte(`{"type":"emoji-token","name":"party"}`))
+	if _, ok := h.RedeemStickerToken(next(t, admin)["token"].(string)); ok {
+		t.Fatal("an emoji token added a sticker")
+	}
+}
+
+func TestStickerTokensAreRefusedAtTheLimit(t *testing.T) {
+	h := newHub(t, "general")
+	h.SetVoice(&fakeVoice{}, "")
+	admin := readyAs(t, h, 1, "admin")
+	for i := range store.MaxStickers {
+		addSticker(t, h, fmt.Sprintf("s%d", i), "")
+	}
+	h.StickersChanged()
+	next(t, admin)
+	admin.Handle([]byte(`{"type":"sticker-token","name":"more"}`))
+	if m := next(t, admin); m["type"] != "error" {
+		t.Fatalf("got %v", m)
+	}
+}
+
+func TestManagersRenameAndDeleteStickers(t *testing.T) {
+	h := newHub(t, "general")
+	h.SetVoice(&fakeVoice{}, "")
+	s := addSticker(t, h, "wave", "")
+	addSticker(t, h, "cat", "")
+	h.StickersChanged()
+	admin := readyAs(t, h, 1, "admin")
+	bob := readyAs(t, h, 2, "bob")
+	req := func(c *Conn, body string) { c.Handle([]byte(fmt.Sprintf(body, s.ID))) }
+	req(bob, `{"type":"delete-sticker","sticker":%d}`)
+	if m := next(t, bob); m["type"] != "error" || m["about"] != "manage" {
+		t.Fatalf("bob got %v", m)
+	}
+	req(admin, `{"type":"rename-sticker","sticker":%d,"name":"cat"}`)
+	if m := next(t, admin); m["type"] != "error" {
+		t.Fatalf("rename to a taken name: %v", m)
+	}
+	req(admin, `{"type":"rename-sticker","sticker":%d,"name":"hi","description":"Hi","emoji":"🙂","pack":"p"}`)
+	for _, c := range []*Conn{admin, bob} {
+		m := next(t, c)
+		if m["type"] != "stickers" || fmt.Sprint(m["stickers"]) == "" {
+			t.Fatalf("after rename: %v", m)
+		}
+	}
+	if got, _ := h.store.StickerByID(s.ID); got.Name != "hi" || got.Pack != "p" || got.Emoji != "🙂" {
+		t.Fatalf("renamed: %+v", got)
+	}
+	req(admin, `{"type":"delete-sticker","sticker":%d}`)
+	if m := next(t, bob); m["type"] != "stickers" || len(m["stickers"].([]any)) != 1 {
+		t.Fatalf("after delete: %v", m)
+	}
+	next(t, admin)
+	req(admin, `{"type":"delete-sticker","sticker":%d}`)
+	if m := next(t, admin); m["type"] != "error" {
+		t.Fatalf("deleted twice: %v", m)
+	}
+}

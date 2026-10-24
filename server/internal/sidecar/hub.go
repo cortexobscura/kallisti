@@ -270,7 +270,11 @@ type Hub struct {
 	// (also of personal emoji lists, see useremoji.go).
 	emoji   []wireEmoji
 	emojiMu sync.Mutex
-	slow    slowPosts // see slowmode.go
+	// The stickers (see stickers.go), under mu; stickersMu: one change at
+	// a time.
+	stickers   []wireSticker
+	stickersMu sync.Mutex
+	slow       slowPosts // see slowmode.go
 }
 
 // emoji: a token for adding this custom emoji (not for a file); personal:
@@ -280,6 +284,7 @@ type uploadToken struct {
 	emoji    string
 	user     uint32
 	personal bool
+	sticker  *store.Sticker // a token for adding this sticker
 	expires  time.Time
 }
 
@@ -287,6 +292,9 @@ func NewHub(s *store.Store, now func() time.Time) (*Hub, error) {
 	h := &Hub{store: s, now: now, conns: map[*Conn]struct{}{}, tokens: map[string]uploadToken{}}
 	if err := h.reloadChannels(); err != nil {
 		return nil, err
+	}
+	if err := h.loadStickers(); err != nil {
+		return h, err
 	}
 	return h, h.loadEmoji()
 }
@@ -520,39 +528,42 @@ func toWire(m store.Message) wireMessage {
 }
 
 type request struct {
-	Type      string          `json:"type"`
-	Name      string          `json:"name"`       // create-channel, rename-channel; emoji-token, delete-emoji; the user-emoji requests
-	To        string          `json:"to"`         // rename-user-emoji: the new name
-	Channels  []int64         `json:"channels"`   // order-channels
-	Category  int64           `json:"category"`   // create-channel, set-category, rename-category, delete-category
-	Cats      []int64         `json:"categories"` // order-categories
-	Voice     uint32          `json:"voice"`      // voice-chat, start-recording, stop-recording: the Mumble channel; create-private-voice: the parent
-	Channel   int64           `json:"channel"`
-	Before    int64           `json:"before"`
-	Text      string          `json:"text"`
-	Upload    string          `json:"upload"`    // key of an upload to attach
-	Message   int64           `json:"message"`   // edit-message, delete-message, create-thread
-	Reply     int64           `json:"reply"`     // send: the message it answers
-	NoPing    bool            `json:"noPing"`    // send: the reply does not ping
-	Nonce     string          `json:"nonce"`     // send: the client's id for it, the same on a retry (see store.MessageByNonce)
-	Author    string          `json:"author"`    // search: only this author
-	User      uint32          `json:"user"`      // set-moderator, set-admin, dm, bio, delete-messages: registered user id
-	Moderator bool            `json:"moderator"` // set-moderator
-	Admin     bool            `json:"admin"`     // set-admin
-	Users     []uint32        `json:"users"`     // set-listen-only: who may speak
-	Messages  []int64         `json:"messages"`  // previews
-	Emoji     string          `json:"emoji"`     // react; add-user-emoji, remove-emoji-image
-	On        bool            `json:"on"`        // react: add (or remove); pin; away; set-guests-read-only
-	Status    string          `json:"status"`    // set-status: "online", "idle" or "dnd"
-	Level     string          `json:"level"`     // set-captcha
-	Until     int64           `json:"until"`     // set-status: end of the custom status (Unix ms)
-	Session   uint32          `json:"session"`   // ban, time-out, delete-messages: the user's voice server session
-	Seconds   int64           `json:"seconds"`   // ban (0: forever), time-out (0: end it), delete-messages (the last seconds), set-slow-mode (0: off)
-	Private   bool            `json:"private"`   // create-channel: a private one
-	Uses      int             `json:"uses"`      // create-invite (0: unlimited; seconds 0: for ever)
-	Invite    int64           `json:"invite"`    // delete-invite
-	Token     string          `json:"token"`     // redeem-invite
-	Rules     *msgrules.Rules `json:"rules"`     // set-message-rules
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`       // create-channel, rename-channel; emoji-token, delete-emoji; the user-emoji requests
+	To          string          `json:"to"`         // rename-user-emoji: the new name
+	Channels    []int64         `json:"channels"`   // order-channels
+	Category    int64           `json:"category"`   // create-channel, set-category, rename-category, delete-category
+	Cats        []int64         `json:"categories"` // order-categories
+	Voice       uint32          `json:"voice"`      // voice-chat, start-recording, stop-recording: the Mumble channel; create-private-voice: the parent
+	Channel     int64           `json:"channel"`
+	Before      int64           `json:"before"`
+	Text        string          `json:"text"`
+	Upload      string          `json:"upload"`      // key of an upload to attach
+	Message     int64           `json:"message"`     // edit-message, delete-message, create-thread
+	Reply       int64           `json:"reply"`       // send: the message it answers
+	NoPing      bool            `json:"noPing"`      // send: the reply does not ping
+	Nonce       string          `json:"nonce"`       // send: the client's id for it, the same on a retry (see store.MessageByNonce)
+	Author      string          `json:"author"`      // search: only this author
+	User        uint32          `json:"user"`        // set-moderator, set-admin, dm, bio, delete-messages: registered user id
+	Moderator   bool            `json:"moderator"`   // set-moderator
+	Admin       bool            `json:"admin"`       // set-admin
+	Users       []uint32        `json:"users"`       // set-listen-only: who may speak
+	Messages    []int64         `json:"messages"`    // previews
+	Emoji       string          `json:"emoji"`       // react; add-user-emoji, remove-emoji-image; sticker-token, rename-sticker: the related emoji
+	Sticker     int64           `json:"sticker"`     // rename-sticker, delete-sticker
+	Description string          `json:"description"` // sticker-token, rename-sticker
+	Pack        string          `json:"pack"`        // sticker-token, rename-sticker
+	On          bool            `json:"on"`          // react: add (or remove); pin; away; set-guests-read-only
+	Status      string          `json:"status"`      // set-status: "online", "idle" or "dnd"
+	Level       string          `json:"level"`       // set-captcha
+	Until       int64           `json:"until"`       // set-status: end of the custom status (Unix ms)
+	Session     uint32          `json:"session"`     // ban, time-out, delete-messages: the user's voice server session
+	Seconds     int64           `json:"seconds"`     // ban (0: forever), time-out (0: end it), delete-messages (the last seconds), set-slow-mode (0: off)
+	Private     bool            `json:"private"`     // create-channel: a private one
+	Uses        int             `json:"uses"`        // create-invite (0: unlimited; seconds 0: for ever)
+	Invite      int64           `json:"invite"`      // delete-invite
+	Token       string          `json:"token"`       // redeem-invite
+	Rules       *msgrules.Rules `json:"rules"`       // set-message-rules
 }
 
 // Handle answers one request from the browser.
@@ -688,6 +699,9 @@ func (c *Conn) Handle(raw []byte) {
 		return
 	case "delete-emoji":
 		c.deleteEmoji(*id, req.Name)
+		return
+	case "sticker-token", "rename-sticker", "delete-sticker":
+		c.stickerRequest(*id, req)
 		return
 	case "user-emoji-token", "add-user-emoji", "rename-user-emoji", "delete-user-emoji", "remove-emoji-image":
 		c.userEmoji(*id, req)
@@ -1179,7 +1193,7 @@ func (h *Hub) issueToken(t uploadToken) string {
 // RedeemUploadToken returns the author a file upload token was issued to.
 func (h *Hub) RedeemUploadToken(token string) (string, bool) {
 	t, ok := h.redeem(token)
-	if !ok || t.emoji != "" || t.personal {
+	if !ok || t.emoji != "" || t.personal || t.sticker != nil {
 		return "", false
 	}
 	return t.author, true
