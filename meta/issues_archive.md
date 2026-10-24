@@ -264,3 +264,4 @@
   - [x] [Sticker messages](issues/sticker-messages.md)
   - [x] [Stickers in the web app: manage](issues/stickers-manage.md)
   - [x] [Stickers in the web app: send and show](issues/stickers-send.md)
+- [x] [Stickers on the website](issues/site-stickers.md)
