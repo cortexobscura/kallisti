@@ -17,3 +17,8 @@
 - [ ] [Mobile apps (Android and iOS) with background calls](issues/mobile-apps.md) (not started)
 - [ ] [Desktop app: links do nothing, videos don't play (Linux)](issues/desktop-links-and-video.md)
 - [ ] [Stickers](issues/stickers.md)
+- [ ] [Website and README: show what Kallisti does now](issues/site-features-page.md)
+  - [ ] [README update](issues/site-readme-update.md)
+  - [ ] [Features page](issues/site-features-list.md)
+  - [ ] [Screenshots of the new features](issues/site-new-screenshots.md)
+  - [ ] [Landing page texts](issues/site-landing-texts.md)
