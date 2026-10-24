@@ -1,0 +1,19 @@
+# WHIP streams: picture and sound out of sync
+
+## Summary
+
+Kallisti TV (ffmpeg over WHIP) is out of sync on some items (music videos, some commercials) and in sync on others; the files themselves are in sync. Sound also went away during one break and came back; after a refresh it played for a second. The bot pairs each picture with its sound and stamps both by count, so the suspect is the server's A/V correction (`whip/sync.go`), which moves pictures by the arrival delay it sees, or the viewer's playout.
+
+## Requirements
+
+- First a measurement: the server logs per WHIP stream, every 10 s, the sound's and the pictures' drift and the correction it applies.
+- Then a fix from what the log shows.
+
+## Acceptance Criteria
+
+- The log shows whether the correction moves while the stream is out of sync.
+- After the fix, music videos and commercials from Kallisti TV are in sync for a viewer.
+
+## Notes
+
+- See [WHIP streams: sound drops after a while](whip-av-drift.md) for why the correction exists (OBS stamps sound and pictures on different clocks).
