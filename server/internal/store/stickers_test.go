@@ -79,3 +79,37 @@ func TestStickerLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A sticker message keeps the sticker's id, and its name also once the
+// sticker is deleted; replies quote it by name. A deleted sticker cannot
+// be sent.
+func TestStickerMessages(t *testing.T) {
+	s := open(t)
+	s.EnsureChannels([]string{"general"})
+	cs, _ := s.Channels()
+	general := cs[0].ID
+	at := time.UnixMilli(1_000_000).UTC()
+	st, _ := s.AddSticker(Sticker{Name: "wave", Type: "image/png", Data: []byte("x"), Author: "alice"}, at)
+	m, err := s.AddMessage(NewMessage{ChannelID: general, Author: "bob", Text: "[sticker: wave]", StickerID: st.ID, At: at})
+	if err != nil || m.Sticker == nil || m.Sticker.ID != st.ID || m.Sticker.Name != "wave" {
+		t.Fatalf("add: %+v %v", m, err)
+	}
+	r, err := s.AddMessage(NewMessage{ChannelID: general, Author: "alice", Text: "hi", ReplyTo: m.ID, At: at})
+	if err != nil || r.Reply == nil || r.Reply.Text != "[sticker: wave]" {
+		t.Fatalf("reply: %+v %v", r.Reply, err)
+	}
+	s.DeleteSticker(st.ID)
+	got, err := s.MessageByID(m.ID)
+	if err != nil || got.Sticker == nil || got.Sticker.Name != "wave" {
+		t.Fatalf("after delete: %+v %v", got.Sticker, err)
+	}
+	if h, _ := s.History(general, 0, 10); len(h) != 2 || h[0].Sticker == nil || h[1].Sticker != nil {
+		t.Fatalf("history: %+v", h)
+	}
+	if _, err := s.AddMessage(NewMessage{ChannelID: general, Author: "bob", Text: "[sticker: wave]", StickerID: st.ID, At: at}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a deleted sticker sent: %v", err)
+	}
+	if _, err := s.AddMessage(NewMessage{ChannelID: general, Author: "bob", Text: "x", StickerID: 9999, At: at}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an unknown sticker sent: %v", err)
+	}
+}

@@ -38,15 +38,25 @@ type Message struct {
 	PinnedAt  time.Time // zero: not pinned
 	// The author was registered on the Mumble server (a verified name),
 	// with this user id (nil: not known, from before ids were kept).
-	Verified  bool
-	AuthorID  *uint32
-	Upload    *Upload // optional attachment
-	Reply     *Quote  // the message it answers
+	Verified bool
+	AuthorID *uint32
+	Upload   *Upload // optional attachment
+	// A sticker message (its Text: "[sticker: name]" for clients that
+	// show text): the sticker, also once it was deleted.
+	Sticker   *MessageSticker
+	Reply     *Quote // the message it answers
 	Reactions []Reaction
 	// "everyone" or "here": the message mentions all (by a moderator).
 	MentionAll string
 	NoPing     bool    // a reply that does not ping the original's author
 	Thread     *Thread // the thread started from it
+}
+
+// MessageSticker is the sticker a message is (its name now, also once
+// deleted).
+type MessageSticker struct {
+	ID   int64
+	Name string
 }
 
 // Quote is the message a reply answers (Author empty: deleted since).
@@ -66,6 +76,7 @@ type NewMessage struct {
 	Text       string
 	At         time.Time
 	UploadID   int64
+	StickerID  int64  // 0: not a sticker; else one that is not deleted
 	ReplyTo    int64  // 0: not a reply; else a message in the same channel
 	MentionAll string // "", "here" or "everyone" (see Message)
 	NoPing     bool   // see Message
@@ -388,6 +399,7 @@ func migrate(db *sql.DB) error {
 		{"no_ping", "INTEGER NOT NULL DEFAULT 0"},
 		{"nonce", "TEXT"},        // the sender's id for the send (see MessageByNonce)
 		{"nonce_author", "TEXT"}, // see nonceAuthor
+		{"sticker_id", "INTEGER"},
 	}); err != nil {
 		return err
 	}
@@ -708,6 +720,18 @@ func (s *Store) AddMessage(n NewMessage) (Message, error) {
 		}
 		upload = sql.NullInt64{Int64: n.UploadID, Valid: true}
 	}
+	var sticker sql.NullInt64
+	var ms *MessageSticker
+	if n.StickerID != 0 {
+		st := MessageSticker{ID: n.StickerID}
+		err := tx.QueryRow(`SELECT name FROM stickers WHERE id = ? AND data IS NOT NULL`, n.StickerID).Scan(&st.Name)
+		if errors.Is(err, sql.ErrNoRows) {
+			return Message{}, ErrNotFound
+		} else if err != nil {
+			return Message{}, err
+		}
+		sticker, ms = sql.NullInt64{Int64: n.StickerID, Valid: true}, &st
+	}
 	var reply sql.NullInt64
 	var quote *Quote
 	if n.ReplyTo != 0 {
@@ -739,11 +763,11 @@ func (s *Store) AddMessage(n NewMessage) (Message, error) {
 			return Message{}, err
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO messages (id, channel_id, author, verified, author_id, text, created_at, upload_id, reply_to, mention_all, no_ping, nonce, nonce_author) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, n.ChannelID, n.Author, n.Verified, authorID, n.Text, n.At.UnixMilli(), upload, reply, n.MentionAll, n.NoPing, nonce, nonceBy); err != nil {
+	if _, err := tx.Exec(`INSERT INTO messages (id, channel_id, author, verified, author_id, text, created_at, upload_id, sticker_id, reply_to, mention_all, no_ping, nonce, nonce_author) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, n.ChannelID, n.Author, n.Verified, authorID, n.Text, n.At.UnixMilli(), upload, sticker, reply, n.MentionAll, n.NoPing, nonce, nonceBy); err != nil {
 		return Message{}, err
 	}
-	m := Message{ID: id, ChannelID: n.ChannelID, Author: n.Author, Verified: n.Verified, AuthorID: authorID, Text: n.Text, CreatedAt: n.At, Reply: quote, MentionAll: n.MentionAll, NoPing: n.NoPing}
+	m := Message{ID: id, ChannelID: n.ChannelID, Author: n.Author, Verified: n.Verified, AuthorID: authorID, Text: n.Text, CreatedAt: n.At, Sticker: ms, Reply: quote, MentionAll: n.MentionAll, NoPing: n.NoPing}
 	if upload.Valid {
 		u, err := scanUpload(tx.QueryRow(`SELECT `+uploadColumns+` FROM uploads WHERE id = ?`, n.UploadID))
 		if err != nil {
@@ -873,8 +897,8 @@ func scanUpload(row interface{ Scan(...any) error }) (Upload, error) {
 
 const messageSelect = `SELECT m.id, m.channel_id, m.author, m.verified, m.author_id, m.text, m.created_at, m.edited_at, m.pinned_at,
 		u.id, u.key, u.name, u.type, u.size, u.author, u.created_at, u.used, u.width, u.height, u.duration, u.preview,
-		m.reply_to, r.author, r.text, m.mention_all, m.no_ping
-	FROM messages m LEFT JOIN uploads u ON u.id = m.upload_id LEFT JOIN messages r ON r.id = m.reply_to `
+		m.reply_to, r.author, r.text, m.mention_all, m.no_ping, m.sticker_id, st.name
+	FROM messages m LEFT JOIN uploads u ON u.id = m.upload_id LEFT JOIN messages r ON r.id = m.reply_to LEFT JOIN stickers st ON st.id = m.sticker_id `
 
 func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 	var m Message
@@ -887,10 +911,11 @@ func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 		used                      sql.NullBool
 	}
 	var replyTo, authorID sql.NullInt64
-	var replyAuthor, replyText sql.NullString
+	var replyAuthor, replyText, stickerName sql.NullString
+	var stickerID sql.NullInt64
 	if err := row.Scan(&m.ID, &m.ChannelID, &m.Author, &m.Verified, &authorID, &m.Text, &at, &edited, &pinned,
 		&u.id, &u.key, &u.name, &u.typ, &u.size, &u.who, &u.at, &u.used, &u.w, &u.h, &u.d, &u.prev,
-		&replyTo, &replyAuthor, &replyText, &m.MentionAll, &m.NoPing); err != nil {
+		&replyTo, &replyAuthor, &replyText, &m.MentionAll, &m.NoPing, &stickerID, &stickerName); err != nil {
 		return Message{}, err
 	}
 	if authorID.Valid {
@@ -899,6 +924,9 @@ func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 	}
 	if replyTo.Valid {
 		m.Reply = &Quote{ID: replyTo.Int64, Author: replyAuthor.String, Text: replyText.String}
+	}
+	if stickerID.Valid {
+		m.Sticker = &MessageSticker{ID: stickerID.Int64, Name: stickerName.String}
 	}
 	m.CreatedAt = time.UnixMilli(at).UTC()
 	if edited.Valid {
