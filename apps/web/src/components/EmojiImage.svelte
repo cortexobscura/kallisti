@@ -1,10 +1,12 @@
 <script lang="ts">
   import { encodeEmoji, loadEmojiImage, renderEmoji } from "../lib/emojiCanvas";
-  import { MAX_ZOOM, cropKey, cropZoom, isAnimated, keepsOriginal, middleCrop, moveCrop, zoomCrop, type Crop, type Size } from "../lib/emojiResize";
+  import { EMOJI_SIZE, MAX_ZOOM, cropKey, cropZoom, isAnimated, keepsOriginal, middleCrop, moveCrop, zoomCrop, type Crop, type Size } from "../lib/emojiResize";
 
   // A new emoji's image: still images are scaled down (optionally cropped
   // to a square first), with a preview; output() gives the file to upload.
-  let { file, name }: { file: File | null; name: string } = $props();
+  // max: the size to fit (a sticker's is larger); limit: its byte limit,
+  // for the note.
+  let { file, name, max = EMOJI_SIZE, limit = "256 KB" }: { file: File | null; name: string; max?: number; limit?: string } = $props();
 
   type Loaded = { url: string } & ({ animated: true } | { animated: false; image: HTMLCanvasElement; original: Size });
   let loaded = $state.raw<Loaded | null>(null);
@@ -15,7 +17,7 @@
 
   const load = async (f: File, url: string): Promise<Loaded> => {
     if (isAnimated(new Uint8Array(await f.arrayBuffer()))) return { url, animated: true };
-    return { url, animated: false, ...(await loadEmojiImage(f)) };
+    return { url, animated: false, ...(await loadEmojiImage(f, max)) };
   };
 
   $effect(() => {
@@ -46,14 +48,14 @@
   const still = $derived(loaded && !loaded.animated ? loaded : null);
   const W = $derived(still?.image.width ?? 1);
   const H = $derived(still?.image.height ?? 1);
-  const rendered = $derived(still && renderEmoji(still.image, cropping ? crop : null));
+  const rendered = $derived(still && renderEmoji(still.image, cropping ? crop : null, max));
   const preview = $derived(rendered ? rendered.toDataURL() : loaded?.url);
 
   // The file to upload: as it came if it is animated, small enough and
   // not cropped, or cannot be read (the server checks it).
   export const output = async (): Promise<File | null> => {
     const l = await loading;
-    if (!file || !l || l.animated || !rendered || keepsOriginal({ ...l.original, animated: false, cropping })) return file;
+    if (!file || !l || l.animated || !rendered || keepsOriginal({ ...l.original, animated: false, cropping, max })) return file;
     const blob = await encodeEmoji(rendered);
     return new File([blob], `${name || "emoji"}.${blob.type === "image/webp" ? "webp" : "png"}`, { type: blob.type });
   };
@@ -72,7 +74,7 @@
 {#if failed}
   <p class="note">This image cannot be read here; it is uploaded as it is.</p>
 {:else if loaded?.animated}
-  <p class="note">Animated images are kept as they are (at most 256 KB).</p>
+  <p class="note">Animated images are kept as they are (at most {limit}).</p>
 {:else if still}
   <label class="check"><input type="checkbox" bind:checked={cropping} /> Crop to square</label>
   {#if cropping}
@@ -122,7 +124,7 @@
 {#if preview}
   <div class="preview" aria-label="Preview">
     <p>
-      Looks like <img class="small" src={preview} alt={`:${name}:`} /> in a message{#if rendered}, {rendered.width}×{rendered.height} px{/if}
+      {#if max === EMOJI_SIZE}Looks like <img class="small" src={preview} alt={`:${name}:`} /> in a message{:else}As uploaded{/if}{#if rendered}, {rendered.width}×{rendered.height} px{/if}
     </p>
     <img class="large" src={preview} alt="" />
   </div>

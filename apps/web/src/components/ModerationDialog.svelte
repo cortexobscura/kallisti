@@ -5,6 +5,8 @@
   import { ARCHIVE_TIMES } from "../lib/threads";
   import { emojiFormError, type CustomEmoji } from "../lib/customEmoji";
   import EmojiList from "./EmojiList.svelte";
+  import StickerList from "./StickerList.svelte";
+  import type { Sticker, StickerFields } from "../lib/stickers";
   import {
     connectionLevel,
     formatOnline,
@@ -43,6 +45,10 @@
     emoji,
     onAddEmoji,
     onDeleteEmoji,
+    stickers,
+    onAddSticker,
+    onEditSticker,
+    onDeleteSticker,
     guestsReadOnly = null,
     onGuestsReadOnly,
     captcha = "off",
@@ -70,6 +76,11 @@
     emoji: readonly CustomEmoji[];
     onAddEmoji: (name: string, file: File) => Promise<void>;
     onDeleteEmoji: (name: string) => Promise<void>;
+    // The server's stickers (with the emoji rights); urls absolute.
+    stickers: readonly Sticker[];
+    onAddSticker: (fields: StickerFields, file: File) => Promise<void>;
+    onEditSticker: (id: number, fields: StickerFields) => Promise<void>;
+    onDeleteSticker: (id: number) => Promise<void>;
     // Admins: whether guests may only read (null: not ours to change).
     guestsReadOnly?: boolean | null;
     onGuestsReadOnly?: (on: boolean) => Promise<void>;
@@ -100,7 +111,7 @@
   } = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
-  let tab = $state<"bans" | "users" | "emoji" | "guests" | "threads" | "rules" | "connections" | "recordings">(
+  let tab = $state<"bans" | "users" | "emoji" | "stickers" | "guests" | "threads" | "rules" | "connections" | "recordings">(
     untrack(() => (rights.bans ? "bans" : rights.users ? "users" : rights.emoji ? "emoji" : "guests")),
   );
   let renaming = $state<{ id: number; name: string } | null>(null);
@@ -195,6 +206,7 @@
     {/if}
     {#if rights.emoji}
       <button role="tab" aria-selected={tab === "emoji"} onclick={() => (tab = "emoji")}>Emoji</button>
+      <button role="tab" aria-selected={tab === "stickers"} onclick={() => (tab = "stickers")}>Stickers</button>
     {/if}
     {#if guestsReadOnly !== null}
       <button role="tab" aria-selected={tab === "guests"} onclick={() => (tab = "guests")}>Guests</button>
@@ -385,6 +397,8 @@
       {#if downloadError}<p class="note error" role="alert">{downloadError}</p>{/if}
       <p class="note">A zip with one Ogg Opus file per speaker. All files start when the recording started, so they line up in an audio editor.</p>
     {/if}
+  {:else if tab === "stickers"}
+    <StickerList list={stickers} onAdd={onAddSticker} onEdit={onEditSticker} onDelete={onDeleteSticker} />
   {:else if tab === "emoji"}
     <EmojiList
       list={emoji}

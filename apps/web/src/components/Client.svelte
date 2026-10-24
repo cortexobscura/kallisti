@@ -529,6 +529,8 @@
   // Custom server emoji and our personal ones, for messages, reactions and
   // pickers below.
   const customEmoji = $derived(customEmojiSet(text.emoji, connection.httpBase, text.myEmoji, text.removedEmoji));
+  // The stickers with absolute image URLs (see lib/stickers).
+  const stickers = $derived(text.stickers.map((s) => ({ ...s, url: connection.httpBase + s.url })));
   setCustomEmoji(() => customEmoji);
   const textId = $derived(view.kind === "text" ? view.id : null);
   // A voice channel's stored chat (built-in server): the channel that holds
@@ -1660,6 +1662,10 @@
     emoji={customEmoji.list}
     onAddEmoji={connection.uploadEmoji}
     onDeleteEmoji={connection.deleteEmoji}
+    {stickers}
+    onAddSticker={connection.uploadSticker}
+    onEditSticker={connection.renameSticker}
+    onDeleteSticker={connection.deleteSticker}
     guestsReadOnly={mayChangeGuests(server, text) ? text.guestsReadOnly : null}
     onGuestsReadOnly={(on) => connection.request({ guestsReadOnly: on })}
     captcha={text.captcha}
