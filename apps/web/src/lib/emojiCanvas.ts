@@ -25,20 +25,20 @@ const scaleDown = (src: CanvasImageSource, r: Rect, to: Size) => {
 
 // The image, scaled once for cropping (see workingScale); original: its
 // size as it came.
-export const loadEmojiImage = async (file: Blob) => {
+export const loadEmojiImage = async (file: Blob, max?: number) => {
   const bitmap = await createImageBitmap(file);
   const original = { width: bitmap.width, height: bitmap.height };
-  const s = workingScale(original.width, original.height);
+  const s = workingScale(original.width, original.height, max);
   const to = { width: Math.round(original.width * s), height: Math.round(original.height * s) };
   const image = scaleDown(bitmap, { x: 0, y: 0, ...original }, to);
   bitmap.close();
   return { image, original };
 };
 
-// The emoji: the crop (or the whole image) fit inside 96×96.
-export const renderEmoji = (image: HTMLCanvasElement, crop: Crop | null) => {
+// The emoji: the crop (or the whole image) fit inside 96×96 (or max).
+export const renderEmoji = (image: HTMLCanvasElement, crop: Crop | null, max?: number) => {
   const r = crop ? { x: crop.x, y: crop.y, width: crop.size, height: crop.size } : { x: 0, y: 0, width: image.width, height: image.height };
-  return scaleDown(image, r, fitSize(r.width, r.height));
+  return scaleDown(image, r, fitSize(r.width, r.height, max));
 };
 
 // PNG, or WebP if the browser has it and it is smaller; both keep

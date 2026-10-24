@@ -12,9 +12,10 @@ export type Crop = { x: number; y: number; size: number };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
 
-// Fits inside EMOJI_SIZE, keeping the aspect; never larger.
-export const fitSize = (width: number, height: number): Size => {
-  const scale = Math.min(1, EMOJI_SIZE / width, EMOJI_SIZE / height);
+// Fits inside max (an emoji's size, or a sticker's), keeping the aspect;
+// never larger.
+export const fitSize = (width: number, height: number, max = EMOJI_SIZE): Size => {
+  const scale = Math.min(1, max / width, max / height);
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 };
 
@@ -33,7 +34,7 @@ export const downscaleSteps = (from: Size, to: Size): Size[] => {
 
 // The image is scaled once for cropping: enough pixels for a full-size
 // emoji at the most zoom.
-export const workingScale = (width: number, height: number) => Math.min(1, (EMOJI_SIZE * MAX_ZOOM) / Math.min(width, height));
+export const workingScale = (width: number, height: number, max = EMOJI_SIZE) => Math.min(1, (max * MAX_ZOOM) / Math.min(width, height));
 
 export const middleCrop = (width: number, height: number): Crop => {
   const size = Math.min(width, height);
@@ -72,8 +73,8 @@ export const cropKey = (c: Crop, key: string, shift: boolean, width: number, hei
 
 // Animations, and small images that are not cropped, are uploaded as
 // they are (the limit is still checked).
-export const keepsOriginal = (s: Size & { animated: boolean; cropping: boolean }) =>
-  s.animated || (!s.cropping && s.width <= EMOJI_SIZE && s.height <= EMOJI_SIZE);
+export const keepsOriginal = (s: Size & { animated: boolean; cropping: boolean; max?: number }) =>
+  s.animated || (!s.cropping && s.width <= (s.max ?? EMOJI_SIZE) && s.height <= (s.max ?? EMOJI_SIZE));
 
 const ascii = (b: Uint8Array, at: number, n: number) => String.fromCharCode(...b.subarray(at, at + n));
 

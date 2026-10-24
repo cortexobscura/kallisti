@@ -174,3 +174,13 @@ describe("isAnimated", () => {
     expect(isAnimated(bytes("RIFF", u32(100), "WEBP", "AN"))).toBe(false);
   });
 });
+
+describe("sizes other than an emoji's (stickers)", () => {
+  it("fits, scales and keeps by the size given", () => {
+    expect(fitSize(1000, 500, 320)).toEqual({ width: 320, height: 160 });
+    expect(fitSize(200, 100, 320)).toEqual({ width: 200, height: 100 });
+    expect(workingScale(10_000, 10_000, 320)).toBe((320 * MAX_ZOOM) / 10_000);
+    expect(keepsOriginal({ width: 300, height: 300, animated: false, cropping: false, max: 320 })).toBe(true);
+    expect(keepsOriginal({ width: 300, height: 300, animated: false, cropping: false })).toBe(false); // 96 for emoji
+  });
+});
