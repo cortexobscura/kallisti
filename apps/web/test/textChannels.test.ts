@@ -562,3 +562,25 @@ describe("search results follow edits and deletes", () => {
     expect(s.search?.messages.map((m) => [m.id, m.text])).toEqual([[1, "new"]]);
   });
 });
+
+describe("stickers", () => {
+  const wave = { id: 7, name: "wave", url: "/api/stickers/7" };
+  it("come in ready and with each change", () => {
+    let s = reduceText(initialTextState, parseServerEvent(JSON.stringify({ type: "ready", channels: [], stickers: [wave] }))!);
+    expect(s.stickers).toEqual([wave]);
+    s = reduceText(s, parseServerEvent(JSON.stringify({ type: "stickers", stickers: [] }))!);
+    expect(s.stickers).toEqual([]);
+    expect(reduceText(initialTextState, parseServerEvent('{"type":"ready","channels":[]}')!).stickers).toEqual([]);
+  });
+
+  it("a sticker message keeps its sticker, also on display", () => {
+    const ev = parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), text: "[sticker: wave]", sticker: { id: 7, name: "wave" } } }));
+    expect(ev?.type === "message" && ev.message.sticker).toEqual({ id: 7, name: "wave" });
+    expect(toChatMessage({ ...msg(1), text: "[sticker: wave]", sticker: { id: 7, name: "wave" } }).sticker).toEqual({ id: 7, name: "wave" });
+    expect(parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), sticker: { id: "x" } } }))).toBeNull();
+  });
+
+  it("are sent with no text", () => {
+    expect(JSON.parse(sendRequest(3, "", undefined, 9, false, "n1", 7))).toEqual({ type: "send", channel: 3, text: "", reply: 9, nonce: "n1", sticker: 7 });
+  });
+});

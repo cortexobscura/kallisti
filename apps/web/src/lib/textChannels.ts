@@ -9,6 +9,7 @@ import { isMentionAll, type MentionAll } from "./mentions";
 import type { SearchQuery } from "./search";
 import { parsePresence, type PresenceView } from "./presence";
 import { parseCustomEmoji, type CustomEmoji } from "./customEmoji";
+import { isMessageSticker, parseStickers, type MessageSticker, type Sticker } from "./stickers";
 import { parsePersonalEmoji, parseRemovedEmoji, type PersonalEmoji } from "./personalEmoji";
 import type { Invite } from "./invites";
 import type { Members, Online } from "./members";
@@ -41,6 +42,8 @@ export type TextMessage = {
   verified?: boolean;
   authorId?: number;
   upload?: Attachment;
+  // A sticker message (text: its name, for what shows only text).
+  sticker?: MessageSticker;
   edited?: number; // Unix milliseconds
   pinned?: number; // Unix milliseconds
   // The message it answers (author empty: deleted since).
@@ -56,6 +59,7 @@ export type Quote = { id: number; author: string; text: string };
 // source: the stored message (id and plain text), for editing.
 export type DisplayMessage = ChatMessage & {
   upload?: Attachment & { spoiler?: true };
+  sticker?: MessageSticker;
   verified?: boolean;
   authorId?: number;
   edited?: number;
@@ -120,6 +124,7 @@ export type ServerEvent =
       statuses?: SessionStatus[];
       ownStatus?: PresenceView;
       emoji?: CustomEmoji[];
+      stickers?: Sticker[];
       // Our personal emoji, and the images moderators removed.
       myEmoji?: PersonalEmoji[];
       removedEmoji?: number[];
@@ -147,6 +152,7 @@ export type ServerEvent =
   | ({ type: "own-status" } & PresenceView)
   // The custom emoji changed.
   | { type: "emoji"; emoji: CustomEmoji[] }
+  | { type: "stickers"; stickers: Sticker[] }
   // Our personal emoji changed (here or on another device); a moderator
   // removed an image (all removed ones).
   | { type: "my-emoji"; emoji: PersonalEmoji[] }
@@ -303,6 +309,8 @@ export type TextState = {
   ownStatus: PresenceView;
   // Custom server emoji (image URLs relative to the server).
   emoji: readonly CustomEmoji[];
+  // The server's stickers (see lib/stickers).
+  stickers: readonly Sticker[];
   // Our personal emoji, and the removed images (by id).
   myEmoji: readonly PersonalEmoji[];
   removedEmoji: readonly number[];
@@ -360,6 +368,7 @@ export const initialTextState: TextState = {
   statuses: {},
   ownStatus: { status: "online" },
   emoji: [],
+  stickers: [],
   myEmoji: [],
   removedEmoji: [],
   members: {},
@@ -490,6 +499,7 @@ const isMessage = (v: unknown): v is TextMessage =>
   (v.pinned === undefined || isNum(v.pinned)) &&
   (v.reply === undefined || (isObj(v.reply) && isNum(v.reply.id) && isStr(v.reply.author) && isStr(v.reply.text))) &&
   (v.upload === undefined || isAttachment(v.upload)) &&
+  (v.sticker === undefined || isMessageSticker(v.sticker)) &&
   (v.reactions === undefined || isReactions(v.reactions)) &&
   (v.mentionAll === undefined || isMentionAll(v.mentionAll)) &&
   (v.noPing === undefined || typeof v.noPing === "boolean") &&
@@ -513,6 +523,7 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
       const statuses = Array.isArray(v.statuses) ? v.statuses.flatMap((s) => parseSessionStatus(s) ?? []) : undefined;
       const ownStatus = parsePresence(v.ownStatus);
       const emoji = parseCustomEmoji(v.emoji);
+      const stickers = parseStickers(v.stickers);
       const myEmoji = parsePersonalEmoji(v.myEmoji);
       const removedEmoji = parseRemovedEmoji(v.removedEmoji);
       return {
@@ -537,6 +548,7 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
         ...(statuses ? { statuses } : {}),
         ...(ownStatus ? { ownStatus } : {}),
         ...(emoji ? { emoji } : {}),
+        ...(stickers ? { stickers } : {}),
         ...(myEmoji ? { myEmoji } : {}),
         ...(removedEmoji ? { removedEmoji } : {}),
         ...(Array.isArray(v.members) && v.members.every(isSpeaker) ? { members: v.members } : {}),
@@ -557,6 +569,10 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
     case "emoji": {
       const emoji = parseCustomEmoji(v.emoji);
       return emoji && { type: "emoji", emoji };
+    }
+    case "stickers": {
+      const stickers = parseStickers(v.stickers);
+      return stickers && { type: "stickers", stickers };
     }
     case "my-emoji": {
       const emoji = parsePersonalEmoji(v.emoji);
@@ -729,6 +745,7 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
         avatars: event.avatars === true,
         roles: event.roles ?? initialTextState.roles,
         emoji: event.emoji ?? [],
+        stickers: event.stickers ?? [],
         myEmoji: event.myEmoji ?? [],
         removedEmoji: event.removedEmoji ?? [],
         members: Object.fromEntries((event.members ?? []).map((p) => [p.id, p.name])),
@@ -764,6 +781,8 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
       return { ...state, roles: { admins: event.admins, moderators: event.moderators, ...(event.channelMods ? { channelMods: event.channelMods } : {}) } };
     case "emoji":
       return { ...state, emoji: event.emoji };
+    case "stickers":
+      return { ...state, stickers: event.stickers };
     case "my-emoji":
       return { ...state, myEmoji: event.emoji };
     case "removed-emoji":
@@ -967,7 +986,8 @@ export const historyRequest = (channel: number, before?: number) =>
 
 // nonce: our id for the send, the same on a retry (the server stores the
 // message once and confirms it with the nonce, see sendAnswer).
-export const sendRequest = (channel: number, text: string, upload?: string, reply?: number, noPing?: boolean, nonce?: string) =>
+// sticker: a sticker message (no text, no upload).
+export const sendRequest = (channel: number, text: string, upload?: string, reply?: number, noPing?: boolean, nonce?: string, sticker?: number) =>
   JSON.stringify({
     type: "send",
     channel,
@@ -976,6 +996,7 @@ export const sendRequest = (channel: number, text: string, upload?: string, repl
     ...(reply ? { reply } : {}),
     ...(reply && noPing ? { noPing } : {}),
     ...(nonce ? { nonce } : {}),
+    ...(sticker ? { sticker } : {}),
   });
 
 // The server's answer to a send with this nonce: our message with it
@@ -1180,6 +1201,7 @@ export const toChatMessage = (m: TextMessage, base = "", channels?: ReadonlyMap<
       ...(m.mentionAll && { mentionAll: m.mentionAll }),
       ...(m.noPing && { noPing: true }),
       ...(upload && { upload: spoilerUpload(upload) }),
+      ...(m.sticker && { sticker: m.sticker }),
     };
     chatCache.set(m, { chat, channels });
   }

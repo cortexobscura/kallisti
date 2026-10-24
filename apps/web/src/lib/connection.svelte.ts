@@ -57,6 +57,7 @@ import {
   type ServerEvent,
   type TextState,
 } from "./textChannels";
+import { deleteStickerRequest, renameStickerRequest, stickerTokenRequest, type StickerFields } from "./stickers";
 import { untrack } from "svelte";
 import { texturesToFetch } from "./avatar";
 import type { SearchQuery } from "./search";
@@ -443,7 +444,7 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     // Sends a message (with an uploaded file: its key) with a nonce; settles
     // once the server stored it (our message came), refused it, or did not
     // answer. A retry with the same nonce cannot post it twice.
-    sendConfirmed: (channel: number, message: string, nonce: string, upload?: string, reply?: number, noPing?: boolean) =>
+    sendConfirmed: (channel: number, message: string, nonce: string, upload?: string, reply?: number, noPing?: boolean, sticker?: number) =>
       new Promise<void>((resolve, reject) => {
         if (ws.readyState !== WebSocket.OPEN) return reject(new Error("Not connected"));
         const done = (error?: string) => {
@@ -458,7 +459,7 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
           if (a) done(a.error);
         };
         confirming.add(check);
-        ws.send(sendRequest(channel, message, upload, reply, noPing, nonce));
+        ws.send(sendRequest(channel, message, upload, reply, noPing, nonce, sticker));
       }),
     // The server's HTTP origin (uploads and files).
     httpBase: base,
@@ -473,6 +474,18 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     uploadEmoji: async (name: string, file: File): Promise<void> => {
       await upload(emojiTokenRequest(name), "/api/emoji", file, true);
     },
+    // Stickers (see lib/stickers): the list comes as an event.
+    uploadSticker: async (fields: StickerFields, file: File): Promise<void> => {
+      await upload(stickerTokenRequest(fields), "/api/stickers", file, true);
+    },
+    renameSticker: (sticker: number, fields: StickerFields) =>
+      wait({ via: "text", confirms: (ev) => ev.type === "stickers" && ev.stickers.some((s) => s.id === sticker && s.name === fields.name) }, () =>
+        ws.send(renameStickerRequest(sticker, fields)),
+      ),
+    deleteSticker: (sticker: number) =>
+      wait({ via: "text", confirms: (ev) => ev.type === "stickers" && !ev.stickers.some((s) => s.id === sticker) }, () =>
+        ws.send(deleteStickerRequest(sticker)),
+      ),
     deleteEmoji: (name: string) =>
       wait({ via: "text", confirms: (ev) => ev.type === "emoji" && !ev.emoji.some((e) => e.name === name) }, () => ws.send(deleteEmojiRequest(name))),
     // Our personal emoji (see lib/personalEmoji): a new image, one from a
