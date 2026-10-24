@@ -121,18 +121,19 @@ func (v *videoIn) push(p *rtp.Packet, arrival int64) []timed {
 // with the first keyframe (its SPS gives the size) and changes with new
 // sizes. Pictures come from one goroutine, sound from another.
 type feed struct {
-	hub     *stream.Hub
-	session atomic.Uint32 // the owner's voice session; 0: waiting for one (see orphan)
-	audio   string        // "opus" or ""
-	hooks   stream.IngestHooks
-	bytes   *rate.Limiter
-	sounds  *rate.Limiter
-	now     func() time.Time
-	config  stream.Config // the pictures' goroutine's
-	ingest  atomic.Pointer[stream.Ingest]
-	sClock  clock  // the sound goroutine's
-	av      avSync // pictures on the sound's timeline
-	synced  int64  // the pictures': when the sync was logged last (arrival, µs)
+	hub                *stream.Hub
+	session            atomic.Uint32 // the owner's voice session; 0: waiting for one (see orphan)
+	audio              string        // "opus" or ""
+	hooks              stream.IngestHooks
+	bytes              *rate.Limiter
+	sounds             *rate.Limiter
+	now                func() time.Time
+	config             stream.Config // the pictures' goroutine's
+	ingest             atomic.Pointer[stream.Ingest]
+	sClock             clock   // the sound goroutine's
+	av                 avSync  // pictures on the sound's timeline
+	srSound, srPicture srClock // the sender's reports (see senderreport.go)
+	synced             int64   // the pictures': when the sync was logged last (arrival, µs)
 	// The stream starts and stops under mu: a stop while it starts wins.
 	mu      sync.Mutex
 	stopped bool
@@ -272,7 +273,11 @@ func (f *feed) logSync(arrival int64) {
 	}
 	f.synced = arrival
 	if st := f.av.state(); st.known {
-		slog.Info("stream from OBS: sync", "session", f.session.Load(), "sound_drift_ms", st.sound/1000, "picture_drift_ms", st.pictures/1000, "shift_ms", st.shift/1000)
+		args := []any{"session", f.session.Load(), "sound_drift_ms", st.sound / 1000, "picture_drift_ms", st.pictures / 1000, "shift_ms", st.shift / 1000}
+		if e, ok := avError(&f.srSound, &f.srPicture); ok { // what viewers get: the picture later than its sound by this
+			args = append(args, "picture_late_ms", (e-st.shift)/1000)
+		}
+		slog.Info("stream from OBS: sync", args...)
 	}
 }
 
@@ -283,6 +288,7 @@ func sizeError(err error, c stream.Config) error {
 // sound forwards an Opus packet (once the stream is live).
 func (f *feed) sound(p *rtp.Packet, arrival int64) {
 	ts := f.sClock.micros(p.Timestamp, arrival)
+	f.srSound.apply(&f.sClock)
 	f.av.noteSound(int64(ts), arrival)
 	if in := f.ingest.Load(); in != nil && len(p.Payload) > 0 && f.sounds.Allow() {
 		in.Sound(ts, p.Payload)

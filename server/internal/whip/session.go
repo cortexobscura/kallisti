@@ -83,15 +83,17 @@ func (s *session) open(o offer, sdp string, voice uint32) (string, error) {
 			s.end()
 		}
 	})
-	s.pc.OnTrack(func(t *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+	s.pc.OnTrack(func(t *webrtc.TrackRemote, r *webrtc.RTPReceiver) {
 		switch strings.ToLower(t.Codec().MimeType) { // the first track of each kind only
 		case "video/h264":
 			if s.videoSSRC.CompareAndSwap(0, uint32(t.SSRC())) {
 				go s.readVideo(t)
+				go readReports(r, &s.feed.srPicture)
 			}
 		case "audio/opus":
 			if !s.sound.Swap(true) {
 				go s.readSound(t)
+				go readReports(r, &s.feed.srSound)
 			}
 		}
 	})
@@ -202,6 +204,21 @@ func (s *session) keyframe() {
 // arrival: microseconds since the session began.
 func (s *session) arrival() int64 { return time.Since(s.begun).Microseconds() }
 
+// readReports passes a track's sender reports on, until the track ends.
+func readReports(r *webrtc.RTPReceiver, to *srClock) {
+	for {
+		pkts, _, err := r.ReadRTCP()
+		if err != nil {
+			return
+		}
+		for _, p := range pkts {
+			if sr, ok := p.(*rtcp.SenderReport); ok {
+				to.report(sr.NTPTime, sr.RTPTime)
+			}
+		}
+	}
+}
+
 // rtpReader: a *webrtc.TrackRemote.
 type rtpReader interface {
 	ReadRTP() (*rtp.Packet, interceptor.Attributes, error)
@@ -210,7 +227,9 @@ type rtpReader interface {
 func (s *session) readVideo(t rtpReader) {
 	v := newVideoIn()
 	for p, ok := s.next(t); ok; p, ok = s.next(t) {
-		for _, pic := range v.push(p, s.arrival()) {
+		pics := v.push(p, s.arrival())
+		s.feed.srPicture.apply(&v.clock)
+		for _, pic := range pics {
 			if pic.data != nil { // before the stream starts with it
 				s.lastPicture.Store(s.arrival())
 			}
