@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseStickers, stickerForm, stickerGroups, stickerSearch, stickerText, type Sticker } from "../src/lib/stickers";
+import { bulkNames, parseStickers, stickerForm, stickerGroups, stickerSearch, stickerText, type Sticker } from "../src/lib/stickers";
 
 const wave: Sticker = { id: 1, name: "wave", description: "Hello there", emoji: "👋", pack: "Greetings", url: "/api/stickers/1" };
 const cat: Sticker = { id: 2, name: "cat", url: "/api/stickers/2" };
@@ -51,5 +51,11 @@ describe("stickerForm", () => {
     expect(stickerForm({ name: "wave", description: "", emoji: "", pack: "x".repeat(33) }, [])).toMatch(/32/);
     expect(stickerForm({ name: "wave", description: "", emoji: "abc", pack: "" }, [])).toMatch(/emoji/);
     expect(stickerForm({ name: "wave", description: "", emoji: "👋", pack: "" }, [])).toBeNull();
+  });
+});
+
+describe("bulkNames", () => {
+  it("names files after their names, unique against the list and each other", () => {
+    expect(bulkNames(["Fox Hug.png", "fox-hug.gif", "cat.webp", "a.png"], [cat])).toEqual(["fox_hug", "fox_hug_2", "cat_2", "a_2"]);
   });
 });

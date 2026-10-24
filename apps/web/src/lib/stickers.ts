@@ -1,4 +1,4 @@
-import { CUSTOM_NAME } from "./customEmoji";
+import { CUSTOM_NAME, emojiNameFromFile } from "./customEmoji";
 
 // Stickers: large pictures sent as a message of their own (see the server's
 // sidecar/stickers.go). A sticker message carries the sticker's id and
@@ -76,3 +76,17 @@ export const stickerForm = (f: StickerFields, list: readonly Sticker[], self?: n
 export const stickerTokenRequest = (f: StickerFields) => JSON.stringify({ type: "sticker-token", ...f });
 export const renameStickerRequest = (sticker: number, f: StickerFields) => JSON.stringify({ type: "rename-sticker", sticker, ...f });
 export const deleteStickerRequest = (sticker: number) => JSON.stringify({ type: "delete-sticker", sticker });
+
+// Names for many files added at once: each file's name made a valid one,
+// with _2, _3, ... where it is taken (by the list or an earlier file) or
+// too short.
+export const bulkNames = (files: readonly string[], list: readonly Sticker[]): string[] => {
+  const taken = new Set(list.map((s) => s.name));
+  return files.map((f) => {
+    const base = emojiNameFromFile(f) || "sticker";
+    let name = base;
+    for (let n = 2; !NAME.test(name) || taken.has(name); n++) name = `${base.slice(0, 28)}_${n}`;
+    taken.add(name);
+    return name;
+  });
+};

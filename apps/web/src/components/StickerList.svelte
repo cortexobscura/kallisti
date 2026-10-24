@@ -2,7 +2,8 @@
   import { EMOJI_TYPES, emojiNameFromFile } from "../lib/customEmoji";
   import { busyLabel } from "../lib/saveFeedback";
   import { createSave } from "../lib/saveFeedback.svelte";
-  import { MAX_STICKER_BYTES, STICKER_SIZE, stickerForm, type Sticker, type StickerFields } from "../lib/stickers";
+  import { MAX_STICKER_BYTES, STICKER_SIZE, bulkNames, stickerForm, type Sticker, type StickerFields } from "../lib/stickers";
+  import { fitSticker } from "../lib/stickerImage";
   import EmojiImage from "./EmojiImage.svelte";
   import SaveStatus from "./SaveStatus.svelte";
 
@@ -25,16 +26,49 @@
   const add = createSave();
   const change = createSave();
   let fields = $state(blank());
-  let file = $state<File | null>(null);
+  // One file: with a preview and its own name; many: named after their
+  // files, the other fields for all of them.
+  let files = $state<File[]>([]);
+  const file = $derived(files.length === 1 ? files[0]! : null);
+  let progress = $state("");
   let editing = $state<({ id: number } & StickerFields) | null>(null);
   let confirming = $state<number | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
   let image: EmojiImage | undefined = $state();
   let done = $state("Deleted");
 
+  const addMany = async (f: StickerFields) => {
+    const names = bulkNames(
+      files.map((x) => x.name),
+      list,
+    );
+    const failed: string[] = [];
+    for (const [i, x] of files.entries()) {
+      progress = `${i + 1} of ${files.length}`;
+      try {
+        const out = await fitSticker(x);
+        if (out.size > MAX_STICKER_BYTES) throw new Error("over 512 KB");
+        await onAdd({ ...f, name: names[i]! }, out);
+      } catch (err) {
+        failed.push(`${x.name} (${(err as Error).message})`);
+      }
+    }
+    progress = "";
+    files = [];
+    if (fileInput) fileInput.value = "";
+    if (failed.length) throw new Error(`Not added: ${failed.join(", ")}`);
+  };
   const submit = (e: SubmitEvent) => {
     e.preventDefault();
     const f = trimmed(fields);
+    if (files.length > 1) {
+      const problem = stickerForm({ ...f, name: "ok" }, []);
+      add.run(async () => {
+        if (problem) throw new Error(problem);
+        await addMany(f);
+      });
+      return;
+    }
     add.run(async () => {
       const problem = stickerForm(f, list);
       if (problem) throw new Error(problem);
@@ -44,7 +78,7 @@
       if (out.size > MAX_STICKER_BYTES) throw new Error("A sticker has at most 512 KB.");
       await onAdd(f, out);
       fields = blank();
-      file = null;
+      files = [];
       if (fileInput) fileInput.value = "";
     });
   };
@@ -76,21 +110,28 @@
     type="file"
     disabled={add.busy}
     accept={EMOJI_TYPES.join(",")}
-    aria-label="Sticker image"
+    aria-label="Sticker images"
+    multiple
     onchange={(e) => {
-      file = e.currentTarget.files?.[0] ?? null;
+      files = [...(e.currentTarget.files ?? [])];
       if (file && !fields.name) fields.name = emojiNameFromFile(file.name);
     }}
   />
   {@render fieldInputs(fields, "Sticker")}
-  <button type="submit" disabled={add.busy}>{busyLabel(add.state, "Add", "Adding…")}</button>
+  <button type="submit" disabled={add.busy}
+    >{busyLabel(add.state, files.length > 1 ? `Add ${files.length}` : "Add", progress ? `Adding ${progress}…` : "Adding…")}</button
+  >
   <SaveStatus save={add.state} done="Added" />
 </form>
 <p class="note">
   PNG, GIF, WebP or JPEG, at most 512 KB; still images are scaled to fit {STICKER_SIZE}×{STICKER_SIZE} px. The emoji and pack are
   optional: the picker groups by pack and finds stickers by their emoji. Put a licence's credit in the description.
 </p>
-<EmojiImage bind:this={image} {file} name={fields.name.trim()} max={STICKER_SIZE} limit="512 KB" />
+{#if files.length > 1}
+  <p class="note">{files.length} files: each is named after its file; the emoji, pack and description go with all of them.</p>
+{:else}
+  <EmojiImage bind:this={image} {file} name={fields.name.trim()} max={STICKER_SIZE} limit="512 KB" />
+{/if}
 {#if list.length === 0}
   <p class="note">This server has no stickers yet.</p>
 {:else}
