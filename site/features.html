@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Features — Kallisti</title>
+    <meta name="description" content="Everything Kallisti does: voice channels, Go Live and streams from OBS, text channels with threads, fediverse login, emoji, moderation, apps for every screen, on your own server." />
+    <meta property="og:title" content="Kallisti features" />
+    <meta property="og:description" content="Voice, video, chat and moderation for your group, on your own server. Built on Mumble." />
+    <meta property="og:image" content="img/chat.png" />
+    <link rel="icon" href="img/favicon.png" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="brand" href="index.html"><img src="img/logo.png" alt="" width="32" height="32" />Kallisti</a>
+      <nav aria-label="Main">
+        <a href="features.html" aria-current="page">Features</a>
+        <a href="index.html#download">Download</a>
+        <a href="index.html#self-host">Run a server</a>
+        <a href="https://github.com/lambadalambda/kallisti">GitHub</a>
+      </nav>
+      <a class="button small light" href="https://chat.kallisti.chat">Open Kallisti</a>
+    </header>
+
+    <main id="top">
+      <section class="page-head">
+        <h1>Everything it does</h1>
+        <p>
+          Voice, video and chat for your group, on a server that belongs to you. Here is all of it, from talking in a
+          channel to running your own server.
+        </p>
+        <nav class="jump" aria-label="Sections">
+          <a href="#voice">Voice</a>
+          <a href="#video">Video</a>
+          <a href="#chat">Chat</a>
+          <a href="#emoji">Emoji</a>
+          <a href="#accounts">Accounts</a>
+          <a href="#moderation">Moderation</a>
+          <a href="#devices">Phone and desktop</a>
+          <a href="#server">Your server</a>
+          <a href="#mumble">Mumble</a>
+        </nav>
+      </section>
+
+      <section class="feature group" id="voice">
+        <img src="img/voice.png" alt="A voice channel with people in it and its chat" width="1440" height="900" loading="lazy" />
+        <div>
+          <h2>Voice</h2>
+          <ul class="list">
+            <li><b>Join with one click.</b> Voice channels are always open; click one and you are in.</li>
+            <li><b>Push-to-talk or voice activity,</b> and hold-to-talk on phones.</li>
+            <li><b>Noise suppression</b> (RNNoise or DeepFilterNet) and echo cancellation, each with a switch.</li>
+            <li><b>A volume for each person,</b> join and leave sounds, and a quality icon with connection stats.</li>
+            <li><b>Music mode:</b> stereo at 128 kbps, without the filters made for speech.</li>
+            <li><b>Listen-only channels</b> for talks and radio. <span class="tag">built-in server</span></li>
+            <li><b>Recording</b> for moderators: one file for each speaker. <span class="tag">built-in server</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="feature group reverse" id="video">
+        <img src="img/streams.png" alt="Four people live with their cameras in a voice channel's stream grid, its chat below" width="1440" height="900" loading="lazy" />
+        <div>
+          <h2>Video and streams</h2>
+          <p class="small"><span class="tag">built-in server</span> All of video needs Kallisti's own voice server.</p>
+          <ul class="list">
+            <li><b>Go Live</b> with your screen or your camera, and change the quality while you are live.</li>
+            <li><b>Several streams at once,</b> side by side in a grid or one big in focus.</li>
+            <li><b>Stream from OBS</b> (or any WHIP encoder) straight into your voice channel.</li>
+            <li><b>Previews</b> of live streams, so you see what is on before you watch.</li>
+            <li><b>Streams survive a reload</b> of the page; viewers come back by themselves.</li>
+            <li><b>Mumble users hear the stream</b> in their channel.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="feature group" id="chat">
+        <img src="img/chat.png" alt="A text channel with replies, reactions, a link preview and code" width="1440" height="900" loading="lazy" />
+        <div>
+          <h2>Chat</h2>
+          <ul class="list">
+            <li><b>Text channels</b> with history and remembered read state, sorted into categories. <span class="tag">categories: built-in server</span></li>
+            <li><b>Threads</b> for side conversations.</li>
+            <li><b>Replies, reactions and mentions,</b> also @here and @everyone; reply without a ping.</li>
+            <li><b>Pictures, files, video and audio</b> that play in the chat, and link previews.</li>
+            <li><b>Formatting, code and spoilers;</b> long messages fold up.</li>
+            <li><b>Pins, message links and search</b> with filters.</li>
+            <li><b>Direct messages.</b></li>
+            <li><b>Invite-only channels</b> with invite links. <span class="tag">built-in server</span></li>
+            <li><b>Ctrl+K</b> finds any channel; mute channels, block people.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="feature group reverse" id="emoji">
+        <img src="img/picker.png" alt="The emoji picker with the server's own emoji" width="1440" height="900" loading="lazy" />
+        <div>
+          <h2>Emoji and profiles</h2>
+          <ul class="list">
+            <li><b>Your server's own emoji,</b> suggested as you type <code>:name</code>.</li>
+            <li><b>Personal emoji</b> that go with you to every server; take one from someone's message.</li>
+            <li><b>Big emoji</b> when a message is only emoji.</li>
+            <li><b>Avatars, a status with emoji, and a bio.</b></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="feature group" id="accounts">
+        <div class="card checklist">
+          <p class="caption">Log in with</p>
+          <ul>
+            <li>A Kallisti account</li>
+            <li>Your fediverse account: Mastodon, Pleroma, Akkoma, GoToSocial</li>
+            <li>As a guest, if the server allows it</li>
+          </ul>
+        </div>
+        <div>
+          <h2>Accounts</h2>
+          <ul class="list">
+            <li><b>Log in with your fediverse account,</b> link it to an existing account, and show your verified handle.</li>
+            <li><b>Guests</b> can drop in without an account; the server can make them read-only.</li>
+            <li><b>One account on several devices:</b> voice on one, chat on all. <span class="tag">built-in server</span></li>
+            <li><b>Mumble apps</b> log in with the same account and password.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="feature group reverse" id="moderation">
+        <div class="card checklist">
+          <p class="caption">Moderators can</p>
+          <ul>
+            <li>Mute, move, time out, kick and ban</li>
+            <li>Delete messages, also many at once</li>
+            <li>Turn on slow mode</li>
+            <li>Record a voice channel</li>
+          </ul>
+        </div>
+        <div>
+          <h2>Moderation</h2>
+          <ul class="list">
+            <li><b>Admins and moderators,</b> made with one click in the app, and moderators for single channels.</li>
+            <li><b>Slow mode,</b> a word and link filter, and limits for new accounts. <span class="tag">built-in server</span></li>
+            <li><b>A captcha</b> at sign-up, with no third party. <span class="tag">built-in server</span></li>
+            <li><b>Bans</b> that also hold for Mumble clients.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="feature group" id="devices">
+        <div class="pair">
+          <img class="phone" src="img/phone.png" alt="Kallisti on a phone" width="390" height="844" loading="lazy" />
+          <img src="img/light.png" alt="Kallisti in the light theme" width="1440" height="900" loading="lazy" />
+        </div>
+        <div>
+          <h2>Phone and desktop</h2>
+          <ul class="list">
+            <li><b>In the browser,</b> nothing to install.</li>
+            <li><b>On your phone:</b> install it from the browser as an app, with push notifications and an unread badge. <span class="tag">built-in server</span></li>
+            <li><b>Voice keeps going</b> in the background on Android.</li>
+            <li><b>Apps for macOS, Windows and Linux,</b> with native notifications; the desktop app also connects to plain Mumble servers.</li>
+            <li><b>Dark or light,</b> as you like it.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="feature group reverse" id="server">
+        <div class="card code">
+          <p class="caption">Your own server, in three commands</p>
+          <pre><code>git clone https://github.com/lambadalambda/kallisti &amp;&amp; cd kallisti
+printf 'DOMAIN=chat.example.org\nSUPERUSER_PASSWORD=%s\n' "$(openssl rand -hex 16)" &gt; deploy/.env
+docker compose -f deploy/compose.yml up -d --remove-orphans</code></pre>
+        </div>
+        <div>
+          <h2>Your own server</h2>
+          <ul class="list">
+            <li><b>One Docker setup</b> with the voice server and HTTPS in it, or run it in front of the Murmur you already have.</li>
+            <li><b>Behind your own proxy,</b> with Cloudflare and no port 80, with systemd, or on Kubernetes.</li>
+            <li><b>Your messages stay on your machine,</b> with a daily database backup.</li>
+            <li><b>Free software,</b> in the public domain.</li>
+          </ul>
+          <p><a class="link" href="https://github.com/lambadalambda/kallisti/blob/main/docs/install-docker.md">How to install it →</a></p>
+        </div>
+      </section>
+
+      <section class="feature group" id="mumble">
+        <div class="card checklist">
+          <p class="caption">Mumble users keep</p>
+          <ul>
+            <li>Their client (Mumble 1.3 or newer)</li>
+            <li>Whispering, linked channels, positional audio</li>
+            <li>Rights (ACLs), groups, certificates</li>
+          </ul>
+        </div>
+        <div>
+          <h2>For Mumble users</h2>
+          <ul class="list">
+            <li><b>Friends without Mumble</b> join the same channels from a browser.</li>
+            <li><b>Text channels</b> show up as channels, and what was said there arrives when they come in.</li>
+            <li><b>Pictures, files and replies</b> reach them as well.</li>
+            <li><b>A real certificate,</b> so the client connects without a trust question.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="note">
+        <p>
+          <span class="tag">built-in server</span> These features need Kallisti's own voice server. In front of an existing
+          Murmur, everything else works. <a class="link" href="https://github.com/lambadalambda/kallisti#what-works-where">What works where →</a>
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <div class="brand"><img src="img/logo.png" alt="" width="24" height="24" />Kallisti</div>
+      <p>Free software (Unlicense), built on <a href="https://www.mumble.info">Mumble</a>.</p>
+      <p><a href="index.html">Home</a> · <a href="https://github.com/lambadalambda/kallisti">GitHub</a> · <a href="https://github.com/lambadalambda/kallisti/releases">Releases</a></p>
+    </footer>
+  </body>
+</html>
