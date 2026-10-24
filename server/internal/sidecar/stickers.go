@@ -144,3 +144,7 @@ func (h *Hub) RedeemStickerToken(token string) (store.Sticker, bool) {
 	}
 	return *t.sticker, true
 }
+
+// stickerText is a sticker message's text: what clients that show only
+// text show.
+func stickerText(name string) string { return "[sticker: " + name + "]" }

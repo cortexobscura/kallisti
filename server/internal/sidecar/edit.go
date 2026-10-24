@@ -69,6 +69,8 @@ func (c *Conn) changeMessage(id mumble.Identity, req request) {
 		switch {
 		case !own:
 			c.sendError("you may only edit your own messages")
+		case m.Sticker != nil:
+			c.sendError("a sticker cannot be edited")
 		case !valid:
 			c.sendError(textError)
 		default:

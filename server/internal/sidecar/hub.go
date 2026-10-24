@@ -427,21 +427,29 @@ type wireChannel struct {
 }
 
 type wireMessage struct {
-	ID         int64          `json:"id"`
-	Channel    int64          `json:"channel"`
-	Author     string         `json:"author"`
-	Text       string         `json:"text"`
-	At         int64          `json:"at"` // Unix milliseconds
-	Verified   bool           `json:"verified"`
-	AuthorID   *uint32        `json:"authorId,omitempty"` // with verified (unknown for old messages)
-	Upload     *wireUpload    `json:"upload,omitempty"`
-	Edited     int64          `json:"edited,omitempty"` // Unix milliseconds
-	Pinned     int64          `json:"pinned,omitempty"` // Unix milliseconds
-	Reply      *wireQuote     `json:"reply,omitempty"`
-	Reactions  []wireReaction `json:"reactions,omitempty"`
-	MentionAll string         `json:"mentionAll,omitempty"` // "here" or "everyone"
-	NoPing     bool           `json:"noPing,omitempty"`     // a reply that does not ping
-	Thread     *wireThread    `json:"thread,omitempty"`     // the thread started from it
+	ID         int64           `json:"id"`
+	Channel    int64           `json:"channel"`
+	Author     string          `json:"author"`
+	Text       string          `json:"text"`
+	At         int64           `json:"at"` // Unix milliseconds
+	Verified   bool            `json:"verified"`
+	AuthorID   *uint32         `json:"authorId,omitempty"` // with verified (unknown for old messages)
+	Upload     *wireUpload     `json:"upload,omitempty"`
+	Sticker    *wireMsgSticker `json:"sticker,omitempty"` // a sticker message (text: its name, for clients without stickers)
+	Edited     int64           `json:"edited,omitempty"`  // Unix milliseconds
+	Pinned     int64           `json:"pinned,omitempty"`  // Unix milliseconds
+	Reply      *wireQuote      `json:"reply,omitempty"`
+	Reactions  []wireReaction  `json:"reactions,omitempty"`
+	MentionAll string          `json:"mentionAll,omitempty"` // "here" or "everyone"
+	NoPing     bool            `json:"noPing,omitempty"`     // a reply that does not ping
+	Thread     *wireThread     `json:"thread,omitempty"`     // the thread started from it
+}
+
+// wireMsgSticker is the sticker a message is: its id and name (a client
+// shows the name when the id is not in its sticker list: deleted).
+type wireMsgSticker struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 // wireQuote is the start of the message a reply answers (author empty:
@@ -515,6 +523,9 @@ func toWire(m store.Message) wireMessage {
 	if u := m.Upload; u != nil {
 		w.Upload = &wireUpload{URL: FileURL(*u), Name: u.Name, Type: u.Type, Size: u.Size, Width: u.Width, Height: u.Height, Duration: u.Duration, Preview: previewURL(*u)}
 	}
+	if s := m.Sticker; s != nil {
+		w.Sticker = &wireMsgSticker{ID: s.ID, Name: s.Name}
+	}
 	if len(m.Reactions) > 0 {
 		w.Reactions = toWireReactions(m.Reactions)
 	}
@@ -550,7 +561,7 @@ type request struct {
 	Users       []uint32        `json:"users"`       // set-listen-only: who may speak
 	Messages    []int64         `json:"messages"`    // previews
 	Emoji       string          `json:"emoji"`       // react; add-user-emoji, remove-emoji-image; sticker-token, rename-sticker: the related emoji
-	Sticker     int64           `json:"sticker"`     // rename-sticker, delete-sticker
+	Sticker     int64           `json:"sticker"`     // send: a sticker message; rename-sticker, delete-sticker
 	Description string          `json:"description"` // sticker-token, rename-sticker
 	Pack        string          `json:"pack"`        // sticker-token, rename-sticker
 	On          bool            `json:"on"`          // react: add (or remove); pin; away; set-guests-read-only
@@ -923,6 +934,20 @@ func (c *Conn) history(req request) {
 }
 
 func (c *Conn) post(id mumble.Identity, req request, ch chat) {
+	// A sticker is a message of its own; its text is its name, for what
+	// only shows text (Mumble clients, previews, quotes, search).
+	if req.Sticker != 0 {
+		st, err := c.hub.store.StickerByID(req.Sticker)
+		switch {
+		case strings.TrimSpace(req.Text) != "" || req.Upload != "":
+			c.sendError("a sticker is sent on its own")
+			return
+		case err != nil || st.Deleted:
+			c.sendError("no such sticker")
+			return
+		}
+		req.Text = stickerText(st.Name)
+	}
 	text, ok := validText(req.Text, req.Upload != "")
 	if !ok {
 		c.sendError(textError)
@@ -932,7 +957,7 @@ func (c *Conn) post(id mumble.Identity, req request, ch chat) {
 		c.sendError("invalid nonce")
 		return
 	}
-	n := store.NewMessage{ChannelID: req.Channel, Thread: ch.parent != 0, Author: id.Name, Verified: id.Registered, AuthorID: id.UserID, Text: text, At: c.hub.now(), ReplyTo: req.Reply, NoPing: req.NoPing && req.Reply != 0, Nonce: req.Nonce}
+	n := store.NewMessage{ChannelID: req.Channel, Thread: ch.parent != 0, Author: id.Name, Verified: id.Registered, AuthorID: id.UserID, Text: text, At: c.hub.now(), StickerID: req.Sticker, ReplyTo: req.Reply, NoPing: req.NoPing && req.Reply != 0, Nonce: req.Nonce}
 	// A retry of a stored send: its message again, to the sender only.
 	stored := func() bool {
 		m, err := c.hub.store.MessageByNonce(n)

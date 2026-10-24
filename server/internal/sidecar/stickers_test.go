@@ -151,3 +151,52 @@ func TestManagersRenameAndDeleteStickers(t *testing.T) {
 		t.Fatalf("deleted twice: %v", m)
 	}
 }
+
+// A sticker message: the sticker's id and name, and its name as text for
+// what only shows text (Mumble, previews, quotes). No text with it, no
+// unknown or deleted sticker, no edit.
+func TestSendASticker(t *testing.T) {
+	h := newHub(t, "general")
+	alice, bob := ready(t, h, "alice"), ready(t, h, "bob")
+	s := addSticker(t, h, "wave", "")
+	send := func(c *Conn, body string) { c.Handle([]byte(fmt.Sprintf(body, s.ID))) }
+	send(alice, `{"type":"send","channel":1,"sticker":%d}`)
+	m := next(t, alice)
+	msg, _ := m["message"].(map[string]any)
+	st, _ := msg["sticker"].(map[string]any)
+	if m["type"] != "message" || msg["text"] != "[sticker: wave]" || st["id"] != float64(s.ID) || st["name"] != "wave" {
+		t.Fatalf("got %v", m)
+	}
+	if got := next(t, bob)["message"].(map[string]any)["sticker"]; got == nil {
+		t.Fatal("bob got no sticker")
+	}
+	if got := h.mumbleText(mustMessage(t, h, int64(msg["id"].(float64)))); got != "[sticker: wave]" {
+		t.Fatalf("Mumble: %q", got)
+	}
+	send(alice, `{"type":"send","channel":1,"sticker":%d,"text":"hi"}`)
+	if m := next(t, alice); m["type"] != "error" {
+		t.Fatalf("with text: %v", m)
+	}
+	alice.Handle([]byte(`{"type":"send","channel":1,"sticker":9999}`))
+	if m := next(t, alice); m["type"] != "error" {
+		t.Fatalf("unknown sticker: %v", m)
+	}
+	alice.Handle([]byte(fmt.Sprintf(`{"type":"edit-message","message":%v,"text":"changed"}`, msg["id"])))
+	if m := next(t, alice); m["type"] != "error" {
+		t.Fatalf("edit: %v", m)
+	}
+	h.store.DeleteSticker(s.ID)
+	send(alice, `{"type":"send","channel":1,"sticker":%d}`)
+	if m := next(t, alice); m["type"] != "error" {
+		t.Fatalf("deleted sticker: %v", m)
+	}
+}
+
+func mustMessage(t *testing.T, h *Hub, id int64) store.Message {
+	t.Helper()
+	m, err := h.store.MessageByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
