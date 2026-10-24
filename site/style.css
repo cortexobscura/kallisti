@@ -210,6 +210,17 @@ p {
   grid-template-columns: 1fr 1.4fr;
 }
 
+/* A picture with a credit line under it. */
+.feature figure {
+  margin: 0;
+}
+
+.feature figcaption {
+  margin-top: 14px;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* Long lines (the commands) must not widen a column. */
 .feature > * {
   min-width: 0;
