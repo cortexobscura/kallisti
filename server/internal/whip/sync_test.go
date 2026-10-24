@@ -50,3 +50,21 @@ func TestPictureShiftKeepsOrder(t *testing.T) {
 }
 
 func abs(x int64) int64 { return max(x, -x) }
+
+// state reports what the correction does (for the log): the pictures 30 ms
+// later on the way than at the start, the sound not.
+func TestSyncState(t *testing.T) {
+	var s avSync
+	for real := int64(0); real < 20_000_000; real += 20_000 {
+		s.noteSound(real, real)
+		late := int64(0)
+		if real >= 4_000_000 {
+			late = 30_000
+		}
+		s.picture(real, real+late)
+	}
+	st := s.state()
+	if !st.known || st.sound != 0 || st.pictures != 30_000 || st.shift != -30_000 {
+		t.Fatalf("%+v", st)
+	}
+}

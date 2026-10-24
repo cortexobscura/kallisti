@@ -66,3 +66,15 @@ func (a *avSync) picture(stamp, arrival int64) int64 {
 	}
 	return max(0, stamp-a.shift)
 }
+
+// syncState: the drifts (µs) and the pictures' shift now; known: both
+// tracks are past their first window.
+type syncState struct {
+	sound, pictures, shift int64
+	known                  bool
+}
+
+// state, from the pictures' goroutine (for the log).
+func (a *avSync) state() syncState {
+	return syncState{sound: a.soundDrift.Load(), pictures: a.pictures.drift, shift: a.shift, known: a.soundKnown.Load() && a.pictures.known}
+}

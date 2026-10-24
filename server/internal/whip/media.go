@@ -132,6 +132,7 @@ type feed struct {
 	ingest  atomic.Pointer[stream.Ingest]
 	sClock  clock  // the sound goroutine's
 	av      avSync // pictures on the sound's timeline
+	synced  int64  // the pictures': when the sync was logged last (arrival, µs)
 	// The stream starts and stops under mu: a stop while it starts wins.
 	mu      sync.Mutex
 	stopped bool
@@ -225,6 +226,7 @@ func (f *feed) picture(t timed) error {
 	}
 	if f.audio != "" {
 		t.ts = uint64(f.av.picture(int64(t.ts), t.arrival))
+		f.logSync(t.arrival)
 	}
 	changed := false
 	if t.codec != "" {
@@ -258,6 +260,20 @@ func (f *feed) picture(t timed) error {
 		go f.makePreview(bytes.Clone(t.data))
 	}
 	return nil
+}
+
+// syncLogEvery: how often the A/V correction is logged (to find streams
+// out of sync, see meta/issues/whip-av-sync.md).
+const syncLogEvery = 10_000_000 // µs
+
+func (f *feed) logSync(arrival int64) {
+	if arrival-f.synced < syncLogEvery {
+		return
+	}
+	f.synced = arrival
+	if st := f.av.state(); st.known {
+		slog.Info("stream from OBS: sync", "session", f.session.Load(), "sound_drift_ms", st.sound/1000, "picture_drift_ms", st.pictures/1000, "shift_ms", st.shift/1000)
+	}
 }
 
 func sizeError(err error, c stream.Config) error {
