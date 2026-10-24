@@ -17,4 +17,8 @@
 - [ ] [Mobile apps (Android and iOS) with background calls](issues/mobile-apps.md) (not started)
 - [ ] [Desktop app: links do nothing, videos don't play (Linux)](issues/desktop-links-and-video.md)
 - [ ] [Stickers](issues/stickers.md)
+  - [ ] [Stickers: storage and upload](issues/stickers-storage.md)
+  - [ ] [Sticker messages](issues/sticker-messages.md)
+  - [ ] [Stickers in the web app: manage](issues/stickers-manage.md)
+  - [ ] [Stickers in the web app: send and show](issues/stickers-send.md)
 - [ ] [WHIP streams: picture and sound out of sync](issues/whip-av-sync.md)

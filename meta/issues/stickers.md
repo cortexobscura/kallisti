@@ -32,6 +32,20 @@ and a message of its own.
 - Not: Discord's sticker packs, Lottie, stickers as reactions, stickers in
   other servers.
 
+## Sub-issues
+
+- [Stickers: storage and upload](stickers-storage.md)
+- [Sticker messages](sticker-messages.md)
+- [Stickers in the web app: manage](stickers-manage.md)
+- [Stickers in the web app: send and show](stickers-send.md)
+
+## Design (2026-10-24, from the code)
+
+- Stored like personal emoji, not like server emoji: a deleted sticker keeps its row (image removed, name kept), so old messages show its name; ids are never reused, so images are cached forever.
+- A sticker message is a message with a `sticker_id` column and no text (as uploads have `upload_id`), not a text code: markdown, word filters and the emoji rewriting do not touch it.
+- Resizing in the browser as for emoji (target 320x320 instead of 96); animated files kept as they are.
+- Managed by whoever may manage emoji (admins and moderators, built-in server only).
+
 ## Acceptance Criteria
 
 - Staff add a sticker; another user sends it from the picker; all web
