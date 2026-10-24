@@ -116,6 +116,8 @@ func run() error {
 		OnEmoji:         hub.EmojiChanged,
 		RedeemUserEmoji: hub.RedeemUserEmojiToken,
 		OnUserEmoji:     hub.UserEmojiChanged,
+		RedeemSticker:   hub.RedeemStickerToken,
+		OnSticker:       hub.StickersChanged,
 		OnPreview:       hub.UploadPreview,
 	}
 	// Once: uploads from before sizes were kept.
@@ -227,6 +229,8 @@ func run() error {
 	mux.Handle("/files/", fileHandler)
 	mux.Handle("/api/emoji", fileHandler)
 	mux.Handle("/api/emoji/", fileHandler)
+	mux.Handle("/api/stickers", fileHandler)
+	mux.Handle("/api/stickers/", fileHandler)
 	mux.Handle("/api/avatars/", avatars)
 	mux.Handle("/api/link-image/", linkImages)
 	mux.Handle("/api/push", pushes)

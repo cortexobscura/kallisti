@@ -3,6 +3,7 @@ package files
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -19,32 +20,41 @@ import (
 // MaxEmojiBytes is the largest custom emoji image.
 const MaxEmojiBytes = 256 << 10
 
+// MaxStickerBytes is the largest sticker image.
+const MaxStickerBytes = 512 << 10
+
 // readEmojiImage reads and checks an emoji image upload; false: it
 // answered with why not.
 func readEmojiImage(w http.ResponseWriter, r *http.Request) (ctype string, data []byte, ok bool) {
+	return readInlineImage(w, r, MaxEmojiBytes, "emoji")
+}
+
+// readInlineImage reads and checks an image shown inline (an emoji, a
+// sticker) of at most max bytes; what names it in errors.
+func readInlineImage(w http.ResponseWriter, r *http.Request, max int, what string) (ctype string, data []byte, ok bool) {
 	http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadTimeout))
-	data, err := io.ReadAll(io.LimitReader(r.Body, MaxEmojiBytes+1))
+	data, err := io.ReadAll(io.LimitReader(r.Body, int64(max)+1))
 	switch {
 	case err != nil:
 		jsonError(w, "cannot read the image", http.StatusBadRequest)
 		return "", nil, false
-	case len(data) > MaxEmojiBytes:
-		jsonError(w, "an emoji image has at most 256 KB", http.StatusRequestEntityTooLarge)
+	case len(data) > max:
+		jsonError(w, fmt.Sprintf("an %s image has at most %d KB", what, max>>10), http.StatusRequestEntityTooLarge)
 		return "", nil, false
 	}
 	// The type comes from the content: only images that cannot carry
 	// scripts. Not AVIF (not mediasize.DetectType): imagesize cannot check it.
 	ctype, _, _ = mime.ParseMediaType(http.DetectContentType(data))
 	if len(data) == 0 || !slices.Contains(inlineTypes, ctype) {
-		jsonError(w, "an emoji is a PNG, GIF, WebP or JPEG image", http.StatusUnsupportedMediaType)
+		jsonError(w, "an "+what+" is a PNG, GIF, WebP or JPEG image", http.StatusUnsupportedMediaType)
 		return "", nil, false
 	}
 	switch err := imagesize.Inline(bytes.NewReader(data)); {
 	case errors.Is(err, imagesize.ErrTooLarge):
-		jsonError(w, "the emoji image has too many pixels", http.StatusRequestEntityTooLarge)
+		jsonError(w, "the "+what+" image has too many pixels", http.StatusRequestEntityTooLarge)
 		return "", nil, false
 	case err != nil:
-		jsonError(w, "the emoji image is broken", http.StatusUnsupportedMediaType)
+		jsonError(w, "the "+what+" image is broken", http.StatusUnsupportedMediaType)
 		return "", nil, false
 	}
 	return ctype, data, true
@@ -136,16 +146,21 @@ func (h *Handler) serveEmoji(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// A personal one can be removed by moderators: clients then show text
+	// (they get the removed ids), but shared caches would keep serving it.
+	serveInline(w, r, ctype, data, at, !personal)
+}
+
+// serveInline serves an emoji's or a sticker's image: ids are never used
+// again and an image never changes. public: shared caches may keep it.
+func serveInline(w http.ResponseWriter, r *http.Request, ctype string, data []byte, at time.Time, public bool) {
 	hd := w.Header()
 	hd.Set("Content-Type", ctype)
 	hd.Set("X-Content-Type-Options", "nosniff")
 	hd.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-	// Ids are never used again and an emoji's image never changes. A
-	// personal one can be removed by moderators: clients then show text
-	// (they get the removed ids), but shared caches would keep serving it.
-	cache := "public"
-	if personal {
-		cache = "private"
+	cache := "private"
+	if public {
+		cache = "public"
 	}
 	hd.Set("Cache-Control", cache+", max-age=31536000, immutable")
 	http.ServeContent(w, r, "", at, bytes.NewReader(data))
