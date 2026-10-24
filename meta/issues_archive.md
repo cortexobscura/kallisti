@@ -265,3 +265,4 @@
   - [x] [Stickers in the web app: manage](issues/stickers-manage.md)
   - [x] [Stickers in the web app: send and show](issues/stickers-send.md)
 - [x] [Stickers on the website](issues/site-stickers.md)
+- [x] [Site: enlarge screenshots](issues/site-lightbox.md)
