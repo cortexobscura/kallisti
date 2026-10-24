@@ -17,3 +17,7 @@ A message can be a sticker: no text, a sticker id. All clients see it in history
 ## Acceptance Criteria
 
 - Tests: a sticker post is stored and sent with its id; text with a sticker, an unknown and a deleted sticker are refused; an edit is refused; Mumble gets the text; slow mode applies.
+
+## Notes
+
+- Done 2026-10-24: the message also stores the text "[sticker: name]", so Mumble clients, search, quotes, previews and old clients need nothing new. A renamed sticker keeps its old name in that text (the message's sticker shows the new name); a search for "sticker" finds all sticker messages.

@@ -16,3 +16,7 @@ Staff add, rename and delete stickers in the moderation dialog, next to the serv
 
 - Tests for the pure parts (form checks, the resize sizes at 320).
 - Checked in a headless browser: add, rename and delete a sticker.
+
+## Notes
+
+- Done 2026-10-24: also many files at once (named after their files; emoji, pack and description for all), for packs. Checked in a headless browser: add (a still image resized to 320 px WebP, a GIF kept), edit, delete, three files at once.

@@ -20,3 +20,7 @@ The server keeps a server's stickers, lets staff add, rename and delete them, an
 - Store tests: add, the limit, a taken name, rename, delete keeps the name and frees it, ids not reused.
 - Upload tests: size and type checks, the token, serving, 404 after delete.
 - Sidecar tests: permissions, ready, the broadcast after add, rename and delete.
+
+## Notes
+
+- Done 2026-10-24: with a pack field and up to 200 stickers (three packs were chosen for chat.kallisti.chat).

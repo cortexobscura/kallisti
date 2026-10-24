@@ -2306,3 +2306,10 @@ From `meta/research/discord-comparison.md`.
 ## Fediverse login: large Pleroma accounts
 
 - A login from shigusegubu.club (Pleroma 2.10) failed with "Could not check the login": the client read at most 64 KB of a JSON answer, and Pleroma and Akkoma put the user's front-end settings (`pleroma.settings_store`) into `verify_credentials`, often hundreds of KB. The limit is now 2 MB (`fedi.maxBody`).
+
+## Stickers
+
+- Large pictures sent as a message of their own. Stored like personal emoji, not like server emoji: a deleted sticker keeps its row without the image (a partial unique index frees its name), so old messages show its name; ids are never used again, so images are cached (privately: a deleted one should leave caches).
+- A sticker message has `messages.sticker_id` and also the text "[sticker: name]": Mumble clients, search, quotes, previews, push and old web clients need nothing new. Edits are refused. The nonce check comes before the sticker check (a retry after a delete still confirms the stored message), and slow mode gives back the typed text, not the sticker's.
+- Upload as emoji (a WebSocket token, then POST /api/stickers), 512 KB, resized in the browser to 320 px (the emoji resize code with a size parameter); animated files kept. Many files at once for packs. Up to 200 stickers, grouped by an optional pack in the picker.
+- The picker has its own button next to the emoji button. In a headless browser a background session's pictures are hidden (html[data-window-hidden]): not a bug.

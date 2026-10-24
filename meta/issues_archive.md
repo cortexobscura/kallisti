@@ -259,3 +259,8 @@
   - [x] [Features page](issues/site-features-list.md)
   - [x] [Screenshots of the new features](issues/site-new-screenshots.md)
   - [x] [Landing page texts](issues/site-landing-texts.md)
+- [x] [Stickers](issues/stickers.md)
+  - [x] [Stickers: storage and upload](issues/stickers-storage.md)
+  - [x] [Sticker messages](issues/sticker-messages.md)
+  - [x] [Stickers in the web app: manage](issues/stickers-manage.md)
+  - [x] [Stickers in the web app: send and show](issues/stickers-send.md)

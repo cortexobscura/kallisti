@@ -17,3 +17,7 @@ Everyone can send a sticker from the picker; messages show it large.
 
 - Tests for the pure parts (sticker lookup, the preview text, the picker search).
 - Checked in a headless browser: send a sticker, see it in two clients, after a reload, and after the sticker was deleted.
+
+## Notes
+
+- Done 2026-10-24: the picker has its own button next to the emoji button (as Discord has), not a tab in the emoji picker. Checked in a headless browser: send, a second client, a reload, a rename, a deleted sticker (its name in italics).
