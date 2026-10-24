@@ -254,3 +254,8 @@
   - [x] [Previews for WHIP streams](issues/whip-stream-previews.md)
 - [x] [WHIP streams: sound drops after a while](issues/whip-av-drift.md)
 - [x] [WHIP streams survive a browser refresh](issues/whip-survives-refresh.md)
+- [x] [Website and README: show what Kallisti does now](issues/site-features-page.md)
+  - [x] [README update](issues/site-readme-update.md)
+  - [x] [Features page](issues/site-features-list.md)
+  - [x] [Screenshots of the new features](issues/site-new-screenshots.md)
+  - [x] [Landing page texts](issues/site-landing-texts.md)
