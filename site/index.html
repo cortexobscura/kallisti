@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Kallisti — voice and text chat for your group</title>
-    <meta name="description" content="Kallisti is voice and text chat for your group: channels, voice, screen sharing and more, on your own server. Built on Mumble." />
+    <meta name="description" content="Kallisti is voice and text chat for your group: channels, voice, streams and more, on your own server. Built on Mumble." />
     <meta property="og:title" content="Kallisti" />
     <meta property="og:description" content="Voice and text chat for your group, on your own server. Built on Mumble." />
     <meta property="og:image" content="img/chat.png" />
@@ -15,7 +15,7 @@
     <header class="nav">
       <a class="brand" href="#top"><img src="img/logo.png" alt="" width="32" height="32" />Kallisti</a>
       <nav aria-label="Main">
-        <a href="#features">Features</a>
+        <a href="features.html">Features</a>
         <a href="#download">Download</a>
         <a href="#self-host">Run a server</a>
         <a href="https://github.com/lambadalambda/kallisti">GitHub</a>
@@ -28,8 +28,9 @@
         <div class="hero-text">
           <h1>A place to hang out and talk</h1>
           <p>
-            Kallisti is voice and text chat for your group: channels, voice, screen sharing, reactions and everything else
-            you know, on a server that belongs to you. It is built on Mumble, so Mumble apps can join too.
+            Kallisti is voice and text chat for your group: channels, voice, going live with your screen or camera,
+            reactions and everything else you know, on a server that belongs to you. It is built on Mumble, so Mumble apps
+            can join too.
           </p>
           <div class="actions">
             <a class="button light" id="hero-download" href="#download">Download</a>
@@ -42,12 +43,13 @@
       </section>
 
       <section class="feature" id="features">
-        <img src="img/voice.png" alt="A voice channel with people in it and its chat" width="1440" height="900" loading="lazy" />
+        <img src="img/streams.png" alt="Four people live with their cameras in a voice channel's stream grid, its chat below" width="1440" height="900" loading="lazy" />
         <div>
           <h2>Hop in when you're free</h2>
           <p>
             Voice channels are always open: click one and you are in. Push-to-talk or voice activity, strong noise
-            suppression, a volume for each person, and screen sharing with sound.
+            suppression and a volume for each person. Go live with your screen or your camera, watch several streams at
+            once, or stream straight from OBS.
           </p>
         </div>
       </section>
@@ -57,8 +59,9 @@
         <div>
           <h2>Chat the way you are used to</h2>
           <p>
-            Text channels with history, replies, reactions, your server's own emoji, spoilers, pictures and files, pins,
-            search and direct messages. Set a status, mute a channel, or find any channel with Ctrl+K.
+            Text channels with threads, replies, reactions, your server's own emoji and your personal ones, pictures,
+            videos and files, pins, search and direct messages. Log in with your account or your fediverse account, set a
+            status, or find any channel with Ctrl+K.
           </p>
         </div>
       </section>
@@ -71,7 +74,8 @@
         <div>
           <h2>On every screen</h2>
           <p>
-            In the browser, as an app for macOS, Windows and Linux, and on your phone. Dark or light, as you like it.
+            In the browser, as an app for macOS, Windows and Linux, and on your phone: install it from the browser, with
+            push notifications. Dark or light, as you like it.
           </p>
         </div>
       </section>
@@ -81,7 +85,8 @@
           <p class="caption">Your own server, in three commands</p>
           <pre><code>git clone https://github.com/lambadalambda/kallisti &amp;&amp; cd kallisti
 printf 'DOMAIN=chat.example.org\nSUPERUSER_PASSWORD=%s\n' "$(openssl rand -hex 16)" &gt; deploy/.env
-docker compose -f deploy/compose.yml up -d</code></pre>
+docker compose -f deploy/compose.yml up -d --remove-orphans</code></pre>
+          <p class="small ports">Open TCP 80 and 443, TCP and UDP 64738 for Mumble apps, and UDP 8189 for OBS.</p>
         </div>
         <div>
           <h2>Your server, your rules</h2>
@@ -92,6 +97,10 @@ docker compose -f deploy/compose.yml up -d</code></pre>
           </p>
           <p><a class="link" href="https://github.com/lambadalambda/kallisti/blob/main/docs/install-docker.md">How to install it →</a></p>
         </div>
+      </section>
+
+      <section class="note more">
+        <p><a class="button dark" href="features.html">See all features</a></p>
       </section>
 
       <section class="download" id="download">

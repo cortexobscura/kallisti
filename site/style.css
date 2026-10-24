@@ -450,6 +450,14 @@ footer p {
   text-align: center;
 }
 
+.ports {
+  margin: 16px 0 0;
+}
+
+.more {
+  padding-bottom: 0;
+}
+
 @media (max-width: 860px) {
   .nav nav {
     display: none;
