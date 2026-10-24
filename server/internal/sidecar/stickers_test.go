@@ -200,3 +200,30 @@ func mustMessage(t *testing.T, h *Hub, id int64) store.Message {
 	}
 	return m
 }
+
+// Fixes from a review: slow mode does not give the sticker's text back
+// for the composer; a retry of a stored sticker message is confirmed also
+// once the sticker is deleted.
+func TestStickerSendEdges(t *testing.T) {
+	h := newHub(t, "general")
+	h.SetVoice(&fakeVoice{}, "")
+	admin, bob := readyAs(t, h, 1, "admin"), readyAs(t, h, 2, "bob")
+	s := addSticker(t, h, "wave", "")
+	bob.Handle(fmt.Appendf(nil, `{"type":"send","channel":1,"sticker":%d,"nonce":"n1"}`, s.ID))
+	first := next(t, bob)
+	next(t, admin)
+	h.store.DeleteSticker(s.ID)
+	bob.Handle(fmt.Appendf(nil, `{"type":"send","channel":1,"sticker":%d,"nonce":"n1"}`, s.ID))
+	if m := next(t, bob); m["type"] != "message" || m["nonce"] != "n1" || m["message"].(map[string]any)["id"] != first["message"].(map[string]any)["id"] {
+		t.Fatalf("retry: %v", m)
+	}
+	s = addSticker(t, h, "cat", "")
+	admin.Handle([]byte(`{"type":"set-slow-mode","channel":1,"seconds":30}`))
+	next(t, admin)
+	next(t, bob)
+	// bob posted just now: his turn has not come.
+	bob.Handle(fmt.Appendf(nil, `{"type":"send","channel":1,"sticker":%d}`, s.ID))
+	if m := next(t, bob); m["about"] != "slow-mode" || m["text"] != "" {
+		t.Fatalf("slow mode: %v", m)
+	}
+}

@@ -934,6 +934,23 @@ func (c *Conn) history(req request) {
 }
 
 func (c *Conn) post(id mumble.Identity, req request, ch chat) {
+	if len(req.Nonce) > maxNonce {
+		c.sendError("invalid nonce")
+		return
+	}
+	n := store.NewMessage{ChannelID: req.Channel, Thread: ch.parent != 0, Author: id.Name, Verified: id.Registered, AuthorID: id.UserID, At: c.hub.now(), StickerID: req.Sticker, ReplyTo: req.Reply, NoPing: req.NoPing && req.Reply != 0, Nonce: req.Nonce}
+	// A retry of a stored send: its message again, to the sender only.
+	stored := func() bool {
+		m, err := c.hub.store.MessageByNonce(n)
+		if err == nil {
+			c.send(map[string]any{"type": "message", "message": toWire(m), "nonce": req.Nonce})
+		}
+		return err == nil
+	}
+	if stored() {
+		return
+	}
+	typed := req.Text // what goes back to the composer (slow mode)
 	// A sticker is a message of its own; its text is its name, for what
 	// only shows text (Mumble clients, previews, quotes, search).
 	if req.Sticker != 0 {
@@ -953,22 +970,7 @@ func (c *Conn) post(id mumble.Identity, req request, ch chat) {
 		c.sendError(textError)
 		return
 	}
-	if len(req.Nonce) > maxNonce {
-		c.sendError("invalid nonce")
-		return
-	}
-	n := store.NewMessage{ChannelID: req.Channel, Thread: ch.parent != 0, Author: id.Name, Verified: id.Registered, AuthorID: id.UserID, Text: text, At: c.hub.now(), StickerID: req.Sticker, ReplyTo: req.Reply, NoPing: req.NoPing && req.Reply != 0, Nonce: req.Nonce}
-	// A retry of a stored send: its message again, to the sender only.
-	stored := func() bool {
-		m, err := c.hub.store.MessageByNonce(n)
-		if err == nil {
-			c.send(map[string]any{"type": "message", "message": toWire(m), "nonce": req.Nonce})
-		}
-		return err == nil
-	}
-	if stored() {
-		return
-	}
+	n.Text = text
 	// Not in direct chats: there every message counts already.
 	if !ch.direct && c.hub.voice != nil && c.hub.voice.MayManage(id.Session) {
 		n.MentionAll = mentionAllOf(text)
@@ -987,12 +989,16 @@ func (c *Conn) post(id mumble.Identity, req request, ch chat) {
 		}
 		n.UploadID = u.ID
 	}
-	if c.slowMode(id, ch, req.Text) {
+	if c.slowMode(id, ch, typed) {
 		return
 	}
 	m, err := c.hub.store.AddMessage(n)
-	if errors.Is(err, store.ErrNotFound) { // a thread deleted meanwhile
-		c.sendError("unknown channel")
+	if errors.Is(err, store.ErrNotFound) { // a thread or the sticker deleted meanwhile
+		if req.Sticker != 0 {
+			c.sendError("no such sticker")
+		} else {
+			c.sendError("unknown channel")
+		}
 		return
 	}
 	if err != nil {

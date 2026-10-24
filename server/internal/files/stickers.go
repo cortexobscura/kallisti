@@ -19,7 +19,7 @@ func (h *Handler) uploadSticker(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid or expired upload token", http.StatusUnauthorized)
 		return
 	}
-	if st.Type, st.Data, ok = readInlineImage(w, r, MaxStickerBytes, "sticker"); !ok {
+	if st.Type, st.Data, ok = readInlineImage(w, r, MaxStickerBytes, "a sticker"); !ok {
 		return
 	}
 	st, err := h.Store.AddSticker(st, h.Now())

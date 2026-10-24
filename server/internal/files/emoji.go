@@ -26,11 +26,11 @@ const MaxStickerBytes = 512 << 10
 // readEmojiImage reads and checks an emoji image upload; false: it
 // answered with why not.
 func readEmojiImage(w http.ResponseWriter, r *http.Request) (ctype string, data []byte, ok bool) {
-	return readInlineImage(w, r, MaxEmojiBytes, "emoji")
+	return readInlineImage(w, r, MaxEmojiBytes, "an emoji")
 }
 
 // readInlineImage reads and checks an image shown inline (an emoji, a
-// sticker) of at most max bytes; what names it in errors.
+// sticker) of at most max bytes; what names it in errors ("an emoji").
 func readInlineImage(w http.ResponseWriter, r *http.Request, max int, what string) (ctype string, data []byte, ok bool) {
 	http.NewResponseController(w).SetReadDeadline(time.Now().Add(uploadTimeout))
 	data, err := io.ReadAll(io.LimitReader(r.Body, int64(max)+1))
@@ -39,22 +39,22 @@ func readInlineImage(w http.ResponseWriter, r *http.Request, max int, what strin
 		jsonError(w, "cannot read the image", http.StatusBadRequest)
 		return "", nil, false
 	case len(data) > max:
-		jsonError(w, fmt.Sprintf("an %s image has at most %d KB", what, max>>10), http.StatusRequestEntityTooLarge)
+		jsonError(w, fmt.Sprintf("%s image has at most %d KB", what, max>>10), http.StatusRequestEntityTooLarge)
 		return "", nil, false
 	}
 	// The type comes from the content: only images that cannot carry
 	// scripts. Not AVIF (not mediasize.DetectType): imagesize cannot check it.
 	ctype, _, _ = mime.ParseMediaType(http.DetectContentType(data))
 	if len(data) == 0 || !slices.Contains(inlineTypes, ctype) {
-		jsonError(w, "an "+what+" is a PNG, GIF, WebP or JPEG image", http.StatusUnsupportedMediaType)
+		jsonError(w, what+" is a PNG, GIF, WebP or JPEG image", http.StatusUnsupportedMediaType)
 		return "", nil, false
 	}
 	switch err := imagesize.Inline(bytes.NewReader(data)); {
 	case errors.Is(err, imagesize.ErrTooLarge):
-		jsonError(w, "the "+what+" image has too many pixels", http.StatusRequestEntityTooLarge)
+		jsonError(w, "the image has too many pixels", http.StatusRequestEntityTooLarge)
 		return "", nil, false
 	case err != nil:
-		jsonError(w, "the "+what+" image is broken", http.StatusUnsupportedMediaType)
+		jsonError(w, "the image is broken", http.StatusUnsupportedMediaType)
 		return "", nil, false
 	}
 	return ctype, data, true
