@@ -12,7 +12,7 @@ import (
 // so an image URL by id can be cached.
 
 // MaxStickers is the most stickers a server has (deleted ones aside).
-const MaxStickers = 60
+const MaxStickers = 200
 
 var ErrTooManyStickers = errors.New("too many stickers")
 
@@ -22,6 +22,7 @@ type Sticker struct {
 	Name        string
 	Description string
 	Emoji       string // a related emoji ("": none)
+	Pack        string // its group in the picker ("": none)
 	Type        string
 	Data        []byte
 	Author      string
@@ -34,6 +35,7 @@ const stickersTable = `CREATE TABLE IF NOT EXISTS stickers (
 	name        TEXT NOT NULL,
 	description TEXT NOT NULL DEFAULT '',
 	emoji       TEXT NOT NULL DEFAULT '',
+	pack        TEXT NOT NULL DEFAULT '',
 	type        TEXT NOT NULL,
 	data        BLOB,
 	author      TEXT NOT NULL,
@@ -55,8 +57,8 @@ func (s *Store) AddSticker(st Sticker, at time.Time) (Sticker, error) {
 	if n >= MaxStickers {
 		return Sticker{}, ErrTooManyStickers
 	}
-	err = tx.QueryRow(`INSERT INTO stickers (name, description, emoji, type, data, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id`,
-		st.Name, st.Description, st.Emoji, st.Type, st.Data, st.Author, at.UnixMilli()).Scan(&st.ID)
+	err = tx.QueryRow(`INSERT INTO stickers (name, description, emoji, pack, type, data, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		st.Name, st.Description, st.Emoji, st.Pack, st.Type, st.Data, st.Author, at.UnixMilli()).Scan(&st.ID)
 	if err != nil {
 		return Sticker{}, nameTaken(err)
 	}
@@ -67,7 +69,7 @@ func (s *Store) AddSticker(st Sticker, at time.Time) (Sticker, error) {
 // Stickers lists the stickers that are not deleted, by name, without
 // their images.
 func (s *Store) Stickers() ([]Sticker, error) {
-	rows, err := s.db.Query(`SELECT id, name, description, emoji, type, author, created_at FROM stickers WHERE data IS NOT NULL ORDER BY name`)
+	rows, err := s.db.Query(`SELECT id, name, description, emoji, pack, type, author, created_at FROM stickers WHERE data IS NOT NULL ORDER BY pack, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +78,7 @@ func (s *Store) Stickers() ([]Sticker, error) {
 	for rows.Next() {
 		var st Sticker
 		var at int64
-		if err := rows.Scan(&st.ID, &st.Name, &st.Description, &st.Emoji, &st.Type, &st.Author, &at); err != nil {
+		if err := rows.Scan(&st.ID, &st.Name, &st.Description, &st.Emoji, &st.Pack, &st.Type, &st.Author, &at); err != nil {
 			return nil, err
 		}
 		st.CreatedAt = time.UnixMilli(at).UTC()
@@ -90,8 +92,8 @@ func (s *Store) Stickers() ([]Sticker, error) {
 func (s *Store) StickerByID(id int64) (Sticker, error) {
 	var st Sticker
 	var at int64
-	err := s.db.QueryRow(`SELECT id, name, description, emoji, type, data, author, created_at FROM stickers WHERE id = ?`, id).
-		Scan(&st.ID, &st.Name, &st.Description, &st.Emoji, &st.Type, &st.Data, &st.Author, &at)
+	err := s.db.QueryRow(`SELECT id, name, description, emoji, pack, type, data, author, created_at FROM stickers WHERE id = ?`, id).
+		Scan(&st.ID, &st.Name, &st.Description, &st.Emoji, &st.Pack, &st.Type, &st.Data, &st.Author, &at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Sticker{}, ErrNotFound
 	}
@@ -100,9 +102,9 @@ func (s *Store) StickerByID(id int64) (Sticker, error) {
 	return st, err
 }
 
-// UpdateSticker changes a sticker's name, description and emoji.
-func (s *Store) UpdateSticker(id int64, name, description, emoji string) error {
-	return rowChanged(s.db.Exec(`UPDATE stickers SET name = ?, description = ?, emoji = ? WHERE id = ? AND data IS NOT NULL`, name, description, emoji, id))
+// UpdateSticker changes a sticker's name, description, emoji and pack.
+func (s *Store) UpdateSticker(st Sticker) error {
+	return rowChanged(s.db.Exec(`UPDATE stickers SET name = ?, description = ?, emoji = ?, pack = ? WHERE id = ? AND data IS NOT NULL`, st.Name, st.Description, st.Emoji, st.Pack, st.ID))
 }
 
 // DeleteSticker removes a sticker's image; its row and name stay.

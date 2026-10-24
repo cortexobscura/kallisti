@@ -8,8 +8,8 @@ The server keeps a server's stickers, lets staff add, rename and delete them, an
 
 ## Requirements
 
-- Table `stickers`: id (AUTOINCREMENT), name (emoji name rule, unique among stickers that are not deleted), description (optional, up to 100 characters), emoji (one related emoji, optional), type, data (BLOB; NULL once deleted), author, created_at.
-- At most 60 stickers (not deleted); 512 KB; PNG, GIF, WebP or JPEG (detected from the content, as emoji); the pixel check of emoji.
+- Table `stickers`: id (AUTOINCREMENT), name (emoji name rule, unique among stickers that are not deleted), description (optional, up to 100 characters), emoji (one related emoji, optional), pack, type, data (BLOB; NULL once deleted), author, created_at.
+- A pack name (optional; the picker groups by it). At most 200 stickers (not deleted); 512 KB; PNG, GIF, WebP or JPEG (detected from the content, as emoji); the pixel check of emoji.
 - Upload as emoji: a WebSocket request gives a single-use token (name, description, emoji checked first), then POST /api/stickers with the token; GET /api/stickers/{id} serves the image (immutable, cached for a year; 404 once deleted).
 - WebSocket requests: rename (name, description, emoji), delete (keeps the row and name, removes the image).
 - Who may manage emoji may manage stickers (mayManageEmoji); nobody without the built-in server.

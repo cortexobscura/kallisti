@@ -29,10 +29,10 @@ func TestStickers(t *testing.T) {
 		t.Fatalf("by id: %+v %v", got, err)
 	}
 	// Rename: name, description and emoji; a taken name is refused.
-	if err := s.UpdateSticker(a.ID, "hi", "Hi!", "🙂"); err != nil {
+	if err := s.UpdateSticker(Sticker{ID: a.ID, Name: "hi", Description: "Hi!", Emoji: "🙂", Pack: "greetings"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateSticker(a.ID, "cat", "", ""); !errors.Is(err, ErrNameTaken) {
+	if err := s.UpdateSticker(Sticker{ID: a.ID, Name: "cat"}); !errors.Is(err, ErrNameTaken) {
 		t.Fatalf("rename to a taken name: %v", err)
 	}
 	// Delete keeps the row and its name (old messages show it), not the
@@ -44,10 +44,10 @@ func TestStickers(t *testing.T) {
 		t.Fatalf("deleted twice: %v", err)
 	}
 	got, err = s.StickerByID(a.ID)
-	if err != nil || !got.Deleted || got.Data != nil || got.Name != "hi" {
+	if err != nil || !got.Deleted || got.Data != nil || got.Name != "hi" || got.Pack != "greetings" {
 		t.Fatalf("deleted: %+v %v", got, err)
 	}
-	if err := s.UpdateSticker(a.ID, "x", "", ""); !errors.Is(err, ErrNotFound) {
+	if err := s.UpdateSticker(Sticker{ID: a.ID, Name: "x"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("rename a deleted one: %v", err)
 	}
 	if list, _ := s.Stickers(); len(list) != 1 {
