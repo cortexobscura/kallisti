@@ -16,7 +16,7 @@ What it does, in short:
   previews, pictures, files and inline video, pins, search, direct
   messages, invite-only channels.
 - **People**: accounts, guests, log in with your fediverse account, server
-  and personal emoji, status and bios.
+  and personal emoji, sticker packs, status and bios.
 - **Moderation**: roles and channel moderators, slow mode, a word and link
   filter, limits for new accounts, a captcha, bans and time-outs.
 - **Everywhere**: the browser, apps for macOS, Windows and Linux, and phones
@@ -88,7 +88,7 @@ need no extra setup (see [configuration](docs/configuration.md)).
 | Music mode (128 kbps stereo; Murmur's `bandwidth` must allow it) | ✓ | ✓ |
 | Go Live (screen, camera), streams from OBS | ✓ | – |
 | Text channel categories, invite-only channels | ✓ | – |
-| Server emoji (adding them) | ✓ | – |
+| Server emoji (adding them), stickers | ✓ | – |
 | Channel recording | ✓ | – |
 | Slow mode, word and link filter, new-account limits, captcha | ✓ | – |
 | Read-only guests, deleting many messages at once | ✓ | – |
@@ -141,7 +141,7 @@ On top of that, they get these things, without installing anything:
   new accounts also apply to what they write; when a channel is recorded,
   they are told when they enter.
 
-What Mumble clients do not see: reactions, threads, emoji, later edits and
+What Mumble clients do not see: reactions, threads, emoji, stickers (they see their name), later edits and
 deletions, typing, link previews and formatting (they get the plain text). Not there
 compared with Murmur: plugin data between clients (for example game
 positions shared by Mumble plugins), menu entries that server scripts add
