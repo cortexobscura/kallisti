@@ -5,10 +5,33 @@ https://kallisti.chat
 
 ![Kallisti in the browser: a chat about noise suppression with a link preview, a code snippet, a reply and a mention, people in voice channels, and someone typing](docs/screenshot.png)
 
+What it does, in short:
+
+- **Voice**: channels you join with one click, push-to-talk or voice
+  activity, noise suppression, a volume per person, music mode (stereo),
+  listen-only channels, recording for moderators.
+- **Video**: Go Live with your screen or camera, several streams at once,
+  and streams from OBS (WHIP).
+- **Chat**: text channels in categories, threads, replies, reactions, link
+  previews, pictures, files and inline video, pins, search, direct
+  messages, invite-only channels.
+- **People**: accounts, guests, log in with your fediverse account, server
+  and personal emoji, status and bios.
+- **Moderation**: roles and channel moderators, slow mode, a word and link
+  filter, limits for new accounts, a captcha, bans and time-outs.
+- **Everywhere**: the browser, apps for macOS, Windows and Linux, and phones
+  (the browser or the installed web app, with push notifications). Mumble
+  clients join the same channels.
+
+All of it: [kallisti.chat/features](https://kallisti.chat/features.html).
+
+The parts:
+
 - `packages/protocol`: Mumble protocol (framing, protobuf codec, state, voice packets)
-- `apps/web`: Svelte web client (chat, voice, settings)
-- `server`: Go server: web app, accounts, text channels and a built-in Mumble
-  server (Mumble clients and web clients in one place)
+- `apps/web`: Svelte web client (chat, voice, video, settings)
+- `apps/desktop`: Tauri desktop app around the web client
+- `server`: Go server: web app, accounts, text channels, streams and a
+  built-in Mumble server (Mumble clients and web clients in one place)
 - `packages/devtools`: dev scripts (smoke test, voice bot)
 
 ## Deployment
@@ -31,13 +54,20 @@ printf 'DOMAIN=chat.example.org\nSUPERUSER_PASSWORD=%s\n' "$(openssl rand -hex 1
 docker compose -f deploy/compose.yml up -d --remove-orphans
 ```
 
+Open TCP 80 and 443 (the web), TCP and UDP 64738 (Mumble clients and the
+desktop app) and UDP 8189 (streams from OBS). The image includes ffmpeg for
+previews of videos and streams; push notifications and channel recordings
+need no extra setup (see [configuration](docs/configuration.md)).
+
 - [Installing with Docker or Podman](docs/install-docker.md) (both ways)
 - [Installing without containers](docs/install-binary.md) (the program,
   systemd, Caddy)
 - [Configuration](docs/configuration.md): all settings
 - [Updating](docs/updating.md), with upgrade notes
 - [Backups](docs/backups.md)
-- [Deployment guides](docs/deploy/README.md): Docker, systemd and Kubernetes
+- [Deployment guides](docs/deploy/README.md): Docker (also behind an
+  existing proxy, or with Cloudflare DNS-01 and no port 80), systemd and
+  Kubernetes
 
 ### What works where
 
@@ -54,6 +84,16 @@ docker compose -f deploy/compose.yml up -d --remove-orphans
 | Text channels for Mumble clients (mirrors) | ✓ | – |
 | Guest accounts; reactions for guests | ✓ | – |
 | Log in as SuperUser with the "Log in" tab | ✓ | – |
+| Threads, personal emoji, log in with the fediverse | ✓ | ✓ |
+| Music mode (128 kbps stereo; Murmur's `bandwidth` must allow it) | ✓ | ✓ |
+| Go Live (screen, camera), streams from OBS | ✓ | – |
+| Text channel categories, invite-only channels | ✓ | – |
+| Server emoji (adding them) | ✓ | – |
+| Channel recording | ✓ | – |
+| Slow mode, word and link filter, new-account limits, captcha | ✓ | – |
+| Read-only guests, deleting many messages at once | ✓ | – |
+| Listen-only channels, channel moderators | ✓ | – |
+| Push notifications; the same account on several devices | ✓ | – |
 
 ### For people with Mumble clients
 
@@ -91,9 +131,18 @@ On top of that, they get these things, without installing anything:
   site's certificate, so clients connect without a trust question.
 - **An admin page in the browser.** SuperUser logs in on the web and manages
   bans, registered users and channels there.
+- **Streams they can hear.** When someone goes live in their channel, the
+  stream's sound reaches them as a separate user (the picture is for the
+  web app and the desktop app).
+- **Channels as they know them.** Text channel categories and invite-only
+  channels are Mumble channels with ACLs; listen-only channels and channel
+  moderators are plain ACLs and groups they can see.
+- **The same rules.** Slow mode, the word and link filter and the limits for
+  new accounts also apply to what they write; when a channel is recorded,
+  they are told when they enter.
 
-What Mumble clients do not see: reactions, later edits and deletions,
-typing, link previews and formatting (they get the plain text). Not there
+What Mumble clients do not see: reactions, threads, emoji, later edits and
+deletions, typing, link previews and formatting (they get the plain text). Not there
 compared with Murmur: plugin data between clients (for example game
 positions shared by Mumble plugins), menu entries that server scripts add
 through Murmur's Ice interface, and clients older than 1.3 (no Opus).
