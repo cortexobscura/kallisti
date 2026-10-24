@@ -330,6 +330,9 @@
     uploading,
     uploadMax: text.uploadMax,
     returned: id !== null && text.returned?.channel === id ? text.returned : null,
+    stickers,
+    onSticker:
+      id === null ? undefined : (sticker: number, reply?: number, noPing?: boolean) => connection.sendConfirmed(id, "", crypto.randomUUID(), undefined, reply, noPing, sticker),
   });
   const pane = $derived.by(() => {
     if (view.kind === "text")
@@ -1874,7 +1877,7 @@
       {...storedPane(t.id)}
       onSend={(message, reply, noPing) => connection.sendToTextChannel(t.id, message, undefined, reply, noPing)}
       {...chatCommon}
-      {...(readOnly ? { onSend: undefined, onUpload: undefined } : {})}
+      {...(readOnly ? { onSend: undefined, onUpload: undefined, onSticker: undefined } : {})}
       chatKey="thread {t.id}"
       slow={slowIn(t.id, threadChat)}
       mayPin={canModerate(server, text, viewMumble)}
@@ -1917,7 +1920,7 @@
       {...paneCommon}
       {...pane}
       {...chatCommon}
-      {...(readOnly ? { onSend: undefined, onUpload: undefined } : {})}
+      {...(readOnly ? { onSend: undefined, onUpload: undefined, onSticker: undefined } : {})}
       chatKey={chatKeyOf(view, channelId)}
       {slow}
       {phone}

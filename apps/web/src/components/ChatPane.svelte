@@ -4,6 +4,8 @@
   import { emojiImages } from "../lib/emojiImages.svelte";
   import Emoji from "./Emoji.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
+  import StickerPicker from "./StickerPicker.svelte";
+  import { stickerText, type Sticker } from "../lib/stickers";
   import MessageSheet, { type SheetItem } from "./MessageSheet.svelte";
   import ChannelSheet from "./ChannelSheet.svelte";
   import { headerParts } from "../lib/chatHeader";
@@ -63,6 +65,8 @@
     uploading = false,
     uploadMax,
     returned = null,
+    stickers = [],
+    onSticker,
     onMenu,
     menuOpen = false,
     onHoldTalk,
@@ -223,6 +227,10 @@
     onUpload?: (file: File, caption: string, nonce: string, reply?: number, noPing?: boolean) => Promise<void>;
     uploading?: boolean;
     uploadMax?: number; // the server's limit per file (bytes)
+    // The server's stickers (urls absolute) and sending one as a message
+    // of its own (stored chats; settles once the server stored it).
+    stickers?: readonly Sticker[];
+    onSticker?: (sticker: number, reply?: number, noPing?: boolean) => Promise<void>;
     // A send the server refused, back for the box (n: which refusal).
     returned?: { text: string; n: number } | null;
     // Missing: the conversation is read-only (the other user left).
@@ -552,6 +560,23 @@
     const text = composerEmoji(emoji, custom.mine, custom.urls);
     void setDraft(draft.slice(0, from) + text + draft.slice(to), from + text.length);
   };
+  // The sticker picker, at its button; a choice is sent at once (as a
+  // reply when one is being written), the box keeps its text.
+  let draftSticker = $state<DOMRect | null>(null);
+  const stickerById = $derived(new Map(stickers.map((s) => [s.id, s])));
+  const sendSticker = (s: Sticker) => {
+    draftSticker = null;
+    if (!onSticker) return;
+    if (slowWait > 0) return void notify(`Slow mode: wait ${waitText}`);
+    const reply = replying?.id;
+    onSticker(s.id, reply, replying ? !replying.ping : undefined).then(
+      () => {
+        if (replying?.id === reply) replying = null;
+      },
+      (e: Error) => notify(e.message),
+    );
+    messageInput?.focus();
+  };
   // The quick reactions; "+" opens all emoji (allEmoji: for that message).
   const quick = $derived(
     quickReactions(
@@ -591,7 +616,7 @@
     if (!("source" in m) || !m.source || editing?.id === m.source.id) return null;
     return {
       id: m.source.id,
-      canEdit: !!(mayEdit?.(m) && onEdit),
+      canEdit: !!(mayEdit?.(m) && onEdit && !("sticker" in m && m.sticker)),
       canDelete: !!(mayDelete?.(m) && onDelete),
       canPin: !!(mayPin && onPin),
       pinned: "pinned" in m && !!m.pinned,
@@ -680,7 +705,7 @@
   };
   // Up in an empty message box edits our last message.
   const editLast = () => {
-    const last = messages.findLast((m) => "source" in m && m.source && mayEdit?.(m));
+    const last = messages.findLast((m) => "source" in m && m.source && !("sticker" in m && m.sticker) && mayEdit?.(m));
     if (!last || !onEdit) return false;
     void startEdit(last);
     return true;
@@ -1135,6 +1160,15 @@
             title="Emoji"
             onclick={(e) => (draftEmoji = e.currentTarget.getBoundingClientRect())}><Emoji text="🙂" /></button
           >
+          {#if onSticker && stickers.length}
+            <button
+              type="button"
+              class="emoji-button sticker-button"
+              aria-label="Send a sticker"
+              title="Stickers"
+              onclick={(e) => (draftSticker = e.currentTarget.getBoundingClientRect())}><Icon name="sticker" size={24} /></button
+            >
+          {/if}
           <!-- Touch screens: a send button (Enter is the only other way).
                The press keeps the keyboard open. -->
           {#if draft.trim() || pending}
@@ -1179,6 +1213,9 @@
 {/if}
 {#if draftEmoji}
   <EmojiPicker anchor={draftEmoji} onPick={insertEmoji} onClose={() => ((draftEmoji = null), messageInput?.focus())} />
+{/if}
+{#if draftSticker}
+  <StickerPicker anchor={draftSticker} {stickers} onPick={sendSticker} onClose={() => ((draftSticker = null), messageInput?.focus())} />
 {/if}
 {#if allEmoji && allEmojiFor}
   {@const { id, anchor } = allEmoji}
@@ -1266,6 +1303,14 @@
       ></textarea>
       <span class="hint">Escape to cancel, Enter to save, Shift+Enter for a new line</span>
     </form>
+  {:else if "sticker" in m && m.sticker}
+    <!-- A deleted sticker (not in the list) shows its name. -->
+    {@const st = stickerById.get(m.sticker.id)}
+    {#if st}
+      <img class="sticker" src={st.url} alt={st.name} title={st.description ? `${st.name}: ${st.description}` : st.name} />
+    {:else}
+      <div class="text gone-sticker">{stickerText(m.sticker.name)}</div>
+    {/if}
   {:else if m.text}
     {@const key = messageKey(m)}
     {@const long = isLong(m)}
@@ -2352,6 +2397,17 @@
     background: none;
     cursor: pointer;
     filter: grayscale(1) opacity(0.6);
+  }
+  .sticker {
+    display: block;
+    max-width: 160px;
+    max-height: 160px;
+    margin: 2px 0;
+    object-fit: contain;
+  }
+  .gone-sticker {
+    color: var(--text-muted);
+    font-style: italic;
   }
   .emoji-button:hover,
   .emoji-button:focus-visible {

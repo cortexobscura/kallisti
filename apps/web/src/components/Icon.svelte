@@ -21,6 +21,8 @@
     fullscreen: "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
     reply: "M9 14 4 9l5-5M4 9h10a6 6 0 0 1 6 6v5",
     send: "M4 12 20 4l-6 16-3-7zM11 13l9-9",
+    // A sticker: a sheet with a peeled corner.
+    sticker: "M4 4h16v9l-7 7H4zM20 13h-5a2 2 0 0 0-2 2v5",
     copy: "M9 9h11v11H9zM5 15H4V4h11v1",
     search: "M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM20 20l-4.9-4.9",
     back: "M20 12H4M10 6l-6 6 6 6",
