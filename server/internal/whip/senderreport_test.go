@@ -14,7 +14,7 @@ func TestSenderReportsShowTheOffset(t *testing.T) {
 	var sa, sv srClock
 	const t0 = int64(3_900_000_000_000_000) // the sender's wall clock (µs)
 	// Media time 0 is rtp 1000 (sound) and 5000 (picture).
-	sound.micros(1000, 10_000)   // arrives at 10 ms
+	sound.micros(1000, 10_000)    // arrives at 10 ms
 	picture.micros(5000, 310_000) // arrives at 310 ms
 	sound.micros(1000+48_000, 1_010_000)
 	picture.micros(5000+90_000, 1_310_000)
