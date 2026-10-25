@@ -5,6 +5,8 @@
   import { createPip } from "../lib/stream/pip";
   import { isCamera } from "../lib/stream/protocol";
   import { streamLabel } from "../lib/stream/quality";
+  import { dragShare, keyShare, shareOf, STAGE_MAX, STAGE_MIN } from "../lib/stream/stageSize";
+  import { streamStage } from "../lib/settings.svelte";
 
   // The screen shares and cameras being watched (by stream id), above the
   // chat (as Discord's call area): a grid of all, or one in focus over a
@@ -45,6 +47,32 @@
   let height = $state(0);
   const cols = $derived(gridColumns(sessions.length, width, height));
   let stage = $state<HTMLElement>();
+
+  // Its height: the lower edge is dragged (see stream/stageSize), saved
+  // when let go. While dragging only here.
+  let dragging = $state<number | null>(null);
+  const share = $derived(dragging ?? shareOf(streamStage.value, phone));
+  let dragFrom: { y: number; share: number } | null = null;
+  const startDrag = (e: PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragFrom = { y: e.clientY, share };
+    dragging = share;
+  };
+  const drag = (e: PointerEvent) => {
+    if (dragFrom) dragging = dragShare(dragFrom.share, dragFrom.y, e.clientY, innerHeight);
+  };
+  const endDrag = () => {
+    if (dragging !== null) streamStage.set(dragging);
+    dragFrom = dragging = null;
+  };
+  const resizeKey = (e: KeyboardEvent) => {
+    const next = keyShare(share, e.key);
+    if (next === null) return;
+    e.preventDefault();
+    streamStage.set(next);
+  };
 
   // A click on a stream focuses it; on the focused one: back to the grid.
   const pick = (session: number) => {
@@ -130,7 +158,7 @@
       </button>
     </div>
   {/if}
-  <div class="tiles" class:many={sessions.length > 1} bind:clientWidth={width} bind:clientHeight={height} style:--cols={cols} style:--strip={strip.length}>
+  <div class="tiles" class:many={sessions.length > 1} bind:clientWidth={width} bind:clientHeight={height} style:--cols={cols} style:--strip={strip.length} style:--share={share}>
     {#each sessions as session (session)}
       {@const at = strip.indexOf(session)}
       {@const label = streamLabel(nameOf(session), isCamera(session))}
@@ -164,6 +192,23 @@
       </div>
     {/each}
   </div>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions (a focusable separator is a resize handle) -->
+  <div
+    class="resize"
+    role="separator"
+    aria-orientation="horizontal"
+    aria-label="Resize the stream view"
+    aria-valuemin={STAGE_MIN * 100}
+    aria-valuemax={STAGE_MAX * 100}
+    aria-valuenow={Math.round(share * 100)}
+    tabindex="0"
+    class:dragging={dragging !== null}
+    onpointerdown={startDrag}
+    onpointermove={drag}
+    onpointerup={endDrag}
+    onpointercancel={endDrag}
+    onkeydown={resizeKey}
+  ></div>
 </section>
 
 <style>
@@ -184,7 +229,7 @@
     grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
     grid-auto-rows: minmax(0, 1fr);
     gap: 8px;
-    height: 55vh;
+    height: calc(var(--share) * 100vh);
   }
   /* Focus: the focused stream over a centred strip of the others (their
      columns are set inline, between the two flexible ones). */
@@ -210,6 +255,30 @@
   .stage:fullscreen .tiles {
     flex: 1;
     height: auto;
+  }
+  /* The lower edge: drag it, or the arrow keys. */
+  .resize {
+    height: 8px;
+    margin: 0 -16px -8px;
+    cursor: ns-resize;
+    touch-action: none;
+  }
+  .resize::after {
+    content: "";
+    display: block;
+    width: 48px;
+    height: 4px;
+    margin: 2px auto 0;
+    border-radius: 2px;
+    background: rgb(255 255 255 / 0.25);
+  }
+  .resize:hover::after,
+  .resize:focus-visible::after,
+  .resize.dragging::after {
+    background: rgb(255 255 255 / 0.6);
+  }
+  .stage:fullscreen .resize {
+    display: none;
   }
   .tile {
     position: relative;
@@ -295,9 +364,6 @@
   @media (max-width: 700px) {
     .stage {
       padding: 8px;
-    }
-    .tiles {
-      height: 40vh;
     }
     .focusing .tiles {
       grid-template-rows: minmax(0, 1fr) 64px;

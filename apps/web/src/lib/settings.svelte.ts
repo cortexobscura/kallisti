@@ -4,6 +4,7 @@ import { parseChannelPrefs, setChannelPref, type ChannelPref, type ChannelPrefs 
 import { directPrefsOf, parseDirectPrefs, setDirectPrefs, type DirectPrefs } from "./directList";
 import { persisted } from "./persisted.svelte";
 import { parseSettings, type Settings } from "./settings";
+import { parseShare } from "./stream/stageSize";
 import { parseUserAudio, updateUserAudio, type UserAudio } from "./userAudio";
 
 const voiceSettings = persisted("voiceSettings", parseSettings);
@@ -64,3 +65,6 @@ export const blockedUsers = {
   has: (name: string | null) => isBlocked(blockedStore.value, name),
   toggle: (name: string) => blockedStore.set(toggleBlocked(blockedStore.value, name)),
 };
+
+// The stream view's height (see stream/stageSize.ts; null: the default).
+export const streamStage = persisted("streamStage", parseShare);
