@@ -2,7 +2,7 @@
 // JavaScript, or if GitHub does not answer, they go to the releases page).
 // The visitor's system comes first: its card is marked, and the big
 // button at the top downloads it.
-const REPO = "lambadalambda/kallisti";
+const REPO = "kallisti-chat/kallisti";
 const NAMES = { mac: "macOS", windows: "Windows", linux: "Linux" };
 
 const systemOf = () => {
