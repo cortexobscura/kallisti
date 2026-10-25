@@ -18,6 +18,7 @@ import { isCaptchaLevel, type CaptchaLevel } from "./captcha";
 import { parseMessageRules, type MessageRules } from "./messageRules";
 import { parseRecordings, type FinishedRecording } from "./recording";
 import type { TextCategory } from "./categories";
+import { isPoll, withPoll, type Poll, type PollBody } from "./polls";
 import { followedThreads, isThread, isThreads, withThreads, type Thread, type Threads } from "./threads";
 
 // Text channels come from the Kallisti server (JSON over WebSocket text
@@ -65,6 +66,7 @@ export type TextMessage = {
   mentionAll?: MentionAll;
   noPing?: boolean; // a reply that does not ping
   thread?: Thread; // the thread started from it (see lib/threads)
+  poll?: Poll; // a poll message (text: the poll as text, see lib/polls)
 };
 export type Quote = { id: number; author: string; text: string };
 // A chat line for display: a text channel message can carry an attachment
@@ -72,6 +74,7 @@ export type Quote = { id: number; author: string; text: string };
 // source: the stored message (id and plain text), for editing.
 export type DisplayMessage = ChatMessage & {
   uploads?: (Attachment & { spoiler?: true })[];
+  poll?: Poll;
   sticker?: MessageSticker;
   verified?: boolean;
   authorId?: number;
@@ -248,6 +251,7 @@ export type ServerEvent =
   | { type: "upload-token"; token: string; tokens?: string[] } // tokens: for several files
   // A message's reactions changed (all of them).
   | { type: "reactions"; channel: number; message: number; reactions: Reaction[] }
+  | { type: "poll"; channel: number; message: number; poll: Poll }
   // A message's link preview (null: none).
   | { type: "preview"; message: number; preview: LinkPreview | null }
   // Someone types in a channel (see lib/typing).
@@ -526,6 +530,7 @@ const isMessage = (v: unknown): v is TextMessage =>
   (v.upload === undefined || isAttachment(v.upload)) &&
   (v.uploads === undefined || (Array.isArray(v.uploads) && v.uploads.every(isAttachment))) &&
   (v.sticker === undefined || isMessageSticker(v.sticker)) &&
+  (v.poll === undefined || isPoll(v.poll)) &&
   (v.reactions === undefined || isReactions(v.reactions)) &&
   (v.mentionAll === undefined || isMentionAll(v.mentionAll)) &&
   (v.noPing === undefined || typeof v.noPing === "boolean") &&
@@ -730,6 +735,8 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
       return isNum(v.channel) && isNum(v.message) && isReactions(v.reactions)
         ? { type: "reactions", channel: v.channel, message: v.message, reactions: v.reactions }
         : null;
+    case "poll":
+      return isNum(v.channel) && isNum(v.message) && isPoll(v.poll) ? { type: "poll", channel: v.channel, message: v.message, poll: v.poll } : null;
     default:
       return null;
   }
@@ -743,8 +750,12 @@ const patchPins = (pins: TextState["pins"], channel: number, f: (ms: TextMessage
 const withPin = (list: readonly TextMessage[], m: TextMessage) =>
   [...list.filter((x) => x.id !== m.id), ...(m.pinned ? [m] : [])].sort((x, y) => (y.pinned ?? 0) - (x.pinned ?? 0));
 
-const merge = (a: readonly TextMessage[] = [], b: readonly TextMessage[]) =>
-  [...new Map([...a, ...b].map((m) => [m.id, m])).values()].sort((x, y) => x.id - y.id);
+// b's messages over a's (a poll keeps our votes and its end, see keepMine).
+const merge = (a: readonly TextMessage[] = [], b: readonly TextMessage[]) => {
+  const byId = new Map(a.map((m) => [m.id, m]));
+  for (const m of b) byId.set(m.id, keepMine(byId.get(m.id), m));
+  return [...byId.values()].sort((x, y) => x.id - y.id);
+};
 
 // The threads messages started (their quote: the message).
 const threadsIn = (ms: readonly TextMessage[]) =>
@@ -754,6 +765,9 @@ const threadsIn = (ms: readonly TextMessage[]) =>
 // ones we knew of channels in it.
 const keptThreads = (threads: Threads, channels: readonly TextChannel[], active: readonly Thread[]) =>
   withThreads(Object.fromEntries(Object.entries(threads).filter(([, t]) => t.archived && channels.some((c) => c.id === t.channel))), active);
+
+// A message again from the server: our poll votes stay where it sent none.
+const keepMine = (old: TextMessage | undefined, m: TextMessage) => (old && m.poll ? withPoll({ ...m, poll: old.poll }, m.poll) : m);
 
 const patchSearch = (search: TextState["search"], f: (ms: TextMessage[]) => TextMessage[]) =>
   search && { ...search, messages: f(search.messages) };
@@ -927,7 +941,7 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
     case "message":
     case "message-edited": {
       const ch = event.message.channel;
-      const replace = (ms: TextMessage[]) => ms.map((m) => (m.id === event.message.id ? event.message : m));
+      const replace = (ms: TextMessage[]) => ms.map((m) => (m.id === event.message.id ? keepMine(m, event.message) : m));
       const search = event.type === "message-edited" ? patchSearch(state.search, replace) : state.search;
       const pins = event.type === "message-edited" ? patchPins(state.pins, ch, replace) : state.pins;
       // An edit of a message not loaded here stays unloaded.
@@ -940,7 +954,7 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
         pins,
         previews,
         threads: withThreads(state.threads, threadsIn([event.message])),
-        messages: { ...state.messages, [ch]: merge(state.messages[ch], [event.message]) },
+        messages: { ...state.messages, [ch]: merge(state.messages[ch], [keepMine(state.messages[ch]?.find((m) => m.id === event.message.id), event.message)]) },
       };
     }
     case "message-pinned": {
@@ -949,8 +963,8 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
       const list = state.pins[m.channel];
       return {
         ...state,
-        ...(msgs?.some((x) => x.id === m.id) && { messages: { ...state.messages, [m.channel]: msgs.map((x) => (x.id === m.id ? m : x)) } }),
-        ...(list && { pins: { ...state.pins, [m.channel]: withPin(list, m) } }),
+        ...(msgs?.some((x) => x.id === m.id) && { messages: { ...state.messages, [m.channel]: msgs.map((x) => (x.id === m.id ? keepMine(x, m) : x)) } }),
+        ...(list && { pins: { ...state.pins, [m.channel]: withPin(list, keepMine(list.find((x) => x.id === m.id) ?? msgs?.find((x) => x.id === m.id), m)) } }),
       };
     }
     case "pins":
@@ -968,6 +982,16 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
       const next = msgs.slice();
       next[i] = { ...msgs[i]!, reactions: event.reactions };
       return { ...state, messages: { ...state.messages, [event.channel]: next } };
+    }
+    case "poll": {
+      const patch = (ms: TextMessage[]) => ms.map((m) => (m.id === event.message ? withPoll(m, event.poll) : m));
+      const msgs = state.messages[event.channel];
+      return {
+        ...state,
+        ...(msgs && { messages: { ...state.messages, [event.channel]: patch(msgs) } }),
+        pins: patchPins(state.pins, event.channel, patch),
+        search: patchSearch(state.search, patch),
+      };
     }
     case "messages-deleted": {
       const gone = new Set(event.ids);
@@ -1028,6 +1052,7 @@ export const sendRequest = (
   noPing?: boolean,
   nonce?: string,
   sticker?: number,
+  poll?: PollBody,
 ) =>
   JSON.stringify({
     type: "send",
@@ -1038,6 +1063,7 @@ export const sendRequest = (
     ...(reply && noPing ? { noPing } : {}),
     ...(nonce ? { nonce } : {}),
     ...(sticker ? { sticker } : {}),
+    ...(poll ? { poll } : {}),
   });
 
 // The server's answer to a send with this nonce: our message with it
@@ -1252,6 +1278,7 @@ export const toChatMessage = (m: TextMessage, base = "", channels?: ReadonlyMap<
       ...(m.noPing && { noPing: true }),
       ...(uploads.length && { uploads: uploads.map(spoilerUpload) }),
       ...(m.sticker && { sticker: m.sticker }),
+      ...(m.poll && { poll: m.poll }),
     };
     chatCache.set(m, { chat, channels });
   }

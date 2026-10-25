@@ -1,3 +1,4 @@
+import { endPollRequest, voteRequest, type PollBody } from "./polls";
 import { threadRequest, type ThreadAction } from "./threads";
 import {
   addOwnMessage,
@@ -426,6 +427,14 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     editMessage: (message: number, text: string, remove: readonly string[] = []) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(editMessageRequest(message, text, remove));
     },
+    // Polls (see lib/polls): our answers (none takes the vote back), and
+    // the author's early end.
+    vote: (message: number, answers: readonly number[]) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(voteRequest(message, answers));
+    },
+    endPoll: (message: number) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(endPollRequest(message));
+    },
     pin: (message: number, on: boolean) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(pinRequest(message, on));
     },
@@ -451,7 +460,16 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     // Sends a message (with uploaded files: their keys) with a nonce; settles
     // once the server stored it (our message came), refused it, or did not
     // answer. A retry with the same nonce cannot post it twice.
-    sendConfirmed: (channel: number, message: string, nonce: string, uploads: readonly OutgoingFile[] = [], reply?: number, noPing?: boolean, sticker?: number) =>
+    sendConfirmed: (
+      channel: number,
+      message: string,
+      nonce: string,
+      uploads: readonly OutgoingFile[] = [],
+      reply?: number,
+      noPing?: boolean,
+      sticker?: number,
+      poll?: PollBody,
+    ) =>
       new Promise<void>((resolve, reject) => {
         if (ws.readyState !== WebSocket.OPEN) return reject(new Error("Not connected"));
         const done = (error?: string) => {
@@ -466,7 +484,7 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
           if (a) done(a.error);
         };
         confirming.add(check);
-        ws.send(sendRequest(channel, message, uploads, reply, noPing, nonce, sticker));
+        ws.send(sendRequest(channel, message, uploads, reply, noPing, nonce, sticker, poll));
       }),
     // The server's HTTP origin (uploads and files).
     httpBase: base,

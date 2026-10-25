@@ -359,6 +359,45 @@ describe("several files", () => {
   });
 });
 
+describe("polls", () => {
+  const poll = { question: "Pizza?", answers: [{ text: "Yes", votes: 0 }, { text: "No", votes: 0 }], ends: 99, voters: 0 };
+  it("parses poll messages and drops broken polls", () => {
+    const ev = parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), poll } }));
+    expect(ev?.type === "message" && ev.message.poll).toEqual(poll);
+    expect(parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), poll: { question: 1 } } }))).toBeNull();
+  });
+  it("puts a poll event on the message, in pins and search too, keeping our votes", () => {
+    const mine = { ...poll, mine: [0], voters: 1 };
+    let s = reduceText(initialTextState, { type: "history", channel: 1, messages: [{ ...msg(1), poll: mine }], more: false });
+    s = { ...s, pins: { 1: [{ ...msg(1), poll: mine }] }, search: { text: "", messages: [{ ...msg(1), poll: mine }] } };
+    const ev = parseServerEvent(JSON.stringify({ type: "poll", channel: 1, message: 1, poll: { ...poll, voters: 2 } }));
+    expect(ev).toMatchObject({ type: "poll", channel: 1, message: 1 });
+    s = reduceText(s, ev!);
+    for (const m of [s.messages[1]![0], s.pins[1]![0], s.search!.messages[0]]) expect(m?.poll).toMatchObject({ voters: 2, mine: [0] });
+    expect(reduceText(s, { type: "poll", channel: 1, message: 1, poll: { ...poll, mine: [] } }).messages[1]![0]!.poll?.mine).toEqual([]);
+    expect(parseServerEvent(JSON.stringify({ type: "poll", channel: 1, message: 1, poll: {} }))).toBeNull();
+  });
+  it("keeps our votes when a pinned or edited poll message comes", () => {
+    let s = reduceText(initialTextState, { type: "history", channel: 1, messages: [{ ...msg(1), poll: { ...poll, mine: [1] } }], more: false });
+    s = reduceText(s, { type: "message-pinned", message: { ...msg(1), pinned: 5, poll } });
+    expect(s.messages[1]![0]!.poll?.mine).toEqual([1]);
+    s = reduceText(s, { type: "message-edited", message: { ...msg(1), poll } });
+    expect(s.messages[1]![0]!.poll?.mine).toEqual([1]);
+  });
+  it("keeps our votes in the pin list, and an ended poll ended after a late reply", () => {
+    let s = reduceText(initialTextState, { type: "history", channel: 1, messages: [{ ...msg(1), poll: { ...poll, mine: [1], ended: 5 } }], more: false });
+    s = { ...s, pins: { 1: [] } };
+    s = reduceText(s, { type: "message-pinned", message: { ...msg(1), pinned: 5, poll: { ...poll, ended: 5 } } });
+    expect(s.pins[1]![0]!.poll?.mine).toEqual([1]);
+    s = reduceText(s, { type: "history", channel: 1, messages: [{ ...msg(1), poll: { ...poll, mine: [1] } }], more: false });
+    expect(s.messages[1]![0]!.poll?.ended).toBe(5);
+  });
+  it("sends a poll", () => {
+    const body = { question: "Q", answers: [{ text: "a" }, { text: "b" }], multiple: false, anonymous: true, hours: 1 };
+    expect(JSON.parse(sendRequest(1, "", [], undefined, undefined, "n", undefined, body))).toEqual({ type: "send", channel: 1, text: "", nonce: "n", poll: body });
+  });
+});
+
 describe("httpBase", () => {
   it("turns the WebSocket URL into the server's HTTP origin", () => {
     expect(httpBase("ws://localhost:18081")).toBe("http://localhost:18081");

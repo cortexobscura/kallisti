@@ -32,6 +32,9 @@
   import type { SearchPlace } from "../lib/search";
   import Suggestions, { type Suggestion } from "./Suggestions.svelte";
   import Lightbox from "./Lightbox.svelte";
+  import PollForm from "./PollForm.svelte";
+  import PollView from "./PollView.svelte";
+  import type { PollBody } from "../lib/polls";
   import Toast from "./Toast.svelte";
   import { escapeHtml, type ChatMessage } from "@kallisti/protocol";
   import { formatSize, type Attachment, type DisplayMessage } from "../lib/textChannels";
@@ -85,6 +88,9 @@
     returned = null,
     stickers = [],
     onSticker,
+    onPoll,
+    onVote,
+    onEndPoll,
     onMenu,
     menuOpen = false,
     onHoldTalk,
@@ -251,6 +257,11 @@
     // of its own (stored chats; settles once the server stored it).
     stickers?: readonly Sticker[];
     onSticker?: (sticker: number, reply?: number, noPing?: boolean) => Promise<void>;
+    // Polls (see lib/polls): a new one (settles once stored), our vote,
+    // the author's early end.
+    onPoll?: (poll: PollBody) => Promise<void>;
+    onVote?: (message: number, answers: number[]) => void;
+    onEndPoll?: (message: number) => void;
     // A send the server refused, back for the box (n: which refusal).
     returned?: { text: string; n: number } | null;
     // Missing: the conversation is read-only (the other user left).
@@ -571,7 +582,28 @@
     box.update();
   };
 
-  // Editing and deleting stored messages.
+  // The "+" menu: a file or a poll (registered users, stored chats).
+  const pollsHere = $derived(!!onPoll && myId !== null);
+  let plusMenu = $state(false);
+  let pollForm = $state(false);
+  let plusButton: HTMLButtonElement | undefined = $state();
+  let plusMenuEl: HTMLDivElement | undefined = $state();
+  const closePlusMenu = () => {
+    plusMenu = false;
+    plusButton?.focus();
+  };
+  $effect(() => {
+    if (!plusMenu) return;
+    plusMenuEl?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    const away = (e: PointerEvent) => {
+      if (!plusMenuEl?.contains(e.target as Node) && !plusButton?.contains(e.target as Node)) plusMenu = false;
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  });
+
+  // Editing and deleting stored messages (stickers and polls stay as sent).
+  const editable = (m: ChatMessage | DisplayMessage) => !("sticker" in m && m.sticker) && !("poll" in m && m.poll);
   // files: the message's; removed: the URLs of those to take off.
   let editing = $state<{ id: number; text: string; old: string; files: Shown[]; removed: string[]; canDelete: boolean } | null>(null);
   let confirming = $state<number | null>(null);
@@ -678,7 +710,7 @@
     if (!("source" in m) || !m.source || editing?.id === m.source.id) return null;
     return {
       id: m.source.id,
-      canEdit: !!(mayEdit?.(m) && onEdit && !("sticker" in m && m.sticker)),
+      canEdit: !!(mayEdit?.(m) && onEdit && editable(m)),
       canDelete: !!(mayDelete?.(m) && onDelete),
       canPin: !!(mayPin && onPin),
       pinned: "pinned" in m && !!m.pinned,
@@ -767,7 +799,7 @@
   };
   // Up in an empty message box edits our last message.
   const editLast = () => {
-    const last = messages.findLast((m) => "source" in m && m.source && !("sticker" in m && m.sticker) && mayEdit?.(m));
+    const last = messages.findLast((m) => "source" in m && m.source && editable(m) && mayEdit?.(m));
     if (!last || !onEdit) return false;
     void startEdit(last);
     return true;
@@ -1193,13 +1225,35 @@
           type="button"
           class="attach"
           class:busy={uploading}
+          bind:this={plusButton}
           title={uploading ? "Uploading…" : onUpload ? uploadTitle(uploadMax, maxUploads) : "Uploads work in text channels and stored voice channel chats"}
-          aria-label="Upload a file"
-          disabled={!canAttach(!!onUpload, uploading)}
-          onclick={() => filePicker?.click()}
+          aria-label={pollsHere ? "Upload a file or create a poll" : "Upload a file"}
+          aria-expanded={pollsHere ? plusMenu : undefined}
+          disabled={!pollsHere && !canAttach(!!onUpload, uploading)}
+          onclick={() => (pollsHere ? (plusMenu = !plusMenu) : filePicker?.click())}
         >
           {#if uploading}<span class="spinner"></span>{:else}<Icon name="plus" size={18} />{/if}
         </button>
+        {#if plusMenu}
+          <!-- A plain popover of two buttons; Escape or leaving it closes it. -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="plus-menu"
+            bind:this={plusMenuEl}
+            onkeydown={(e) => {
+              if (e.key === "Escape") (e.preventDefault(), e.stopPropagation(), closePlusMenu());
+            }}
+            onfocusout={(e) => {
+              const to = e.relatedTarget as Node | null;
+              if (to && !plusMenuEl?.contains(to) && to !== plusButton) plusMenu = false;
+            }}
+          >
+            <button type="button" disabled={!canAttach(!!onUpload, uploading)} onclick={() => (closePlusMenu(), filePicker?.click())}>
+              <Icon name="plus" size={16} /> Upload a file
+            </button>
+            <button type="button" onclick={() => (closePlusMenu(), (pollForm = true))}>📊 Create a poll</button>
+          </div>
+        {/if}
         <input
           type="file"
           multiple={maxUploads > 1}
@@ -1334,6 +1388,9 @@
 {#if notice.n}
   {#key notice.n}<Toast text={notice.text} />{/key}
 {/if}
+{#if pollForm && onPoll}
+  <PollForm onSubmit={onPoll} onClose={() => ((pollForm = false), messageInput?.focus())} />
+{/if}
 {#if lightbox}
   <Lightbox {...lightbox} onClose={() => (lightbox = null)} />
 {/if}
@@ -1417,6 +1474,13 @@
       {/if}
       <span class="hint">Escape to cancel, Enter to save, Shift+Enter for a new line</span>
     </form>
+  {:else if "poll" in m && m.poll && "source" in m && m.source}
+    {@const id = m.source.id}
+    <PollView
+      poll={m.poll}
+      onVote={canReply && onVote && myId !== null ? (answers) => onVote(id, answers) : undefined}
+      onEnd={canReply && onEndPoll && myId !== null && "authorId" in m && m.authorId === myId ? () => onEndPoll(id) : undefined}
+    />
   {:else if "sticker" in m && m.sticker}
     <!-- A deleted sticker (not in the list) shows its name. -->
     {@const st = stickerById.get(m.sticker.id)}
@@ -2129,6 +2193,35 @@
     margin: 0 0 8px;
     color: var(--danger);
     font-size: 14px;
+  }
+  .plus-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+    padding: 6px;
+    border-radius: 6px;
+    background: var(--bg-rail);
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
+  }
+  .plus-menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    color: var(--text);
+    text-align: left;
+  }
+  .plus-menu button:hover:not(:disabled),
+  .plus-menu button:focus-visible {
+    background: var(--bg-hover, rgb(255 255 255 / 0.06));
+  }
+  .plus-menu button:disabled {
+    opacity: 0.5;
   }
   .composer {
     position: relative;

@@ -49,6 +49,7 @@
   import { ownsMessage } from "../lib/messages";
   import { lastTurnAt } from "../lib/slowMode";
   import { chatKeyOf, type Drafts, type OutgoingUpload } from "../lib/composer";
+  import type { PollBody } from "../lib/polls";
   import type { PendingFiles } from "../lib/pendingFiles";
   import { relinkDirect, type Place, type View } from "../lib/place";
   import { rejoinTarget } from "../lib/reconnect";
@@ -336,6 +337,7 @@
     stickers,
     onSticker:
       id === null ? undefined : (sticker: number, reply?: number, noPing?: boolean) => connection.sendConfirmed(id, "", crypto.randomUUID(), [], reply, noPing, sticker),
+    onPoll: id === null ? undefined : (poll: PollBody) => connection.sendConfirmed(id, "", crypto.randomUUID(), [], undefined, undefined, undefined, poll),
   });
   const pane = $derived.by(() => {
     if (view.kind === "text")
@@ -1122,6 +1124,8 @@
       return link && (openMessage(link) ? "opened" : "unavailable");
     },
     onReact: readOnly ? undefined : connection.react,
+    onVote: readOnly ? undefined : connection.vote,
+    onEndPoll: readOnly ? undefined : connection.endPoll,
     myId: me?.userId ?? null,
     onAddEmoji: mayAddEmoji ? connection.addUserEmoji : undefined,
     onRemoveEmoji: moderation.emoji ? connection.removeEmojiImage : undefined,
@@ -1913,7 +1917,7 @@
       {...storedPane(t.id)}
       onSend={(message, reply, noPing) => connection.sendToTextChannel(t.id, message, reply, noPing)}
       {...chatCommon}
-      {...(readOnly ? { onSend: undefined, onUpload: undefined, onSticker: undefined } : {})}
+      {...(readOnly ? { onSend: undefined, onUpload: undefined, onSticker: undefined, onPoll: undefined } : {})}
       chatKey="thread {t.id}"
       slow={slowIn(t.id, threadChat)}
       mayPin={canModerate(server, text, viewMumble)}
@@ -1956,7 +1960,7 @@
       {...paneCommon}
       {...pane}
       {...chatCommon}
-      {...(readOnly ? { onSend: undefined, onUpload: undefined, onSticker: undefined } : {})}
+      {...(readOnly ? { onSend: undefined, onUpload: undefined, onSticker: undefined, onPoll: undefined } : {})}
       chatKey={chatKeyOf(view, channelId)}
       {slow}
       {phone}
