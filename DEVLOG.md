@@ -2370,3 +2370,6 @@ As in Discord: a question (up to 300 characters), 2 to 10 answers (up to 55, eac
 - Polls end in the server's minute loop (`EndDuePolls`, also after a restart; at most a minute late) or early by the author. The result is a no-ping reply by the author; `deliver` (shared with `post`) takes it to thread followers, direct chats and Mumble, where it comes from the server (`SendChannelText` from 0).
 - Counts show after one's own vote, on "Show results", or at the end; shares are of the voters (multiple choice adds up to more than 100%).
 
+- Follow-ups (user's decisions): answers take the server's custom emoji and personal ones, checked as reactions are (`usableEmoji`, shared); the form picks them with the emoji picker (inside the dialog: outside a modal dialog all is inert; Escape there closes only the picker). Polls ping nobody: a zero-width space after each "@" in the poll's text and its result (`quiet`) keeps them as they look, but no mention matches (push, @everyone, follows, the clients' highlights); the question itself stays as typed and shows as plain text.
+- Headless note: the agent-browser daemon at some point stopped sending pointer and key input to new sessions (clicks report done, no events reach the page; `fill` still works); clicks from page scripts ran the same handlers.
+
