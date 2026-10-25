@@ -5,7 +5,8 @@ export const STAGE_MIN = 0.2;
 export const STAGE_MAX = 0.8;
 const STEP = 0.05; // arrow keys
 
-const clamp = (share: number) => Math.min(STAGE_MAX, Math.max(STAGE_MIN, share));
+// Three digits: no float rest in storage.
+const clamp = (share: number) => Math.round(Math.min(STAGE_MAX, Math.max(STAGE_MIN, share)) * 1000) / 1000;
 
 // Not dragged yet (null): the default, smaller on phones.
 export const shareOf = (saved: number | null, phone: boolean) => saved ?? (phone ? 0.4 : 0.55);

@@ -32,4 +32,9 @@ describe("stream view height", () => {
     expect(keyShare(STAGE_MAX, "ArrowDown")).toBe(STAGE_MAX);
     expect(keyShare(0.5, "Enter")).toBeNull();
   });
+
+  it("keeps three digits (no float rest in storage)", () => {
+    expect(keyShare(0.3, "ArrowDown")).toBe(0.35);
+    expect(dragShare(0.5, 400, 300.12345, 1000)).toBe(0.4);
+  });
 });
