@@ -211,6 +211,7 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
 
   // The UI starts capture, with the device from the settings. Both move
   // to a new context on an audio restart (see setAudio).
+  let current = $state.raw(audio); // replaced on an audio restart
   const voice = createVoiceAudio(audio, (ctx, mic: MicHandover | null) => ({ playback: createPlayback(ctx), capture: createCapture(ctx, sendAudio, mic) }));
   const playbackStats = () => voice.playback?.stats() ?? { good: 0, late: 0, lost: 0 };
   const info = createConnectionInfo(transportOf(url), playbackStats);
@@ -516,12 +517,17 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     get capture() {
       return voice.capture;
     },
+    // The current audio context (null: no voice support).
+    get audio() {
+      return current;
+    },
     streams,
     // An audio restart (see voice/restart.ts): voice and stream sound go on
     // in the new context. The app closes the old one. keepMic: the open
     // microphone goes on (see MicHandover).
     setAudio: (ctx: AudioContext, keepMic = false) => {
       if (closed) return;
+      current = ctx;
       voice.move(ctx, keepMic);
       streams?.setAudio(ctx);
     },
