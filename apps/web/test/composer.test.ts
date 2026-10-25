@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addFiles,
+  editOutcome,
   afterUpload,
   canAttach,
   chatKeyOf,
@@ -184,5 +185,21 @@ describe("clipboardImage", () => {
     expect(await clipboardImage(async () => [item(["text/plain"])])).toBeNull();
     expect(await clipboardImage(async () => Promise.reject(new Error("denied")))).toBeNull();
     expect(await clipboardImage(() => Promise.resolve([{ types: ["image/png"], getType: () => Promise.reject(new Error()) }]))).toBeNull();
+  });
+});
+
+describe("editOutcome", () => {
+  const files = ["http://srv/files/a/a.png", "http://srv/files/b/b.png"];
+  it("saves a changed text or removed files (their keys)", () => {
+    expect(editOutcome({ old: "x", text: "y", files, removed: [] })).toEqual({ save: true, remove: [] });
+    expect(editOutcome({ old: "x", text: "x", files, removed: [files[1]!] })).toEqual({ save: true, remove: ["b"] });
+    expect(editOutcome({ old: "", text: "", files, removed: [files[0]!] })).toEqual({ save: true, remove: ["a"] });
+  });
+  it("does nothing without a change", () => {
+    expect(editOutcome({ old: "x", text: "x", files, removed: [] })).toEqual({ save: false, remove: [] });
+  });
+  it("asks to delete a message left with no text and no file, as in Discord", () => {
+    expect(editOutcome({ old: "x", text: "", files: [], removed: [] })).toEqual({ save: false, remove: [], delete: true });
+    expect(editOutcome({ old: "", text: "", files, removed: files })).toEqual({ save: false, remove: [], delete: true });
   });
 });

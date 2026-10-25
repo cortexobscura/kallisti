@@ -1,4 +1,5 @@
 import { sameFiles, type Pending } from "./pendingFiles";
+import { fileKey } from "./textChannels";
 import type { View } from "./place";
 
 // The message box of a chat (see ChatPane).
@@ -88,6 +89,16 @@ export const afterUpload = (ok: boolean, sent: Sent, now: Now) => {
     caption: ok && here && now.draft.trim() === sent.caption,
     drafts: kept ? new Map([...now.drafts].filter(([chat]) => chat !== sent.chat)) : now.drafts,
   };
+};
+
+// An edit's end: save (with the keys of files taken off), nothing (no
+// change), or ask to delete a message left without text and files, as in
+// Discord. files, removed: the files' URLs.
+type Edit = { old: string; text: string; files: readonly string[]; removed: readonly string[] };
+export const editOutcome = ({ old, text, files, removed }: Edit): { save: boolean; remove: string[]; delete?: true } => {
+  const remove = files.filter((f) => removed.includes(f)).flatMap((f) => fileKey(f) ?? []);
+  if (!text && files.length === remove.length) return { save: false, remove: [], delete: true };
+  return { save: text !== old || remove.length > 0, remove };
 };
 
 // The drafts of the chats not open, kept above the panes (a pane closes

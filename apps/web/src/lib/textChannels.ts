@@ -1174,8 +1174,9 @@ export const typingRequest = (channel: number) => JSON.stringify({ type: "typing
 export const resyncRequest = JSON.stringify({ type: "resync" });
 export const markReadRequest = (channel: number, message: number) =>
   JSON.stringify({ type: "mark-read", channel, message });
-export const editMessageRequest = (message: number, text: string) =>
-  JSON.stringify({ type: "edit-message", message, text });
+// remove: the keys of files to take off (as in Discord, none can be added).
+export const editMessageRequest = (message: number, text: string, remove: readonly string[] = []) =>
+  JSON.stringify(remove.length ? { type: "edit-message", message, text, remove } : { type: "edit-message", message, text });
 export const deleteMessageRequest = (message: number) => JSON.stringify({ type: "delete-message", message });
 
 // The server's HTTP origin, from the bridge WebSocket URL.
@@ -1214,6 +1215,9 @@ const ownAttachment = ({ preview, ...u }: Attachment, base: string): Attachment 
   const own = preview && fileUrl(preview, base);
   return url ? { ...u, url, ...(own && { preview: own }) } : null;
 };
+
+// The key of one of our files, from its URL (null: not one).
+export const fileKey = (url: string) => /\/files\/([^/?#]+)\//.exec(url)?.[1] ?? null;
 
 // A message's files: the list, or the one file of an older server.
 export const messageFiles = (m: TextMessage): Attachment[] => m.uploads ?? (m.upload ? [m.upload] : []);

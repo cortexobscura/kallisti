@@ -18,6 +18,7 @@ import {
   autoSeen,
   resyncRequest,
   uploadTokenRequest,
+  fileKey,
   voiceChatRequest,
   httpBase,
   formatSize,
@@ -346,6 +347,11 @@ describe("several files", () => {
     expect(JSON.parse(uploadTokenRequest(1))).toEqual({ type: "upload-token" });
     expect(parseServerEvent('{"type":"upload-token","token":"a","tokens":["a","b"]}')).toEqual({ type: "upload-token", token: "a", tokens: ["a", "b"] });
     expect(parseServerEvent('{"type":"upload-token","token":"a","tokens":["a",1]}')).toEqual({ type: "upload-token", token: "a" });
+  });
+  it("finds a file's key in its URL", () => {
+    expect(fileKey("http://srv/files/k1/a%20b.png")).toBe("k1");
+    expect(fileKey("/files/k2/x.png?preview")).toBe("k2");
+    expect(fileKey("http://srv/api/upload")).toBeNull();
   });
   it("confirms a send without nonce by any of its files", () => {
     const m = { id: 1, channel: 2, author: "me", text: "", at: 0, uploads: [file("k0"), file("k1")] };

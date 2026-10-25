@@ -39,6 +39,7 @@
   import {
     addFiles,
     afterUpload,
+    editOutcome,
     canAttach,
     clipboardImage,
     emptyPaste,
@@ -190,7 +191,7 @@
     // Stored messages: who may change which (the server checks again).
     mayEdit?: (m: DisplayMessage) => boolean;
     mayDelete?: (m: DisplayMessage) => boolean;
-    onEdit?: (id: number, text: string) => void;
+    onEdit?: (id: number, text: string, remove: string[]) => void; // remove: keys of files to take off
     onDelete?: (id: number) => void;
     // "bob is typing…" under the message box; onTyping: we type.
     typing?: string;
@@ -563,23 +564,31 @@
   };
 
   // Editing and deleting stored messages.
-  let editing = $state<{ id: number; text: string; old: string; upload: boolean } | null>(null);
+  // files: the message's; removed: the URLs of those to take off.
+  let editing = $state<{ id: number; text: string; old: string; files: Shown[]; removed: string[] } | null>(null);
   let confirming = $state<number | null>(null);
   let editInput: HTMLTextAreaElement | undefined = $state();
   let cancelButton: HTMLButtonElement | undefined = $state();
   const startEdit = async (m: ChatMessage | DisplayMessage) => {
     if (!("source" in m) || !m.source) return;
-    editing = { id: m.source.id, text: fromRefs(m.source.text, custom.mine, custom.urls), old: m.source.text, upload: !!("uploads" in m && m.uploads?.length) };
+    const files = ("uploads" in m && m.uploads) || [];
+    editing = { id: m.source.id, text: fromRefs(m.source.text, custom.mine, custom.urls), old: m.source.text, files, removed: [] };
     await tick();
     editInput?.focus();
   };
   const saveEdit = () => {
     if (!editing) return;
     const text = withRefs(editing.text.trim());
-    // A message with an attachment may lose its caption.
-    if (text !== editing.old && (text || editing.upload)) onEdit?.(editing.id, text);
+    const id = editing.id;
+    const end = editOutcome({ old: editing.old, text, files: editing.files.map((f) => f.url), removed: editing.removed });
     editing = null;
+    // Nothing left: as in Discord, it asks to delete the message.
+    if (end.delete && onDelete) return void startConfirm(id);
+    if (end.save) onEdit?.(id, text, end.remove);
     messageInput?.focus();
+  };
+  const toggleRemoved = (url: string) => {
+    if (editing) editing.removed = editing.removed.includes(url) ? editing.removed.filter((u) => u !== url) : [...editing.removed, url];
   };
   // Replies and reactions: stored chats we may write in. picking: the
   // message whose emoji picker is open (focus moves into it and back).
@@ -1356,6 +1365,17 @@
           }
         }}
       ></textarea>
+      {#if editing.files.length}
+        <ul class="edit-files" aria-label="Files">
+          {#each editing.files as f (f.url)}
+            {@const gone = editing.removed.includes(f.url)}
+            <li class:gone>
+              <span class="ellipsis">{f.name}</span>
+              <button type="button" onclick={() => toggleRemoved(f.url)} aria-label="{gone ? 'Keep' : 'Remove'} {f.name}">{gone ? "Undo" : "×"}</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
       <span class="hint">Escape to cancel, Enter to save, Shift+Enter for a new line</span>
     </form>
   {:else if "sticker" in m && m.sticker}
@@ -2248,6 +2268,35 @@
     margin-left: 4px;
     font-size: 11px;
     color: var(--text-muted);
+  }
+  .edit-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .edit-files li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 240px;
+    padding: 4px 4px 4px 10px;
+    border-radius: 6px;
+    background: var(--bg-sidebar);
+    font-size: 13px;
+  }
+  .edit-files li.gone span {
+    color: var(--text-muted);
+    text-decoration: line-through;
+  }
+  .edit-files button {
+    padding: 0 6px;
+    color: var(--text-muted);
+  }
+  .edit-files button:hover {
+    color: var(--text);
   }
   .edit {
     display: flex;

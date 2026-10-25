@@ -423,8 +423,8 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     markRead: (channel: number, message: number) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(markReadRequest(channel, message));
     },
-    editMessage: (message: number, text: string) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(editMessageRequest(message, text));
+    editMessage: (message: number, text: string, remove: readonly string[] = []) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(editMessageRequest(message, text, remove));
     },
     pin: (message: number, on: boolean) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(pinRequest(message, on));
