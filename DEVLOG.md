@@ -2328,3 +2328,8 @@ From `meta/research/discord-comparison.md`.
 - In picture-in-picture the floating video is the tile canvas's `captureStream()`, so the canvas must go on drawing: the tile is covered with a note and a button to bring it back, as other players do.
 - Checked end to end with the server in podman, an ffmpeg WHIP test stream and headless Chrome (picture-in-picture works there).
 
+
+## Android app: voice in the background
+
+- Tauri 2 builds the Android app from the desktop crate, as for iOS (`gen/android` tracked, `tauri.android.conf.json`: id `chat.kallisti.mobile`). Toolchain in the home folder: Temurin 21 (mise), the Android SDK under ~/Library/Android/sdk (platform and build tools 36, NDK 29). The APK ran at once; wry asks for RECORD_AUDIO and MODIFY_AUDIO_SETTINGS when the page opens the microphone, so the manifest declares them.
+- Voice stopped a few seconds after the app went to the background: logcat showed `AudioRecord stop` 5 s after the activity paused; the process was not frozen. Android records in the background only with a foreground service of type microphone. `VoiceService.kt` is one, with a notification "In voice: #channel" that opens the app; `VoicePlugin.kt` (a Tauri plugin in the app module) starts and stops it, `android.rs` forwards the app command `voice_service`. The web client turns it on while in voice; a channel change only updates the notification, since Android starts such a service only from the foreground. Checked on the user's phone: background and screen off for minutes, both directions.
