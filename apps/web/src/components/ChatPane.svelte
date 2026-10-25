@@ -280,8 +280,16 @@
   // Sent while up there: the place stays, the bar says so.
   let sentAway = $state(false);
   const newCount = $derived(newSince(messages.map((m) => m.at), leftAt));
+  // A scroll right after the list's height changed comes from that
+  // change (Android's keyboard shrinks the page, the scroll event comes
+  // before the ResizeObserver): a reader at the bottom stays there.
+  let seenHeight = 0;
   const trackBottom = () => {
     if (!list) return;
+    if (list.clientHeight !== seenHeight) {
+      seenHeight = list.clientHeight;
+      if (atBottom) return keepBottom();
+    }
     atBottom = list.scrollHeight - list.scrollTop - list.clientHeight <= 80;
     away = awayFromBottom(list);
     if (!away) [leftAt, sentAway] = [null, false];
@@ -291,9 +299,9 @@
     const motion = !matchMedia("(prefers-reduced-motion: reduce)").matches;
     list?.scrollTo({ top: list.scrollHeight, behavior: motion ? "smooth" : "auto" });
   };
-  const keepBottom = () => {
+  function keepBottom() {
     if (list && atBottom) list.scrollTop = list.scrollHeight;
-  };
+  }
   // The list gets shorter or taller (the keyboard, the window): a reader at
   // the bottom stays there too.
   $effect(() => {
