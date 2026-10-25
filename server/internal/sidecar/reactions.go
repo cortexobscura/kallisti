@@ -23,6 +23,24 @@ func toWireReactions(rs []store.Reaction) []wireReaction {
 	return out
 }
 
+// usableEmoji: an emoji in its normal form, or why it cannot be used: a
+// Unicode emoji, the server's (":name:") or a personal one ("<:name:id>").
+// add false: one going away (a deleted custom emoji's reactions can still
+// be taken back).
+func (h *Hub) usableEmoji(e string, add bool) (normal, why string) {
+	normal = emoji.Normal(e)
+	if _, _, personal := emoji.ParseRef(normal); personal {
+		if normal, personal = h.reactionEmoji(normal, add); !personal {
+			return "", "no such emoji"
+		}
+	} else if name, custom := emoji.CustomName(normal); custom && add && !h.hasEmoji(name) {
+		return "", "no such emoji on this server"
+	} else if !custom && !emoji.Valid(normal) {
+		return "", "not an emoji"
+	}
+	return normal, ""
+}
+
 // react adds or removes the user's reaction, as writing does: everyone in
 // text channels, in voice chats those who may write. Reactions belong to
 // user ids, so only registered users react (web guests have guest
@@ -32,18 +50,9 @@ func (c *Conn) react(id mumble.Identity, req request) {
 		c.sendError("join with an account (or a guest account) to react")
 		return
 	}
-	normal := emoji.Normal(req.Emoji)
-	// A deleted custom emoji's reactions can still be taken back.
-	if _, _, personal := emoji.ParseRef(normal); personal {
-		if normal, personal = c.hub.reactionEmoji(normal, req.On); !personal {
-			c.sendError("no such emoji")
-			return
-		}
-	} else if name, custom := emoji.CustomName(normal); custom && req.On && !c.hub.hasEmoji(name) {
-		c.sendError("no such emoji on this server")
-		return
-	} else if !custom && !emoji.Valid(normal) {
-		c.sendError("not an emoji")
+	normal, why := c.hub.usableEmoji(req.Emoji, req.On)
+	if why != "" {
+		c.sendError(why)
 		return
 	}
 	m, err := c.hub.store.MessageByID(req.Message)

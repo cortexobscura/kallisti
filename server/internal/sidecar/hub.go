@@ -650,7 +650,7 @@ func (c *Conn) Handle(raw []byte) {
 	}
 	// A poll's text goes through the rules as any text.
 	if req.Type == "send" && req.Poll != nil {
-		p, why := newPoll(*req.Poll, c.hub.now())
+		p, why := newPoll(*req.Poll, c.hub.now(), func(e string) (string, string) { return c.hub.usableEmoji(e, true) })
 		if why != "" {
 			c.sendError(why)
 			return

@@ -8,6 +8,7 @@ import (
 
 	"kallisti.chat/server/internal/msgrules"
 	"kallisti.chat/server/internal/mumble"
+	"kallisti.chat/server/internal/store"
 )
 
 const pizzaPoll = `{"question":"Pizza?","answers":[{"text":"Yes","emoji":"🍕"},{"text":"No"}],"hours":1}`
@@ -203,5 +204,42 @@ func TestPollsGetTheWordReplacements(t *testing.T) {
 	p := pollOf(m)
 	if p["question"] != "oh?" || p["answers"].([]any)[0].(map[string]any)["text"] != "oh" || strings.Contains(m["message"].(map[string]any)["text"].(string), "darn") {
 		t.Fatalf("got %v", m)
+	}
+}
+
+// As reactions: Unicode emoji, the server's, one's personal ones.
+func TestPollAnswersWithCustomEmoji(t *testing.T) {
+	h := newHub(t, "general")
+	alice, _ := pollUsers(t, h)
+	addEmoji(t, h, "party")
+	h.EmojiChanged()
+	img := addUserEmoji(t, h, 7, "cool", "c")
+	ref := fmt.Sprintf("<:cool:%d>", img.ImageID)
+	drain(alice)
+	m := sendPoll(t, alice, `{"question":"Q","answers":[{"text":"a","emoji":":party:"},{"text":"b","emoji":"`+ref+`"},{"text":"c","emoji":"👍"}],"hours":1}`)
+	answers := pollOf(m)["answers"].([]any)
+	if m["type"] != "message" || answers[0].(map[string]any)["emoji"] != ":party:" || answers[1].(map[string]any)["emoji"] != ref {
+		t.Fatalf("got %v", m)
+	}
+	for _, bad := range []string{":nope:", "<:x:999999>", "no emoji"} {
+		if m := sendPoll(t, alice, `{"question":"Q","answers":[{"text":"a","emoji":"`+bad+`"},{"text":"b"}],"hours":1}`); m["type"] != "error" {
+			t.Fatalf("%s: %v", bad, m)
+		}
+	}
+}
+
+// Polls ping nobody, nor does their result.
+func TestPollsDoNotPing(t *testing.T) {
+	h := newHub(t, "general")
+	alice, _ := pollUsers(t, h)
+	m := sendPoll(t, alice, `{"question":"@bob @everyone?","answers":[{"text":"@bob"},{"text":"b"}],"hours":1}`)
+	msg := m["message"].(map[string]any)
+	stored := mustMessage(t, h, int64(msg["id"].(float64)))
+	if msg["mentionAll"] != nil || pings(stored, false, "bob", 8) || pollOf(m)["question"] != "@bob @everyone?" {
+		t.Fatalf("got %v", m)
+	}
+	result := store.Message{Text: pollResult(*stored.Poll), Author: "alice"}
+	if pings(result, false, "bob", 8) {
+		t.Fatalf("the result pings: %q", result.Text)
 	}
 }

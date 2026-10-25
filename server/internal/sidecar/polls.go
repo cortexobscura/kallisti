@@ -8,7 +8,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"kallisti.chat/server/internal/emoji"
 	"kallisti.chat/server/internal/mumble"
 	"kallisti.chat/server/internal/store"
 )
@@ -55,7 +54,9 @@ type wirePoll struct {
 }
 
 // newPoll checks a poll request: the poll for the store, or why not.
-func newPoll(r wirePollRequest, now time.Time) (store.Poll, string) {
+// usable: an answer's emoji in its normal form, or why not (see
+// usableEmoji).
+func newPoll(r wirePollRequest, now time.Time, usable func(string) (string, string)) (store.Poll, string) {
 	p := store.Poll{Question: oneLine(r.Question), Multiple: r.Multiple, Anonymous: r.Anonymous, EndsAt: now.Add(time.Duration(r.Hours) * time.Hour)}
 	if p.Question == "" || utf8.RuneCountInString(p.Question) > maxPollQuestion {
 		return p, fmt.Sprintf("a poll's question has 1 to %d characters", maxPollQuestion)
@@ -64,12 +65,15 @@ func newPoll(r wirePollRequest, now time.Time) (store.Poll, string) {
 		return p, fmt.Sprintf("a poll has %d to %d answers", minPollAnswers, maxPollAnswers)
 	}
 	for _, a := range r.Answers {
-		text, e := oneLine(a.Text), emoji.Normal(strings.TrimSpace(a.Emoji))
+		text, e := oneLine(a.Text), strings.TrimSpace(a.Emoji)
 		if text == "" || utf8.RuneCountInString(text) > maxPollAnswer {
 			return p, fmt.Sprintf("a poll's answer has 1 to %d characters", maxPollAnswer)
 		}
-		if e != "" && !emoji.Valid(e) {
-			return p, "not an emoji"
+		if e != "" {
+			var why string
+			if e, why = usable(e); why != "" {
+				return p, why
+			}
 		}
 		p.Answers = append(p.Answers, store.PollAnswer{Text: text, Emoji: e})
 	}
@@ -82,6 +86,11 @@ func newPoll(r wirePollRequest, now time.Time) (store.Poll, string) {
 // oneLine: line breaks would fake answers in pollText.
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
+// quiet: polls ping nobody. A zero-width space after each "@" keeps the
+// text as it looks, but no mention matches it (pushes, @everyone, follows,
+// the clients' highlights).
+func quiet(s string) string { return strings.ReplaceAll(s, "@", "@\u200b") }
+
 // pollText is a poll as text.
 func pollText(p store.Poll) string {
 	var b strings.Builder
@@ -90,7 +99,7 @@ func pollText(p store.Poll) string {
 		b.WriteString("\n• " + strings.TrimSpace(a.Emoji+" "+a.Text))
 	}
 	b.WriteString("\n(a poll: vote in Kallisti)")
-	return b.String()
+	return quiet(b.String())
 }
 
 // toWirePoll: the counts, names only in named polls; viewer: the reader
@@ -233,7 +242,7 @@ func pollResult(p store.Poll) string {
 		best = max(best, a.Votes)
 	}
 	if best == 0 {
-		return fmt.Sprintf("📊 The poll “%s” ended: no votes.", p.Question)
+		return quiet(fmt.Sprintf("📊 The poll “%s” ended: no votes.", p.Question))
 	}
 	var top []string
 	for _, a := range w.Answers {
@@ -245,5 +254,5 @@ func pollResult(p store.Poll) string {
 	if best == 1 {
 		votes = "vote"
 	}
-	return fmt.Sprintf("📊 The poll “%s” ended: %s (%d %s, %d%%).", p.Question, strings.Join(top, ", "), best, votes, best*100/w.Voters)
+	return quiet(fmt.Sprintf("📊 The poll “%s” ended: %s (%d %s, %d%%).", p.Question, strings.Join(top, ", "), best, votes, best*100/w.Voters))
 }
