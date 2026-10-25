@@ -18,3 +18,4 @@
 - [ ] [Desktop app: links do nothing, videos don't play (Linux)](issues/desktop-links-and-video.md)
 - [ ] [WHIP streams: picture and sound out of sync](issues/whip-av-sync.md)
 - [ ] [Desktop (Linux, Wayland): GPU use while minimised](issues/wayland-minimised-gpu.md)
+- [ ] [Polls](issues/polls.md) (design, not started)
