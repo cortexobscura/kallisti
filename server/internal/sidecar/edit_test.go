@@ -286,13 +286,13 @@ func TestStaffDeleteAUsersRecentMessages(t *testing.T) {
 	text := h.channels[0].ID
 	voice, _ := h.store.VoiceChat(5)
 	dm, _ := h.store.DirectChat(372, 504)
-	add := func(ch int64, ago time.Duration, upload int64) int64 {
-		m, _ := h.store.AddMessage(store.NewMessage{ChannelID: ch, Author: "bob", Verified: true, AuthorID: 504, Text: "spam", At: clock.Add(-ago), UploadID: upload})
+	add := func(ch int64, ago time.Duration, uploads ...store.Attachment) int64 {
+		m, _ := h.store.AddMessage(store.NewMessage{ChannelID: ch, Author: "bob", Verified: true, AuthorID: 504, Text: "spam", At: clock.Add(-ago), Uploads: uploads})
 		return m.ID
 	}
 	u, _ := h.store.AddUpload(store.Upload{Key: "spamkey", Name: "spam.png", Type: "image/png", Size: 1, Author: "bob"}, clock)
-	inText, inVoice := add(text, time.Minute, u.ID), add(voice, 0, 0)
-	old, inDM := add(text, 2*time.Hour, 0), add(dm, 0, 0)
+	inText, inVoice := add(text, time.Minute, store.Attachment{ID: u.ID}), add(voice, 0)
+	old, inDM := add(text, 2*time.Hour), add(dm, 0)
 	guestSaid := say(t, h, guest, "spam")
 	otherSaid := say(t, h, other, "hi")
 	drain(mod, bob, guest, other)

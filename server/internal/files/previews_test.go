@@ -262,7 +262,7 @@ func TestMakeMissingPreviews(t *testing.T) {
 	key := "old00000000000000000000000000000"
 	os.WriteFile(filepath.Join(h.Dir, key), mp4, 0o600)
 	old, _ := s.AddUpload(store.Upload{Key: key, Name: "a.mp4", Type: "video/mp4", Size: int64(len(mp4)), Author: "a"}, time.Now())
-	s.AddMessage(store.NewMessage{ChannelID: 1, Author: "a", At: time.Now(), UploadID: old.ID})
+	s.AddMessage(store.NewMessage{ChannelID: 1, Author: "a", At: time.Now(), Uploads: []store.Attachment{{ID: old.ID}}})
 	h.MakeMissingPreviews(t.Context())
 	if u, _ := s.UploadByKey(key); u.Preview != "image/webp" || len(ready) != 1 {
 		t.Fatalf("stored %+v", u)

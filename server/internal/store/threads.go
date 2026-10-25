@@ -231,15 +231,18 @@ func (s *Store) DeleteThread(id int64) ([]string, error) {
 	}
 	var keys []string
 	for _, m := range gone {
-		if m.Upload != nil {
-			keys = append(keys, m.Upload.Key)
+		for _, u := range m.Uploads {
+			keys = append(keys, u.Key)
 		}
 	}
 	return keys, tx.Commit()
 }
 
-// withExtras fills in messages' reactions and threads.
+// withExtras fills in messages' uploads, reactions and threads.
 func (s *Store) withExtras(msgs []Message) error {
+	if err := withUploads(s.db, msgs); err != nil {
+		return err
+	}
 	if err := s.withReactions(msgs); err != nil {
 		return err
 	}

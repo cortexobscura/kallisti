@@ -206,7 +206,7 @@ func TestDeletingThreads(t *testing.T) {
 	s, start := threadStore(t)
 	th, _ := s.CreateThread(1, start.ID, "Games", "bob", nil, t0)
 	up, _ := s.AddUpload(Upload{Key: "k1", Name: "a.png", Type: "image/png", Size: 1, Author: "bob"}, t0)
-	if _, err := s.AddMessage(NewMessage{ChannelID: th.ID, Author: "bob", Text: "pic", At: t0, UploadID: up.ID}); err != nil {
+	if _, err := s.AddMessage(NewMessage{ChannelID: th.ID, Author: "bob", Text: "pic", At: t0, Uploads: []Attachment{{ID: up.ID}}}); err != nil {
 		t.Fatal(err)
 	}
 	reply := addTo(t, s, th.ID, "nice", t0)
@@ -252,7 +252,7 @@ func TestPostingToADeletedThread(t *testing.T) {
 		t.Fatal(err)
 	}
 	up, _ := s.AddUpload(Upload{Key: "k1", Name: "a.png", Type: "image/png", Size: 1, Author: "bob"}, t0)
-	if _, err := s.AddMessage(NewMessage{ChannelID: th.ID, Thread: true, Author: "bob", Text: "pic", At: t0, UploadID: up.ID}); !errors.Is(err, ErrNotFound) {
+	if _, err := s.AddMessage(NewMessage{ChannelID: th.ID, Thread: true, Author: "bob", Text: "pic", At: t0, Uploads: []Attachment{{ID: up.ID}}}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("post to a deleted thread: %v", err)
 	}
 	if msgs, _ := s.History(th.ID, 0, 10); len(msgs) != 0 {

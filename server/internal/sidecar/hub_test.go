@@ -2,6 +2,7 @@ package sidecar
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -312,6 +313,52 @@ func TestSendWithUpload(t *testing.T) {
 	empty(t, alice)
 }
 
+// Up to store.MaxUploads files, in order, each with a description;
+// "upload" (the first) stays for clients from before the list.
+func TestSendWithSeveralUploads(t *testing.T) {
+	h := newHub(t, "general")
+	alice, bob := ready(t, h, "alice"), ready(t, h, "bob")
+	for i := range store.MaxUploads + 1 {
+		if _, err := h.store.AddUpload(store.Upload{Key: fmt.Sprint("k", i), Name: fmt.Sprint(i, ".png"), Type: "image/png", Size: 3, Author: "alice"}, clock); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.store.AddUpload(store.Upload{Key: "bobs", Name: "b.png", Type: "image/png", Size: 3, Author: "bob"}, clock)
+	send := func(uploads string) map[string]any {
+		alice.Handle([]byte(`{"type":"send","channel":1,"text":"","uploads":` + uploads + `}`))
+		return next(t, alice)
+	}
+	for _, refused := range []string{
+		`[{"key":"k0"},{"key":"bobs"}]`, // someone else's
+		`[{"key":"k0"},{"key":"k0"}]`,   // twice
+		`[{"key":"k0","description":"` + strings.Repeat("a", store.MaxDescription+1) + `"}]`,
+		`[` + strings.Repeat(`{"key":"k0"},`, store.MaxUploads) + `{"key":"k1"}]`, // too many
+	} {
+		if m := send(refused); m["type"] != "error" {
+			t.Fatalf("%s: %v", refused, m)
+		}
+	}
+	m := send(`[{"key":"k2"},{"key":"k1","description":" a cat "}]`)
+	msg := m["message"].(map[string]any)
+	ups, _ := msg["uploads"].([]any)
+	if m["type"] != "message" || len(ups) != 2 {
+		t.Fatalf("got %v", m)
+	}
+	first, second := ups[0].(map[string]any), ups[1].(map[string]any)
+	if first["name"] != "2.png" || first["description"] != nil || second["name"] != "1.png" || second["description"] != "a cat" {
+		t.Fatalf("uploads: %v", ups)
+	}
+	if old, _ := msg["upload"].(map[string]any); old["name"] != "2.png" {
+		t.Fatalf("upload: %v", msg["upload"])
+	}
+	next(t, bob)
+	// The old form still works.
+	alice.Handle([]byte(`{"type":"send","channel":1,"text":"","upload":"k3"}`))
+	if ups, _ := next(t, alice)["message"].(map[string]any)["uploads"].([]any); len(ups) != 1 {
+		t.Fatalf("old form: %v", ups)
+	}
+}
+
 func TestNoReadyWithoutAName(t *testing.T) {
 	h := newHub(t, "general")
 	c := h.Connect()
@@ -376,8 +423,8 @@ func TestReadyTellsTheUploadLimit(t *testing.T) {
 	c := h.Connect()
 	defer c.Close()
 	c.SetIdentity(mumble.Identity{Session: 1, Name: "alice"})
-	if m := next(t, c); m["uploadMax"] != float64(10<<20) {
-		t.Fatalf("got %v", m["uploadMax"])
+	if m := next(t, c); m["uploadMax"] != float64(10<<20) || m["maxUploads"] != float64(store.MaxUploads) {
+		t.Fatalf("got %v %v", m["uploadMax"], m["maxUploads"])
 	}
 }
 

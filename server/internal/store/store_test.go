@@ -101,23 +101,23 @@ func TestUploadsAndAttachments(t *testing.T) {
 	if err != nil || got.ID != u.ID || got.Name != "cat.png" || got.Author != "alice" || got.Used || got.Media != cat {
 		t.Fatalf("got %+v %v", got, err)
 	}
-	m, err := s.AddMessage(NewMessage{ChannelID: 1, Author: "alice", Text: "look", At: at, UploadID: u.ID})
+	m, err := s.AddMessage(NewMessage{ChannelID: 1, Author: "alice", Text: "look", At: at, Uploads: []Attachment{{ID: u.ID}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Upload == nil || m.Upload.Name != "cat.png" {
-		t.Fatalf("message upload: %+v", m.Upload)
+	if len(m.Uploads) != 1 || m.Uploads[0].Name != "cat.png" {
+		t.Fatalf("message upload: %+v", m.Uploads)
 	}
 	got, _ = s.UploadByKey("k1")
 	if !got.Used {
 		t.Fatal("upload not marked as used")
 	}
 	// An upload can be attached only once.
-	if _, err := s.AddMessage(NewMessage{ChannelID: 1, Author: "alice", Text: "again", At: at, UploadID: u.ID}); err == nil {
+	if _, err := s.AddMessage(NewMessage{ChannelID: 1, Author: "alice", Text: "again", At: at, Uploads: []Attachment{{ID: u.ID}}}); err == nil {
 		t.Fatal("expected an error for a used upload")
 	}
 	hist, _ := s.History(1, 0, 10)
-	if len(hist) != 1 || hist[0].Upload == nil || hist[0].Upload.Key != "k1" || hist[0].Upload.Size != 1234 || hist[0].Upload.Media != cat {
+	if len(hist) != 1 || len(hist[0].Uploads) != 1 || hist[0].Uploads[0].Key != "k1" || hist[0].Uploads[0].Size != 1234 || hist[0].Uploads[0].Media != cat {
 		t.Fatalf("history: %+v", hist)
 	}
 	if _, err := s.UploadByKey("nope"); err == nil {
@@ -201,7 +201,7 @@ func TestDeleteUnusedUploads(t *testing.T) {
 	old := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
 	stale, _ := s.AddUpload(Upload{Key: "stale", Name: "a", Type: "x", Size: 1, Author: "a"}, old)
 	attached, _ := s.AddUpload(Upload{Key: "attached", Name: "b", Type: "x", Size: 1, Author: "a"}, old)
-	s.AddMessage(NewMessage{ChannelID: 1, Author: "a", Text: "", At: old, UploadID: attached.ID})
+	s.AddMessage(NewMessage{ChannelID: 1, Author: "a", Text: "", At: old, Uploads: []Attachment{{ID: attached.ID}}})
 	s.AddUpload(Upload{Key: "fresh", Name: "c", Type: "x", Size: 1, Author: "a"}, old.Add(time.Hour))
 	keys, err := s.DeleteUnusedUploads(old.Add(time.Minute))
 	if err != nil {
@@ -531,9 +531,9 @@ func TestEditAndDeleteMessages(t *testing.T) {
 	}
 	// Deleting a message with an attachment deletes the upload too.
 	u, _ := s.AddUpload(Upload{Key: "k9", Name: "a.png", Type: "image/png", Size: 1, Author: "alice"}, at)
-	withFile, _ := s.AddMessage(NewMessage{ChannelID: chans[0].ID, Author: "alice", Text: "", At: at, UploadID: u.ID})
+	withFile, _ := s.AddMessage(NewMessage{ChannelID: chans[0].ID, Author: "alice", Text: "", At: at, Uploads: []Attachment{{ID: u.ID}}})
 	gone, err := s.DeleteMessage(withFile.ID)
-	if err != nil || gone.Upload == nil || gone.Upload.Key != "k9" {
+	if err != nil || len(gone.Uploads) != 1 || gone.Uploads[0].Key != "k9" {
 		t.Fatalf("delete: %+v %v", gone, err)
 	}
 	if _, err := s.UploadByKey("k9"); err == nil {
@@ -567,21 +567,21 @@ func TestRecentMessagesAndDeletingMany(t *testing.T) {
 	voice, _ := s.VoiceChat(5)
 	dm, _ := s.DirectChat(7, 8)
 	now := time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC)
-	add := func(ch int64, author uint32, verified bool, ago time.Duration, upload int64) int64 {
-		m, err := s.AddMessage(NewMessage{ChannelID: ch, Author: "x", Verified: verified, AuthorID: author, Text: "x", At: now.Add(-ago), UploadID: upload})
+	add := func(ch int64, author uint32, verified bool, ago time.Duration, uploads ...Attachment) int64 {
+		m, err := s.AddMessage(NewMessage{ChannelID: ch, Author: "x", Verified: verified, AuthorID: author, Text: "x", At: now.Add(-ago), Uploads: uploads})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return m.ID
 	}
 	u, _ := s.AddUpload(Upload{Key: "k1", Name: "a.png", Type: "image/png", Size: 1, Author: "x"}, now)
-	old := add(chans[0].ID, 7, true, 2*time.Hour, 0)
-	text := add(chans[0].ID, 7, true, time.Minute, u.ID)
-	inVoice := add(voice, 7, true, 0, 0)
-	add(dm, 7, true, 0, 0)                    // direct chats are left out
-	other := add(chans[0].ID, 8, true, 0, 0)  // another user
-	guest := add(chans[0].ID, 0, false, 0, 0) // a guest
-	guestOld := add(voice, 0, false, 3*time.Hour, 0)
+	old := add(chans[0].ID, 7, true, 2*time.Hour)
+	text := add(chans[0].ID, 7, true, time.Minute, Attachment{ID: u.ID})
+	inVoice := add(voice, 7, true, 0)
+	add(dm, 7, true, 0)                    // direct chats are left out
+	other := add(chans[0].ID, 8, true, 0)  // another user
+	guest := add(chans[0].ID, 0, false, 0) // a guest
+	guestOld := add(voice, 0, false, 3*time.Hour)
 	since := now.Add(-time.Hour)
 	if ids, err := s.RecentByUser(7, since, 10); err != nil || fmt.Sprint(ids) != fmt.Sprint([]int64{inVoice, text}) {
 		t.Fatalf("by user: %v %v", ids, err)
@@ -593,7 +593,7 @@ func TestRecentMessagesAndDeletingMany(t *testing.T) {
 		t.Fatalf("among: %v", ids)
 	}
 	gone, err := s.DeleteMessages([]int64{text, inVoice, 9999})
-	if err != nil || len(gone) != 2 || gone[0].ID != text || gone[0].Upload == nil || gone[0].Upload.Key != "k1" || gone[1].ChannelID != voice {
+	if err != nil || len(gone) != 2 || gone[0].ID != text || len(gone[0].Uploads) != 1 || gone[0].Uploads[0].Key != "k1" || gone[1].ChannelID != voice {
 		t.Fatalf("deleted %+v %v", gone, err)
 	}
 	if _, err := s.UploadByKey("k1"); err == nil {
@@ -877,7 +877,7 @@ func TestUploadPreviews(t *testing.T) {
 	s.AddUpload(Upload{Key: "unused", Name: "c.png", Type: "image/png", Size: 1, Author: "a"}, at)
 	zip, _ := s.AddUpload(Upload{Key: "zip", Name: "d.zip", Type: "application/zip", Size: 1, Author: "a"}, at)
 	for _, u := range []Upload{video, image, zip} {
-		s.AddMessage(NewMessage{ChannelID: 1, Author: "a", At: at, UploadID: u.ID})
+		s.AddMessage(NewMessage{ChannelID: 1, Author: "a", At: at, Uploads: []Attachment{{ID: u.ID}}})
 	}
 	todo, err := s.UploadsWithoutPreview()
 	if err != nil || len(todo) != 2 || todo[0].Key != "image" || todo[1].Key != "video" {
@@ -894,7 +894,7 @@ func TestUploadPreviews(t *testing.T) {
 		t.Fatalf("upload: %+v", u)
 	}
 	m, err := s.MessageByUpload("video")
-	if err != nil || m.Upload == nil || m.Upload.Preview != "image/webp" {
+	if err != nil || len(m.Uploads) != 1 || m.Uploads[0].Preview != "image/webp" {
 		t.Fatalf("message: %+v %v", m, err)
 	}
 	if _, err := s.MessageByUpload("unused"); !errors.Is(err, ErrNotFound) {
@@ -902,5 +902,99 @@ func TestUploadPreviews(t *testing.T) {
 	}
 	if todo, _ := s.UploadsWithoutPreview(); len(todo) != 0 {
 		t.Fatalf("still without preview: %+v", todo)
+	}
+}
+
+func TestSeveralUploadsPerMessage(t *testing.T) {
+	s := open(t)
+	s.EnsureChannels([]string{"general"})
+	at := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	var ups []Upload
+	for _, k := range []string{"a", "b", "c", "d"} {
+		u, _ := s.AddUpload(Upload{Key: k, Name: k + ".png", Type: "image/png", Size: 1, Author: "alice"}, at)
+		ups = append(ups, u)
+	}
+	// In the order given, with descriptions.
+	m, err := s.AddMessage(NewMessage{ChannelID: 1, Author: "alice", At: at, Uploads: []Attachment{
+		{ID: ups[2].ID}, {ID: ups[0].ID, Description: "a cat"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := func(us []Upload) string {
+		out := ""
+		for _, u := range us {
+			out += fmt.Sprintf("%s:%s ", u.Key, u.Description)
+		}
+		return out
+	}
+	const want = "c: a:a cat "
+	if keys(m.Uploads) != want {
+		t.Fatalf("added: %s", keys(m.Uploads))
+	}
+	for _, get := range []func() ([]Message, error){
+		func() ([]Message, error) { return s.History(1, 0, 10) },
+		func() ([]Message, error) { m, err := s.MessageByID(m.ID); return []Message{m}, err },
+		func() ([]Message, error) { return s.Search("", []int64{1}, "alice", 10) },
+	} {
+		if got, err := get(); err != nil || len(got) != 1 || keys(got[0].Uploads) != want {
+			t.Fatalf("read back: %+v %v", got, err)
+		}
+	}
+	if byUpload, err := s.MessageByUpload("a"); err != nil || byUpload.ID != m.ID {
+		t.Fatalf("by upload: %+v %v", byUpload, err)
+	}
+	// A used upload among others: nothing is attached.
+	if _, err := s.AddMessage(NewMessage{ChannelID: 1, Author: "alice", At: at, Uploads: []Attachment{{ID: ups[3].ID}, {ID: ups[0].ID}}}); err == nil {
+		t.Fatal("a used upload was attached again")
+	}
+	if u, _ := s.UploadByKey("d"); u.Used {
+		t.Fatal("the free upload was used up by a refused message")
+	}
+	// The same upload twice is refused.
+	if _, err := s.AddMessage(NewMessage{ChannelID: 1, Author: "alice", At: at, Uploads: []Attachment{{ID: ups[3].ID}, {ID: ups[3].ID}}}); err == nil {
+		t.Fatal("one upload attached twice")
+	}
+	gone, err := s.DeleteMessage(m.ID)
+	if err != nil || keys(gone.Uploads) != want {
+		t.Fatalf("deleted: %+v %v", gone, err)
+	}
+	for _, k := range []string{"a", "c"} {
+		if _, err := s.UploadByKey(k); err == nil {
+			t.Fatalf("upload %s still there", k)
+		}
+	}
+}
+
+// Messages from before the list kept their one upload in messages.upload_id.
+func TestMigratesSingleUploads(t *testing.T) {
+	path := t.TempDir() + "/old.db"
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.EnsureChannels([]string{"general"})
+	u, _ := s.AddUpload(Upload{Key: "old", Name: "old.png", Type: "image/png", Size: 1, Author: "alice"}, time.Now())
+	for _, q := range []string{
+		`UPDATE uploads SET used = 1`,
+		`INSERT INTO messages (id, channel_id, author, text, created_at, upload_id) VALUES (1, 1, 'alice', '', 0, ` + fmt.Sprint(u.ID) + `)`,
+		`DELETE FROM store_meta WHERE key = 'upload_messages'`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 { // the second time changes nothing
+		s.Close()
+		if s, err = Open(path); err != nil {
+			t.Fatal(err)
+		}
+		if m, err := s.MessageByID(1); err != nil || len(m.Uploads) != 1 || m.Uploads[0].Key != "old" {
+			t.Fatalf("%+v %v", m, err)
+		}
+	}
+	defer s.Close()
+	var old int
+	if s.db.QueryRow(`SELECT count(*) FROM messages WHERE upload_id IS NOT NULL`).Scan(&old); old != 0 {
+		t.Fatalf("upload_id still set: %d", old)
 	}
 }

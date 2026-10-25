@@ -65,7 +65,7 @@ func (c *Conn) changeMessage(id mumble.Identity, req request) {
 	send := func(v any) { h.sendTo(ch, v) }
 	own := h.wrote(id, m)
 	if req.Type == "edit-message" {
-		text, valid := validText(req.Text, m.Upload != nil)
+		text, valid := validText(req.Text, len(m.Uploads) > 0)
 		switch {
 		case !own:
 			c.sendError("you may only edit your own messages")
@@ -162,8 +162,10 @@ func (h *Hub) guestMessagesOf(session uint32) []int64 {
 func (h *Hub) removed(gone []store.Message) {
 	byChat := map[int64][]int64{}
 	for _, m := range gone {
-		if m.Upload != nil && h.OnUploadDeleted != nil {
-			h.OnUploadDeleted(m.Upload.Key)
+		for _, u := range m.Uploads {
+			if h.OnUploadDeleted != nil {
+				h.OnUploadDeleted(u.Key)
+			}
 		}
 		byChat[m.ChannelID] = append(byChat[m.ChannelID], m.ID)
 	}

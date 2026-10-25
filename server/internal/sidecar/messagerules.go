@@ -20,7 +20,7 @@ func (c *Conn) refused(id mumble.Identity, req *request) bool {
 	field := &req.Text
 	switch req.Type {
 	case "send":
-		m = msgrules.Message{Text: req.Text, Upload: req.Upload != "", MentionAll: mentionAllOf(req.Text) != "", Post: true}
+		m = msgrules.Message{Text: req.Text, Upload: len(req.Uploads) > 0, MentionAll: mentionAllOf(req.Text) != "", Post: true}
 	case "edit-message":
 		m = msgrules.Message{Text: req.Text, MentionAll: mentionAllOf(req.Text) != ""}
 	case "upload-token":

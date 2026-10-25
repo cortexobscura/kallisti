@@ -40,7 +40,7 @@ type Message struct {
 	// with this user id (nil: not known, from before ids were kept).
 	Verified bool
 	AuthorID *uint32
-	Upload   *Upload // optional attachment
+	Uploads  []Upload // attached files, in order
 	// A sticker message (its Text: "[sticker: name]" for clients that
 	// show text): the sticker, also once it was deleted.
 	Sticker   *MessageSticker
@@ -66,7 +66,20 @@ type Quote struct {
 	Text   string
 }
 
-// NewMessage is a message to store. UploadID 0: no attachment.
+// MaxUploads is the most files one message has; MaxDescription the
+// longest description of one (characters).
+const (
+	MaxUploads     = 10
+	MaxDescription = 1024
+)
+
+// Attachment is an upload to attach to a new message.
+type Attachment struct {
+	ID          int64
+	Description string // alt text
+}
+
+// NewMessage is a message to store.
 type NewMessage struct {
 	ChannelID  int64
 	Thread     bool // ChannelID is a thread's: refused once it is deleted
@@ -75,11 +88,11 @@ type NewMessage struct {
 	AuthorID   uint32 // with Verified: the Mumble user id
 	Text       string
 	At         time.Time
-	UploadID   int64
-	StickerID  int64  // 0: not a sticker; else one that is not deleted
-	ReplyTo    int64  // 0: not a reply; else a message in the same channel
-	MentionAll string // "", "here" or "everyone" (see Message)
-	NoPing     bool   // see Message
+	Uploads    []Attachment // unused uploads, in order (at most MaxUploads)
+	StickerID  int64        // 0: not a sticker; else one that is not deleted
+	ReplyTo    int64        // 0: not a reply; else a message in the same channel
+	MentionAll string       // "", "here" or "everyone" (see Message)
+	NoPing     bool         // see Message
 	// The sender's id for this send ("": none), the same on each retry: a
 	// second send with it finds the first (see MessageByNonce).
 	Nonce string
@@ -129,7 +142,8 @@ type Upload struct {
 	Media
 	// Preview: the type of a smaller picture made from it (see files),
 	// "" if none was made yet, NoPreview if none can be.
-	Preview string
+	Preview     string
+	Description string // set when it is attached (see Attachment)
 }
 
 const NoPreview = "-"
@@ -385,11 +399,40 @@ func reactionsByID(db *sql.DB) error {
 	return tx.Commit()
 }
 
+// uploadMessages: before several files per message, a message kept its one
+// upload in messages.upload_id (no longer written); the uploads now name
+// their message. Once (upload_messages in store_meta).
+func uploadMessages(db *sql.DB) error {
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS uploads_by_message ON uploads(message_id, position) WHERE message_id IS NOT NULL`); err != nil {
+		return err
+	}
+	var done int
+	if err := db.QueryRow(`SELECT count(*) FROM store_meta WHERE key = 'upload_messages'`).Scan(&done); err != nil || done > 0 {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`UPDATE uploads SET message_id = m.id FROM messages m WHERE m.upload_id = uploads.id AND uploads.message_id IS NULL`,
+		// Its foreign key would keep an upload removed from its message.
+		`UPDATE messages SET upload_id = NULL WHERE upload_id IS NOT NULL`,
+		`INSERT INTO store_meta (key, value) VALUES ('upload_messages', 1)`,
+	} {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // migrate brings databases from older versions up to the current schema:
 // columns added later are added if missing.
 func migrate(db *sql.DB) error {
 	if err := addColumns(db, "messages", [][2]string{
-		{"upload_id", "INTEGER REFERENCES uploads(id)"},
+		{"upload_id", "INTEGER REFERENCES uploads(id)"}, // no longer written (see uploadMessages)
 		{"verified", "INTEGER NOT NULL DEFAULT 0"},
 		{"edited_at", "INTEGER"},
 		{"reply_to", "INTEGER"},
@@ -414,7 +457,13 @@ func migrate(db *sql.DB) error {
 		{"height", "INTEGER NOT NULL DEFAULT 0"},
 		{"duration", "INTEGER NOT NULL DEFAULT 0"},
 		{"preview", "TEXT NOT NULL DEFAULT ''"},
+		{"message_id", "INTEGER"}, // the message it is attached to
+		{"position", "INTEGER NOT NULL DEFAULT 0"},
+		{"description", "TEXT NOT NULL DEFAULT ''"},
 	}); err != nil {
+		return err
+	}
+	if err := uploadMessages(db); err != nil {
 		return err
 	}
 	if err := addColumns(db, "accounts", [][2]string{
@@ -693,8 +742,8 @@ func (s *Store) Channels() ([]Channel, error) {
 	return out, rows.Err()
 }
 
-// AddMessage stores a message. With an upload, the upload is marked as used
-// in the same transaction; a used upload is refused.
+// AddMessage stores a message. Its uploads are marked as used in the same
+// transaction; a used upload is refused.
 func (s *Store) AddMessage(n NewMessage) (Message, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -709,16 +758,8 @@ func (s *Store) AddMessage(n NewMessage) (Message, error) {
 			return Message{}, cmpErr(err, ErrNotFound)
 		}
 	}
-	var upload sql.NullInt64
-	if n.UploadID != 0 {
-		res, err := tx.Exec(`UPDATE uploads SET used = 1 WHERE id = ? AND used = 0`, n.UploadID)
-		if err != nil {
-			return Message{}, err
-		}
-		if rows, _ := res.RowsAffected(); rows != 1 {
-			return Message{}, errors.New("upload is missing or already attached")
-		}
-		upload = sql.NullInt64{Int64: n.UploadID, Valid: true}
+	if len(n.Uploads) > MaxUploads {
+		return Message{}, errors.New("too many uploads")
 	}
 	var sticker sql.NullInt64
 	var ms *MessageSticker
@@ -763,19 +804,26 @@ func (s *Store) AddMessage(n NewMessage) (Message, error) {
 			return Message{}, err
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO messages (id, channel_id, author, verified, author_id, text, created_at, upload_id, sticker_id, reply_to, mention_all, no_ping, nonce, nonce_author) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, n.ChannelID, n.Author, n.Verified, authorID, n.Text, n.At.UnixMilli(), upload, sticker, reply, n.MentionAll, n.NoPing, nonce, nonceBy); err != nil {
+	if _, err := tx.Exec(`INSERT INTO messages (id, channel_id, author, verified, author_id, text, created_at, sticker_id, reply_to, mention_all, no_ping, nonce, nonce_author) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, n.ChannelID, n.Author, n.Verified, authorID, n.Text, n.At.UnixMilli(), sticker, reply, n.MentionAll, n.NoPing, nonce, nonceBy); err != nil {
 		return Message{}, err
 	}
-	m := Message{ID: id, ChannelID: n.ChannelID, Author: n.Author, Verified: n.Verified, AuthorID: authorID, Text: n.Text, CreatedAt: n.At, Sticker: ms, Reply: quote, MentionAll: n.MentionAll, NoPing: n.NoPing}
-	if upload.Valid {
-		u, err := scanUpload(tx.QueryRow(`SELECT `+uploadColumns+` FROM uploads WHERE id = ?`, n.UploadID))
+	// An upload attached once is used: the same one twice fails too.
+	for i, a := range n.Uploads {
+		res, err := tx.Exec(`UPDATE uploads SET used = 1, message_id = ?, position = ?, description = ? WHERE id = ? AND used = 0`,
+			id, i, a.Description, a.ID)
 		if err != nil {
 			return Message{}, err
 		}
-		m.Upload = &u
+		if rows, _ := res.RowsAffected(); rows != 1 {
+			return Message{}, errors.New("upload is missing or already attached")
+		}
 	}
-	return m, tx.Commit()
+	msgs := []Message{{ID: id, ChannelID: n.ChannelID, Author: n.Author, Verified: n.Verified, AuthorID: authorID, Text: n.Text, CreatedAt: n.At, Sticker: ms, Reply: quote, MentionAll: n.MentionAll, NoPing: n.NoPing}}
+	if err := withUploads(tx, msgs); err != nil {
+		return Message{}, err
+	}
+	return msgs[0], tx.Commit()
 }
 
 func (s *Store) AddUpload(u Upload, at time.Time) (Upload, error) {
@@ -875,7 +923,7 @@ func (s *Store) UploadsWithoutPreview() ([]Upload, error) {
 // MessageByUpload is the message an upload is attached to.
 func (s *Store) MessageByUpload(key string) (Message, error) {
 	var id int64
-	err := s.db.QueryRow(`SELECT m.id FROM messages m JOIN uploads u ON u.id = m.upload_id WHERE u.key = ?`, key).Scan(&id)
+	err := s.db.QueryRow(`SELECT message_id FROM uploads WHERE key = ? AND message_id IS NOT NULL`, key).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Message{}, ErrNotFound
 	}
@@ -885,36 +933,58 @@ func (s *Store) MessageByUpload(key string) (Message, error) {
 	return s.MessageByID(id)
 }
 
-const uploadColumns = `id, key, name, type, size, author, created_at, used, width, height, duration, preview`
+const uploadColumns = `id, key, name, type, size, author, created_at, used, width, height, duration, preview, description`
 
-func scanUpload(row interface{ Scan(...any) error }) (Upload, error) {
+func scanUpload(row interface{ Scan(...any) error }, more ...any) (Upload, error) {
 	var u Upload
 	var at int64
-	err := row.Scan(&u.ID, &u.Key, &u.Name, &u.Type, &u.Size, &u.Author, &at, &u.Used, &u.Width, &u.Height, &u.Duration, &u.Preview)
+	err := row.Scan(append([]any{&u.ID, &u.Key, &u.Name, &u.Type, &u.Size, &u.Author, &at, &u.Used, &u.Width, &u.Height, &u.Duration, &u.Preview, &u.Description}, more...)...)
 	u.CreatedAt = time.UnixMilli(at).UTC()
 	return u, err
 }
 
+// withUploads fills in messages' uploads.
+func withUploads(q interface {
+	Query(string, ...any) (*sql.Rows, error)
+}, msgs []Message) error {
+	if len(msgs) == 0 {
+		return nil
+	}
+	at := map[int64]int{}
+	ids := make([]int64, len(msgs))
+	for i, m := range msgs {
+		at[m.ID], ids[i] = i, m.ID
+	}
+	in, args := inList(ids)
+	rows, err := q.Query(`SELECT `+uploadColumns+`, message_id FROM uploads WHERE message_id IN (`+in+`) ORDER BY message_id, position`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		u, err := scanUpload(rows, &id)
+		if err != nil {
+			return err
+		}
+		m := &msgs[at[id]]
+		m.Uploads = append(m.Uploads, u)
+	}
+	return rows.Err()
+}
+
 const messageSelect = `SELECT m.id, m.channel_id, m.author, m.verified, m.author_id, m.text, m.created_at, m.edited_at, m.pinned_at,
-		u.id, u.key, u.name, u.type, u.size, u.author, u.created_at, u.used, u.width, u.height, u.duration, u.preview,
 		m.reply_to, r.author, r.text, m.mention_all, m.no_ping, m.sticker_id, st.name
-	FROM messages m LEFT JOIN uploads u ON u.id = m.upload_id LEFT JOIN messages r ON r.id = m.reply_to LEFT JOIN stickers st ON st.id = m.sticker_id `
+	FROM messages m LEFT JOIN messages r ON r.id = m.reply_to LEFT JOIN stickers st ON st.id = m.sticker_id `
 
 func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 	var m Message
 	var at int64
 	var edited, pinned sql.NullInt64
-	var u struct {
-		id, size, at              sql.NullInt64
-		w, h, d                   sql.NullInt64
-		key, name, typ, who, prev sql.NullString
-		used                      sql.NullBool
-	}
 	var replyTo, authorID sql.NullInt64
 	var replyAuthor, replyText, stickerName sql.NullString
 	var stickerID sql.NullInt64
 	if err := row.Scan(&m.ID, &m.ChannelID, &m.Author, &m.Verified, &authorID, &m.Text, &at, &edited, &pinned,
-		&u.id, &u.key, &u.name, &u.typ, &u.size, &u.who, &u.at, &u.used, &u.w, &u.h, &u.d, &u.prev,
 		&replyTo, &replyAuthor, &replyText, &m.MentionAll, &m.NoPing, &stickerID, &stickerName); err != nil {
 		return Message{}, err
 	}
@@ -934,11 +1004,6 @@ func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 	}
 	if pinned.Valid {
 		m.PinnedAt = time.UnixMilli(pinned.Int64).UTC()
-	}
-	if u.id.Valid {
-		m.Upload = &Upload{ID: u.id.Int64, Key: u.key.String, Name: u.name.String, Type: u.typ.String,
-			Size: u.size.Int64, Author: u.who.String, CreatedAt: time.UnixMilli(u.at.Int64).UTC(), Used: u.used.Bool,
-			Media: Media{int(u.w.Int64), int(u.h.Int64), u.d.Int64}, Preview: u.prev.String}
 	}
 	return m, nil
 }
@@ -1036,7 +1101,6 @@ func deleteMessages(tx *sql.Tx, ids []int64) ([]Message, error) {
 		return nil, err
 	}
 	var gone []Message
-	var uploads []int64
 	for rows.Next() {
 		m, err := scanMessage(rows)
 		if err != nil {
@@ -1044,20 +1108,16 @@ func deleteMessages(tx *sql.Tx, ids []int64) ([]Message, error) {
 			return nil, err
 		}
 		gone = append(gone, m)
-		if m.Upload != nil {
-			uploads = append(uploads, m.Upload.ID)
-		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(`DELETE FROM messages WHERE id IN (`+in+`)`, args...); err != nil {
+	if err := withUploads(tx, gone); err != nil {
 		return nil, err
 	}
-	if len(uploads) > 0 {
-		in, args := inList(uploads)
-		if _, err := tx.Exec(`DELETE FROM uploads WHERE id IN (`+in+`)`, args...); err != nil {
+	for _, q := range []string{`DELETE FROM messages WHERE id IN (` + in + `)`, `DELETE FROM uploads WHERE message_id IN (` + in + `)`} {
+		if _, err := tx.Exec(q, args...); err != nil {
 			return nil, err
 		}
 	}
@@ -1170,7 +1230,10 @@ func (s *Store) Search(text string, channels []int64, author string, limit int) 
 		}
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, withUploads(s.db, out)
 }
 
 // SetReadMark notes that a user read a channel up to a message; marks never

@@ -434,7 +434,8 @@ type wireMessage struct {
 	At         int64           `json:"at"` // Unix milliseconds
 	Verified   bool            `json:"verified"`
 	AuthorID   *uint32         `json:"authorId,omitempty"` // with verified (unknown for old messages)
-	Upload     *wireUpload     `json:"upload,omitempty"`
+	Uploads    []wireUpload    `json:"uploads,omitempty"`
+	Upload     *wireUpload     `json:"upload,omitempty"`  // the first of uploads, for older clients
 	Sticker    *wireMsgSticker `json:"sticker,omitempty"` // a sticker message (text: its name, for clients without stickers)
 	Edited     int64           `json:"edited,omitempty"`  // Unix milliseconds
 	Pinned     int64           `json:"pinned,omitempty"`  // Unix milliseconds
@@ -480,7 +481,15 @@ type wireUpload struct {
 	Duration int64 `json:"duration,omitempty"`
 	// A smaller picture (see files' previews): a video's poster, a large
 	// picture for the chat.
-	Preview string `json:"preview,omitempty"`
+	Preview     string `json:"preview,omitempty"`
+	Description string `json:"description,omitempty"` // alt text
+}
+
+// wireAttachment is an upload to attach to a message being sent.
+// A spoiler's name starts with "SPOILER_" (the clients' choice).
+type wireAttachment struct {
+	Key         string `json:"key"`
+	Description string `json:"description"`
 }
 
 // FileURL is where the server serves an upload (relative to the server).
@@ -520,8 +529,12 @@ func toWire(m store.Message) wireMessage {
 	if r := m.Reply; r != nil {
 		w.Reply = &wireQuote{ID: r.ID, Author: r.Author, Text: shorten(r.Text, quoteLength)}
 	}
-	if u := m.Upload; u != nil {
-		w.Upload = &wireUpload{URL: FileURL(*u), Name: u.Name, Type: u.Type, Size: u.Size, Width: u.Width, Height: u.Height, Duration: u.Duration, Preview: previewURL(*u)}
+	for _, u := range m.Uploads {
+		w.Uploads = append(w.Uploads, wireUpload{URL: FileURL(u), Name: u.Name, Type: u.Type, Size: u.Size, Width: u.Width, Height: u.Height,
+			Duration: u.Duration, Preview: previewURL(u), Description: u.Description})
+	}
+	if len(w.Uploads) > 0 {
+		w.Upload = &w.Uploads[0]
 	}
 	if s := m.Sticker; s != nil {
 		w.Sticker = &wireMsgSticker{ID: s.ID, Name: s.Name}
@@ -539,42 +552,43 @@ func toWire(m store.Message) wireMessage {
 }
 
 type request struct {
-	Type        string          `json:"type"`
-	Name        string          `json:"name"`       // create-channel, rename-channel; emoji-token, delete-emoji; the user-emoji requests
-	To          string          `json:"to"`         // rename-user-emoji: the new name
-	Channels    []int64         `json:"channels"`   // order-channels
-	Category    int64           `json:"category"`   // create-channel, set-category, rename-category, delete-category
-	Cats        []int64         `json:"categories"` // order-categories
-	Voice       uint32          `json:"voice"`      // voice-chat, start-recording, stop-recording: the Mumble channel; create-private-voice: the parent
-	Channel     int64           `json:"channel"`
-	Before      int64           `json:"before"`
-	Text        string          `json:"text"`
-	Upload      string          `json:"upload"`      // key of an upload to attach
-	Message     int64           `json:"message"`     // edit-message, delete-message, create-thread
-	Reply       int64           `json:"reply"`       // send: the message it answers
-	NoPing      bool            `json:"noPing"`      // send: the reply does not ping
-	Nonce       string          `json:"nonce"`       // send: the client's id for it, the same on a retry (see store.MessageByNonce)
-	Author      string          `json:"author"`      // search: only this author
-	User        uint32          `json:"user"`        // set-moderator, set-admin, dm, bio, delete-messages: registered user id
-	Moderator   bool            `json:"moderator"`   // set-moderator
-	Admin       bool            `json:"admin"`       // set-admin
-	Users       []uint32        `json:"users"`       // set-listen-only: who may speak
-	Messages    []int64         `json:"messages"`    // previews
-	Emoji       string          `json:"emoji"`       // react; add-user-emoji, remove-emoji-image; sticker-token, rename-sticker: the related emoji
-	Sticker     int64           `json:"sticker"`     // send: a sticker message; rename-sticker, delete-sticker
-	Description string          `json:"description"` // sticker-token, rename-sticker
-	Pack        string          `json:"pack"`        // sticker-token, rename-sticker
-	On          bool            `json:"on"`          // react: add (or remove); pin; away; set-guests-read-only
-	Status      string          `json:"status"`      // set-status: "online", "idle" or "dnd"
-	Level       string          `json:"level"`       // set-captcha
-	Until       int64           `json:"until"`       // set-status: end of the custom status (Unix ms)
-	Session     uint32          `json:"session"`     // ban, time-out, delete-messages: the user's voice server session
-	Seconds     int64           `json:"seconds"`     // ban (0: forever), time-out (0: end it), delete-messages (the last seconds), set-slow-mode (0: off)
-	Private     bool            `json:"private"`     // create-channel: a private one
-	Uses        int             `json:"uses"`        // create-invite (0: unlimited; seconds 0: for ever)
-	Invite      int64           `json:"invite"`      // delete-invite
-	Token       string          `json:"token"`       // redeem-invite
-	Rules       *msgrules.Rules `json:"rules"`       // set-message-rules
+	Type        string           `json:"type"`
+	Name        string           `json:"name"`       // create-channel, rename-channel; emoji-token, delete-emoji; the user-emoji requests
+	To          string           `json:"to"`         // rename-user-emoji: the new name
+	Channels    []int64          `json:"channels"`   // order-channels
+	Category    int64            `json:"category"`   // create-channel, set-category, rename-category, delete-category
+	Cats        []int64          `json:"categories"` // order-categories
+	Voice       uint32           `json:"voice"`      // voice-chat, start-recording, stop-recording: the Mumble channel; create-private-voice: the parent
+	Channel     int64            `json:"channel"`
+	Before      int64            `json:"before"`
+	Text        string           `json:"text"`
+	Uploads     []wireAttachment `json:"uploads"`     // send: the uploads to attach, in order
+	Upload      string           `json:"upload"`      // send: one upload's key (older clients)
+	Message     int64            `json:"message"`     // edit-message, delete-message, create-thread
+	Reply       int64            `json:"reply"`       // send: the message it answers
+	NoPing      bool             `json:"noPing"`      // send: the reply does not ping
+	Nonce       string           `json:"nonce"`       // send: the client's id for it, the same on a retry (see store.MessageByNonce)
+	Author      string           `json:"author"`      // search: only this author
+	User        uint32           `json:"user"`        // set-moderator, set-admin, dm, bio, delete-messages: registered user id
+	Moderator   bool             `json:"moderator"`   // set-moderator
+	Admin       bool             `json:"admin"`       // set-admin
+	Users       []uint32         `json:"users"`       // set-listen-only: who may speak
+	Messages    []int64          `json:"messages"`    // previews
+	Emoji       string           `json:"emoji"`       // react; add-user-emoji, remove-emoji-image; sticker-token, rename-sticker: the related emoji
+	Sticker     int64            `json:"sticker"`     // send: a sticker message; rename-sticker, delete-sticker
+	Description string           `json:"description"` // sticker-token, rename-sticker
+	Pack        string           `json:"pack"`        // sticker-token, rename-sticker
+	On          bool             `json:"on"`          // react: add (or remove); pin; away; set-guests-read-only
+	Status      string           `json:"status"`      // set-status: "online", "idle" or "dnd"
+	Level       string           `json:"level"`       // set-captcha
+	Until       int64            `json:"until"`       // set-status: end of the custom status (Unix ms)
+	Session     uint32           `json:"session"`     // ban, time-out, delete-messages: the user's voice server session
+	Seconds     int64            `json:"seconds"`     // ban (0: forever), time-out (0: end it), delete-messages (the last seconds), set-slow-mode (0: off)
+	Private     bool             `json:"private"`     // create-channel: a private one
+	Uses        int              `json:"uses"`        // create-invite (0: unlimited; seconds 0: for ever)
+	Invite      int64            `json:"invite"`      // delete-invite
+	Token       string           `json:"token"`       // redeem-invite
+	Rules       *msgrules.Rules  `json:"rules"`       // set-message-rules
 }
 
 // Handle answers one request from the browser.
@@ -604,6 +618,9 @@ func (c *Conn) Handle(raw []byte) {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		c.sendError("invalid request")
 		return
+	}
+	if req.Upload != "" && req.Uploads == nil {
+		req.Uploads = []wireAttachment{{Key: req.Upload}}
 	}
 	// Requests come one at a time (one reader per connection).
 	if req.Type == "send" && len(req.Nonce) <= maxNonce {
@@ -852,7 +869,11 @@ func (h *Hub) MumbleText(from mumble.Identity, channel uint32, text string, imag
 // last one's id.
 func (h *Hub) storeMumble(from mumble.Identity, where chat, text string, images []Image) (n int, last int64) {
 	store1 := func(text string, upload int64) {
-		m, err := h.store.AddMessage(store.NewMessage{ChannelID: where.id, Author: from.Name, Verified: from.Registered, AuthorID: from.UserID, Text: text, At: h.now(), UploadID: upload})
+		var uploads []store.Attachment
+		if upload != 0 {
+			uploads = []store.Attachment{{ID: upload}}
+		}
+		m, err := h.store.AddMessage(store.NewMessage{ChannelID: where.id, Author: from.Name, Verified: from.Registered, AuthorID: from.UserID, Text: text, At: h.now(), Uploads: uploads})
 		if err != nil {
 			slog.Error("store a Mumble message", "err", err)
 			return
@@ -956,7 +977,7 @@ func (c *Conn) post(id mumble.Identity, req request, ch chat) {
 	if req.Sticker != 0 {
 		st, err := c.hub.store.StickerByID(req.Sticker)
 		switch {
-		case strings.TrimSpace(req.Text) != "" || req.Upload != "":
+		case strings.TrimSpace(req.Text) != "" || len(req.Uploads) > 0:
 			c.sendError("a sticker is sent on its own")
 			return
 		case err != nil || st.Deleted:
@@ -965,7 +986,7 @@ func (c *Conn) post(id mumble.Identity, req request, ch chat) {
 		}
 		req.Text = stickerText(st.Name)
 	}
-	text, ok := validText(req.Text, req.Upload != "")
+	text, ok := validText(req.Text, len(req.Uploads) > 0)
 	if !ok {
 		c.sendError(textError)
 		return
@@ -981,13 +1002,8 @@ func (c *Conn) post(id mumble.Identity, req request, ch chat) {
 			return
 		}
 	}
-	if req.Upload != "" {
-		u, err := c.hub.store.UploadByKey(req.Upload)
-		if err != nil || u.Author != id.Name {
-			c.sendError("unknown upload")
-			return
-		}
-		n.UploadID = u.ID
+	if n.Uploads, ok = c.attachments(id, req.Uploads); !ok {
+		return
 	}
 	if c.slowMode(id, ch, typed) {
 		return
@@ -1043,15 +1059,39 @@ func (c *Conn) post(id mumble.Identity, req request, ch chat) {
 	}
 }
 
+// attachments are a send's uploads for the store: the sender's own, each
+// once (the store refuses used ones), at most store.MaxUploads (else an error goes to the sender).
+func (c *Conn) attachments(id mumble.Identity, uploads []wireAttachment) ([]store.Attachment, bool) {
+	if len(uploads) > store.MaxUploads {
+		c.sendError(fmt.Sprintf("at most %d files per message", store.MaxUploads))
+		return nil, false
+	}
+	var out []store.Attachment
+	for _, a := range uploads {
+		u, err := c.hub.store.UploadByKey(a.Key)
+		if err != nil || u.Author != id.Name || slices.ContainsFunc(out, func(b store.Attachment) bool { return b.ID == u.ID }) {
+			c.sendError("unknown upload")
+			return nil, false
+		}
+		description := strings.TrimSpace(a.Description)
+		if utf8.RuneCountInString(description) > store.MaxDescription {
+			c.sendError(fmt.Sprintf("a file description has at most %d characters", store.MaxDescription))
+			return nil, false
+		}
+		out = append(out, store.Attachment{ID: u.ID, Description: description})
+	}
+	return out, true
+}
+
 // mumbleText is a stored message as Mumble clients see it: an upload as a
 // link (or its name, without a public address), personal emoji as
 // ":name:".
 func (h *Hub) mumbleText(m store.Message) string {
 	text := emoji.RefsAsNames(m.Text)
-	if m.Upload != nil {
-		file := "[" + m.Upload.Name + "]"
+	for _, u := range m.Uploads {
+		file := "[" + u.Name + "]"
 		if h.publicBase != "" {
-			file = h.publicBase + FileURL(*m.Upload)
+			file = h.publicBase + FileURL(u)
 		}
 		text = strings.TrimSpace(text + " " + file)
 	}
