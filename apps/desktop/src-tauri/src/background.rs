@@ -33,6 +33,15 @@ mod tests {
         assert!(plist.contains("<key>NSMicrophoneUsageDescription</key>"));
     }
 
+    // Export compliance, answered once: standard algorithms of our own
+    // (the Mumble bridge: TLS with rustls, AES-OCB2), not only Apple's.
+    #[test]
+    fn ios_declares_its_encryption() {
+        let plist = include_str!("../Info.ios.plist");
+        let key = plist.split("<key>ITSAppUsesNonExemptEncryption</key>").nth(1).expect("ITSAppUsesNonExemptEncryption");
+        assert!(key.trim_start().starts_with("<true/>"));
+    }
+
     #[test]
     fn web_view_not_suspended_in_background() {
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
