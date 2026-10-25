@@ -18,41 +18,53 @@ class StartArgs {
   var channel: String? = null
 }
 
-// Starts and stops VoiceService (see android.rs: voice_service).
+// Starts and stops VoiceService (see android.rs: voice_service). The
+// commands only set what is wanted (VoiceService.wanted); reconcile brings
+// the service there, again when the app comes to the front.
 @TauriPlugin
 class VoicePlugin(private val activity: Activity) : Plugin(activity) {
   private val main = Handler(Looper.getMainLooper())
-  private var wanted: String? = null // the channel while in voice
+  private val retry = Runnable { reconcile() }
   private var askedNotifications = false
 
   @Command
   fun start(invoke: Invoke) {
-    val channel = invoke.parseArgs(StartArgs::class.java).channel ?: ""
-    wanted = channel
-    if (VoiceService.running) {
-      VoiceService.update(activity, channel)
-    } else {
-      startWhenAllowed(0)
-    }
+    VoiceService.wanted = invoke.parseArgs(StartArgs::class.java).channel ?: ""
+    main.post { reconcile() }
     invoke.resolve()
   }
 
   @Command
   fun stop(invoke: Invoke) {
-    wanted = null
-    main.removeCallbacksAndMessages(null)
-    VoiceService.running = false // a start right after starts it again
-    activity.stopService(Intent(activity, VoiceService::class.java))
+    VoiceService.wanted = null
+    main.post { reconcile() }
     invoke.resolve()
   }
 
-  // A microphone service may start only with the microphone allowed: on
-  // the first join the page's permission request is still open. Waits for
-  // it (up to a minute), unless voice ends meanwhile.
-  private fun startWhenAllowed(tries: Int) {
-    val channel = wanted ?: return
+  override fun onResume() {
+    reconcile()
+  }
+
+  // On the main thread.
+  private fun reconcile() {
+    main.removeCallbacks(retry)
+    val channel = VoiceService.wanted
+    if (channel == null) {
+      // A start still on its way stops itself (VoiceService.onStartCommand).
+      if (VoiceService.running) {
+        VoiceService.running = false // a start right after starts it again
+        activity.stopService(Intent(activity, VoiceService::class.java))
+      }
+      return
+    }
+    if (VoiceService.running) {
+      VoiceService.update(activity, channel)
+      return
+    }
+    // A microphone service may start only with the microphone allowed: on
+    // the first join the page's permission request is still open.
     if (activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-      if (tries < 120) main.postDelayed({ startWhenAllowed(tries + 1) }, 500)
+      main.postDelayed(retry, 1000)
       return
     }
     // After the microphone (one permission request at a time), once:
@@ -63,11 +75,11 @@ class VoicePlugin(private val activity: Activity) : Plugin(activity) {
       askedNotifications = true
       activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
     }
-    val intent = Intent(activity, VoiceService::class.java).putExtra(VoiceService.EXTRA_CHANNEL, channel)
     try {
+      val intent = Intent(activity, VoiceService::class.java)
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) activity.startForegroundService(intent) else activity.startService(intent)
     } catch (e: Exception) {
-      // Not allowed from the background (12+): voice goes on until then.
+      // Not allowed from the background (12+): again when back in front.
       android.util.Log.w("Kallisti", "voice service not started", e)
     }
   }

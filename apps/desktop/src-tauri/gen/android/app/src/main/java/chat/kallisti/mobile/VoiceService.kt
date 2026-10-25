@@ -18,7 +18,13 @@ class VoiceService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    val notification = notification(this, intent?.getStringExtra(EXTRA_CHANNEL) ?: "")
+    // Stopped meanwhile (a start overtaken by a stop): no service.
+    val channel = wanted
+    if (channel == null) {
+      stopSelf()
+      return START_NOT_STICKY
+    }
+    val notification = notification(this, channel)
     try {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
@@ -40,12 +46,14 @@ class VoiceService : Service() {
   }
 
   companion object {
-    const val EXTRA_CHANNEL = "channel"
     private const val CHANNEL_ID = "voice"
     private const val NOTIFICATION_ID = 1
 
-    // Started and not yet stopped: a new channel only updates the
-    // notification (no new start, which Android allows only in front).
+    // The channel while in voice (null: off), set by VoicePlugin.
+    @Volatile var wanted: String? = null
+
+    // In the foreground now: a new channel only updates the notification
+    // (no new start, which Android allows only in front).
     @Volatile var running = false
 
     fun update(context: Context, channel: String) {
