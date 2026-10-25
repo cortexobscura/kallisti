@@ -2,6 +2,7 @@ pub mod background;
 pub mod bridge;
 pub mod crypt;
 pub mod frames;
+pub mod ios;
 pub mod media;
 pub mod notify;
 pub mod ocb2;
@@ -106,6 +107,13 @@ pub fn run() {
                     String::new()
                 });
                 app.manage(notify::Notifier::new(icon, move |id| tapped(&handle, id)));
+            }
+            #[cfg(target_os = "ios")]
+            if let Some(window) = app.get_webview_window("main") {
+                // Without it only the white band below the page.
+                if let Err(err) = ios::edge_to_edge(&window) {
+                    eprintln!("web view not edge to edge: {err}");
+                }
             }
             #[cfg(target_os = "linux")]
             if let Some(window) = app.get_webview_window("main") {

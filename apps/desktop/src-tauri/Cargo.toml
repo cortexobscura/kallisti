@@ -47,3 +47,7 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = ["s
 
 [dev-dependencies]
 rcgen = "0.14"
+
+# iOS: the web view fills the screen (see ios.rs). The version wry uses.
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6.5"
