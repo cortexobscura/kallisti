@@ -33,6 +33,17 @@ export const isDesktop = () => typeof window !== "undefined" && "__TAURI_INTERNA
 export const linuxAgent = (ua: string) => /Linux/.test(ua) && !/Android/.test(ua);
 // The desktop app on Linux (WebKitGTK).
 export const linuxApp = () => isDesktop() && linuxAgent(navigator.userAgent);
+// An Android user agent (the app's WebView).
+export const androidAgent = (ua: string) => /Android/.test(ua);
+// The Android app.
+export const androidApp = () => isDesktop() && androidAgent(navigator.userAgent);
+
+// The Android app's voice service (a foreground service: voice goes on in
+// the background), on while in voice, its notification with the channel.
+export const setVoiceService = async (on: boolean, channel: string | null) => {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("voice_service", { on, channel });
+};
 
 // Opens a URL (http or https) in the system browser.
 export const openInBrowser = async (url: string) => {

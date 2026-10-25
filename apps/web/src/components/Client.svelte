@@ -28,7 +28,7 @@
   import { onlinePicture, pictureLookup, setAvatarPictures } from "../lib/avatar";
   import { customEmojiSet, setCustomEmoji } from "../lib/customEmoji";
   import { personalFormError } from "../lib/personalEmoji";
-  import { isDesktop, registerGlobalPtt } from "../lib/desktop";
+  import { androidApp, isDesktop, registerGlobalPtt, setVoiceService } from "../lib/desktop";
   import { menuAnchor } from "../lib/menu";
   import { nextPanel, swipeDirection, toggleSide, type Panel, type Side } from "../lib/mobile";
   import { pttAction, pttBlocksDefault } from "../lib/settings";
@@ -449,6 +449,17 @@
     connection.playback?.setVoice(session, (action) => (action === "leave" ? leaveVoice() : updateSelf({ selfMute: true, selfDeaf: true }))),
   );
   $effect(() => () => connection.playback?.releaseVoice());
+  // The Android app: its voice service while in voice (see desktop.ts).
+  const voiceService = $derived(voiceHere === null || !androidApp() ? null : (server.channels[voiceHere]?.name ?? ""));
+  // On for a channel; a new channel only changes its notification (Android
+  // starts such a service only from the foreground), off when leaving.
+  $effect(() => {
+    if (voiceService !== null) setVoiceService(true, voiceService).catch((err) => console.warn("voice service not started", err));
+  });
+  const inVoiceService = $derived(voiceService !== null);
+  $effect(() => {
+    if (inVoiceService) return () => void setVoiceService(false, null).catch(() => {});
+  });
   // Mute and deafen sounds (see sounds.ts), not for about 3 s after a
   // reconnect: we restore our mute and deafen then. REJOIN_MS: how long
   // the rejoin may take.

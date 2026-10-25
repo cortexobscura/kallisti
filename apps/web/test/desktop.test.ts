@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bridgeUrl, certificateProblem, formatFingerprint, isKallisti, kallistiOrigin, kallistiSocket, linuxAgent, parseAddress, registerGlobalPtt } from "../src/lib/desktop";
+import { androidAgent, bridgeUrl, certificateProblem, formatFingerprint, isKallisti, kallistiOrigin, kallistiSocket, linuxAgent, parseAddress, registerGlobalPtt } from "../src/lib/desktop";
 
 describe("parseAddress", () => {
   it("reads host and optional port", () => {
@@ -107,5 +107,13 @@ describe("linuxAgent", () => {
     expect(linuxAgent("Mozilla/5.0 (Linux; Android 14; Pixel 8)")).toBe(false);
     expect(linuxAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")).toBe(false);
     expect(linuxAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")).toBe(false);
+  });
+});
+
+describe("androidAgent", () => {
+  it("is Android (its WebView), not desktop Linux", () => {
+    expect(androidAgent("Mozilla/5.0 (Linux; Android 15; Seeker Build/AP3A; wv) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36")).toBe(true);
+    expect(androidAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15")).toBe(false);
+    expect(androidAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X)")).toBe(false);
   });
 });
