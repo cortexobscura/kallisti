@@ -950,7 +950,10 @@
         (i) => files.length > 1 && (uploadStep = `Uploading ${i + 1} of ${files.length}…`),
       );
       uploadStep = undefined;
-      const uploads = keys.map((key, i) => ({ key, ...(files[i]!.description && { description: files[i]!.description }) }));
+      // Servers before several files know no descriptions (nor the list
+      // that carries them).
+      const described = text.maxUploads > 1;
+      const uploads = keys.map((key, i) => ({ key, ...(described && files[i]!.description && { description: files[i]!.description }) }));
       await connection.sendConfirmed(channel, caption, nonce, uploads, reply, noPing);
     } finally {
       uploading = false;

@@ -45,8 +45,11 @@ export const refusedDraft = (draft: string, text: string) => (draft.trim() ? dra
 const mb = (bytes: number) => `${+(bytes / 1024 / 1024).toFixed(1)} MB`;
 export const tooLarge = (size: number, max: number | undefined) =>
   max && size > max ? `The file is too large (at most ${mb(max)}).` : null;
-// A file to upload with a message (spoiler: in its name, see lib/media).
+// A file to upload with a message (spoiler: in its name, see lib/media);
+// its description (alt text) has at most MAX_DESCRIPTION characters, as
+// on the server.
 export type OutgoingUpload = { file: File; description?: string };
+export const MAX_DESCRIPTION = 1024;
 
 // Picked files join the waiting ones: those over the size limit are left
 // out one by one, and only `max` files go in one message (note: why some

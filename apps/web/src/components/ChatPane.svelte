@@ -40,6 +40,7 @@
     addFiles,
     afterUpload,
     editOutcome,
+    MAX_DESCRIPTION,
     canAttach,
     clipboardImage,
     emptyPaste,
@@ -387,6 +388,13 @@
     showPending([]);
   };
   const removePending = (i: number) => setPending(pending.filter((_, j) => j !== i));
+  // The file whose description is open (see MAX_DESCRIPTION).
+  let describing = $state<File | null>(null);
+  const describePending = (i: number, text: string) => {
+    const description = text.trim();
+    if ((pending[i]?.description ?? "") !== description) setPending(pending.map((p, j) => (j === i ? { ...p, description } : p)));
+  };
+  const focusOnMount = (el: HTMLElement) => el.focus();
   const togglePendingSpoiler = (i: number) => setPending(pending.map((p, j) => (j === i ? { ...p, spoiler: !p.spoiler } : p)));
   const sendFiles = (files: ArrayLike<File> | null | undefined) => {
     const picked = Array.from(files ?? []);
@@ -1123,6 +1131,12 @@
                 <span class="pending-name ellipsis" title={p.file.name}>{p.file.name}</span>
                 <span class="file-size">{formatSize(p.file.size)}</span>
                 <span class="pending-actions">
+                  {#if maxUploads > 1}
+                    <button type="button" class="pending-spoiler" aria-pressed={!!p.description} aria-expanded={describing === p.file}
+                      disabled={sendStatus?.sending} aria-label="Description of {p.file.name}" title="Description (alt text)"
+                      onclick={() => (describing = describing === p.file ? null : p.file)}>Alt</button
+                    >
+                  {/if}
                   <button type="button" class="pending-spoiler" aria-pressed={p.spoiler} disabled={sendStatus?.sending}
                     aria-label="Spoiler {p.file.name}" onclick={() => togglePendingSpoiler(i)}>Spoiler</button
                   >
@@ -1133,6 +1147,30 @@
               </li>
             {/each}
           </ul>
+          {#each pending as p, i (p.file)}
+            {#if describing === p.file}
+              <label class="pending-description">
+                <span>Description of {p.file.name} (alt text)</span>
+                <!-- Kept on change, not on each key: the files go to IndexedDB with it. -->
+                <textarea
+                  rows="2"
+                  maxlength={MAX_DESCRIPTION}
+                  value={p.description ?? ""}
+                  disabled={sendStatus?.sending}
+                  onchange={(e) => describePending(i, e.currentTarget.value)}
+                  onkeydown={(e) => {
+                    if (e.key === "Escape" || (e.key === "Enter" && !e.shiftKey)) {
+                      e.preventDefault();
+                      describePending(i, e.currentTarget.value);
+                      describing = null;
+                      messageInput?.focus();
+                    }
+                  }}
+                  use:focusOnMount
+                ></textarea>
+              </label>
+            {/if}
+          {/each}
         </div>
       {/if}
       {#if replying}
@@ -2518,6 +2556,24 @@
   .pending-actions button:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+  .pending-description {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .pending-description textarea {
+    padding: 6px 8px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    background: var(--bg-main);
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    resize: vertical;
   }
   .pending-status {
     display: block;
