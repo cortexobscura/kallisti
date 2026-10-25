@@ -67,7 +67,7 @@
   } from "../lib/moderation";
   import { chatSeen, notificationBody, notifier, shouldNotify } from "../lib/notify";
   import { createNotifyLeader } from "../lib/notifyLeader";
-  import { mentionNames, pingsMe, replyPing } from "../lib/mentions";
+  import { isMentionAll, mentionNames, pingsMe, replyPing } from "../lib/mentions";
   import { blockedUsers, channelPrefs, collapsedCategories, directPrefs, settings, userAudio } from "../lib/settings.svelte";
   import { textOrder } from "../lib/categories";
   import { forgetPref, isMuted, mutedIds, notifies, prefOf, pushLists, setThreadPref, withoutMuted, withParents, type ChannelPref } from "../lib/channelPrefs";
@@ -973,9 +973,9 @@
   });
   // A primitive: the bio is asked for once per menu, not on every event.
   const memberMenuId = $derived(memberUser?.id ?? null);
-  // @mention pills: the names that become pills (online users and members),
-  // and a click on one opens that user's menu (online first, else the member).
-  const knownNames = $derived([...new Set([...users.map((u) => u.name), ...Object.values(text.members)])]);
+  // @mention pills: every name "@" suggests (see people), and a click on
+  // one opens that user's menu (online first, else the member).
+  const knownNames = $derived(people.filter((n) => !isMentionAll(n)));
   const openMentionMenu = (name: string, pill: HTMLElement, event: MouseEvent) => {
     const key = name.toLowerCase();
     const at = menuAnchor(event, pill.getBoundingClientRect());

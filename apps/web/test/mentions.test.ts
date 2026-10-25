@@ -158,5 +158,10 @@ describe("mentionNames", () => {
   it("adds everyone and here when allowed", () => {
     expect(mentionNames({ online: [], authors: [], members: [], all: true })).toEqual(["everyone", "here"]);
   });
+
+  it("gives pills to the names it suggests, e.g. an offline guest who wrote here", () => {
+    const known = mentionNames({ online: [], authors: ["Ergo-GrapheneOS"], members: [], all: false });
+    expect(highlightMentions("@Ergo-GrapheneOS apk is up", "lain", undefined, known)).toBe('<span class="mention">@Ergo-GrapheneOS</span> apk is up');
+  });
 });
 
