@@ -1,4 +1,5 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "identifier": "chat.kallisti.mobile"
+  "identifier": "chat.kallisti.mobile",
+  "bundle": { "iOS": { "developmentTeam": "SZ2F3U9QJ3" } }
 }
