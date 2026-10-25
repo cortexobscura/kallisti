@@ -19,9 +19,9 @@ What it does, in short:
   and personal emoji, sticker packs, status and bios.
 - **Moderation**: roles and channel moderators, slow mode, a word and link
   filter, limits for new accounts, a captcha, bans and time-outs.
-- **Everywhere**: the browser, apps for macOS, Windows and Linux, and phones
-  (the browser or the installed web app, with push notifications). Mumble
-  clients join the same channels.
+- **Everywhere**: the browser, apps for macOS, Windows, Linux and Android
+  (voice in the background), and the installed web app on phones (with push
+  notifications). Mumble clients join the same channels.
 
 All of it: [kallisti.chat/features](https://kallisti.chat/features.html).
 
@@ -184,7 +184,9 @@ look like plain Mumble servers. Use a build, or a local server with
 GitHub builds the app for macOS, Windows and Linux on pushes to `main`
 (downloads on the Actions run) and makes a draft release for tags `v*`
 (`.github/workflows/desktop.yml`). The macOS build is signed and notarized
-(repository secrets); Windows and Linux are not signed yet.
+(repository secrets); Windows and Linux are not signed yet. The Android APK
+(arm64) comes from `.github/workflows/android.yml` the same way, signed with
+the release key from repository secrets.
 
 ## Development
 
