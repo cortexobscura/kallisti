@@ -289,3 +289,4 @@
   - [x] [Polls: ending on time and the result](issues/polls-ending.md)
   - [x] [Polls: the web client](issues/polls-web.md)
 - [x] [Polls: custom emoji, no pings, emoji picker](issues/polls-followups.md)
+- [x] [Fixes from the Astra review of files and polls](issues/astra-review-files-polls.md)
