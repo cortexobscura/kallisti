@@ -1,3 +1,4 @@
+import { voiceDecoder, type VoiceDecoder } from "../voice/codec";
 import { shouldFallBack } from "../voice/fallback";
 import { createPlayout, lastDue, type Playout } from "./playout";
 import { cannotPlay, decodeFrame, decodeWatch, encodeFrame, pickCodec, previewSize } from "./protocol";
@@ -33,7 +34,7 @@ type Viewer = {
   needKey: boolean;
   canvas: HTMLCanvasElement | null;
   // With sound: its decoder and volume.
-  sound: AudioDecoder | null;
+  sound: VoiceDecoder | null;
   gain: GainNode | null;
   // Picture and sound on one clock: the audio context's with sound, else
   // the page's.
@@ -437,24 +438,23 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
   // The playout's clock is the audio context's from now on.
   const listen = (session: number, v: Viewer) => {
     const ctx = audio;
-    if (!ctx || typeof AudioDecoder === "undefined") return;
+    if (!ctx) return;
     v.gain = new GainNode(ctx, { gain: deaf ? 0 : (sounds[session] ?? 1) });
     v.gain.connect(ctx.destination);
-    v.sound = new AudioDecoder({
-      output: (data) => {
-        const at = soundRuns() ? v.playout.at(data.timestamp, ctx.currentTime) : null;
-        if (at !== null && v.gain) {
-          const buffer = ctx.createBuffer(1, data.numberOfFrames, data.sampleRate);
-          data.copyTo(buffer.getChannelData(0), { planeIndex: 0, format: "f32-planar" });
-          const src = new AudioBufferSourceNode(ctx, { buffer, playbackRate: v.playout.rate() });
-          src.connect(v.gain);
-          src.start(at);
-        }
-        data.close();
+    // WebCodecs where it has Opus, else libopus (the iOS app has no
+    // AudioDecoder; the Linux app's leaks). Mono: one channel of two.
+    v.sound = voiceDecoder({
+      output: ([plane], timestamp) => {
+        const at = soundRuns() ? v.playout.at(timestamp, ctx.currentTime) : null;
+        if (at === null || !v.gain || !plane) return;
+        const buffer = ctx.createBuffer(1, plane.length, SOUND.sampleRate);
+        buffer.copyToChannel(plane, 0);
+        const src = new AudioBufferSourceNode(ctx, { buffer, playbackRate: v.playout.rate() });
+        src.connect(v.gain);
+        src.start(at);
       },
       error: () => {}, // the picture goes on
     });
-    v.sound.configure(SOUND);
     // Pictures timed on the page's clock are not shown.
     v.playout.reset();
     for (const p of v.pending) p.when = null;
@@ -463,7 +463,7 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
     sounds = { ...sounds, [session]: sounds[session] ?? 1 };
   };
   const dropSound = (v: Viewer) => {
-    if (v.sound && v.sound.state !== "closed") v.sound.close();
+    v.sound?.close();
     v.gain?.disconnect();
     v.sound = v.gain = null;
   };
@@ -562,7 +562,7 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
     const v = f && watched.get(f.session);
     if (!f || !v?.decoder || v.decoder.state !== "configured") return;
     if (f.sound) {
-      if (v.sound?.state === "configured" && soundRuns()) v.sound.decode(new EncodedAudioChunk({ type: "key", timestamp: f.timestamp, data: f.data }));
+      if (v.sound && soundRuns()) v.sound.decode(f.data, f.timestamp);
       return;
     }
     if (!f.key && v.needKey) return;
