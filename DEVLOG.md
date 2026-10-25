@@ -2379,3 +2379,8 @@ Fixed: a poll deleted while it ends could crash the server (the message read bac
 
 Left alone (the user's decision): an interrupted poll end loses its result, slow batches can outlive their upload tokens (5 minutes), crossing vote counts can leave older counts shown, Mumble's text size with 10 long file names, and a rollback after the upload migration (needs the deploy's backup).
 
+## Streams after a reload; a quiet lost connection
+
+- Watched streams come back after a reload or a lost connection: the rewatch memory (`lib/stream/rewatch`) lived in the Client, which is new after each reconnect and each reload. It now lives in App (a `StreamMemory`, per tab in sessionStorage, saved at pagehide, cleared at logout). The Client remembers only while both connections are up: a lost connection first closes the streaming socket, which drops what was watched (`gone` on the stream client, set before), and `follow` would then forget the names. The 30 s count from the loss (the moment the connection closes), not from the reconnect. Not tried with a real stream yet: the local server in the sandbox does not get the WHIP media (UDP on the LAN address).
+- A lost connection stays quiet: nothing for 2 s, then a small grey "Reconnecting…", the banner with "Retry now" only after 10 s (`lossNotice`). While quiet the app tries each second; the growing waits (1, 2, 5 … s) start after it (`nextDelay`). Checked in a headless browser against a local server: a 5 s outage came back about a second after the server, with no banner.
+
