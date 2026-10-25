@@ -19,3 +19,4 @@
 - [ ] [WHIP streams: picture and sound out of sync](issues/whip-av-sync.md)
 - [ ] [Desktop (Linux, Wayland): GPU use while minimised](issues/wayland-minimised-gpu.md)
 - [ ] [Polls](issues/polls.md) (design, not started)
+- [ ] [Mention pills for every name "@" suggests](issues/pills-match-suggestions.md)
