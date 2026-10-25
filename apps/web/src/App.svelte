@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { leaving, loadLost, saveLost, type StreamMemory } from "./lib/stream/rewatch";
   import Client from "./components/Client.svelte";
   import Login from "./components/Login.svelte";
   import { createAccountsApi, type Account, type AccountActions } from "./lib/accounts";
@@ -122,6 +123,9 @@
     connection?.close();
     connection = null;
     keepPlace(null);
+    // Nothing to watch again after a logout.
+    streams = { watching: [], lost: [] };
+    if (lastCredentials) saveLost(tabStorage(), streamsKeyOf(lastCredentials), []);
     closeAudio(audio);
     audio = null;
   };
@@ -325,6 +329,7 @@
     // After a refresh: back where this tab was (see lib/place).
     place = loadPlace(tabStorage(), placeKeyOf(credentials));
     drafts = { value: new Map() };
+    streams = { watching: [], lost: loadLost(tabStorage(), streamsKeyOf(credentials), Date.now()) };
     // Per server and user: another account here does not get the files.
     pendingFiles = createPendingFiles(indexedDbStore(), [kallisti ?? location.origin, credentials.server ?? "", credentials.username].join(" "));
     connection?.close();
@@ -360,6 +365,13 @@
   const keepPlace = (p: Place | null, left = false) => {
     place = p;
     if (lastCredentials) savePlace(tabStorage(), placeKeyOf(lastCredentials), p, left);
+  };
+  // The streams watched, kept over reconnects and reloads, per tab (see
+  // lib/stream/rewatch): they are watched again when they come back soon.
+  let streams = $state.raw<StreamMemory>({ watching: [], lost: [] });
+  const streamsKeyOf = (c: Credentials) => `streams:${placeKeyOf(c)}`;
+  const keepStreams = () => {
+    if (lastCredentials) saveLost(tabStorage(), streamsKeyOf(lastCredentials), leaving(streams.watching, streams.lost, Date.now()));
   };
   // Unsent texts, kept over reconnects (the Client is new each time); a
   // login starts without.
@@ -435,7 +447,7 @@
   };
 </script>
 
-<svelte:window ononline={wake} onpagehide={() => place && keepPlace(place, true)} onpointerdowncapture={wakeSound} onkeydowncapture={wakeSound} />
+<svelte:window ononline={wake} onpagehide={() => (place && keepPlace(place, true), keepStreams())} onpointerdowncapture={wakeSound} onkeydowncapture={wakeSound} />
 <svelte:document onvisibilitychange={wake} />
 
 {#if checking}
@@ -464,7 +476,7 @@
   <!-- While lost, the old view stays readable but takes no input (it would be lost). -->
   <div class="client" inert={lost}>
     {#key connection}
-      <Client {connection} account={account ? accountActions : undefined} resume={place} onPlace={(p) => keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} {drafts} {pendingFiles} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
+      <Client {connection} account={account ? accountActions : undefined} resume={place} onPlace={(p) => keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} {drafts} {pendingFiles} {streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
     {/key}
   </div>
 {:else}

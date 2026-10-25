@@ -1,3 +1,4 @@
+import { safeGet, safeSet } from "../storage";
 import { isCamera } from "./protocol";
 
 // A watched stream that ended may come back from the same user under a new
@@ -61,4 +62,32 @@ export const follow = (w: Watched, s: Seen) => {
   }
   const back = rewatch(lost, s.here, s.now);
   return { watched: { names, dropped, lost: back.lost }, unwatch, watch: back.watch };
+};
+
+// The streams watched and those waited for, kept above the Client (new
+// after each reconnect) and over a reload (see leaving, saveLost).
+export type StreamMemory = { watching: { name: string; camera: boolean }[]; lost: Lost[] };
+
+// The connection or the page goes (a reconnect makes a new Client, a reload
+// a new page): the streams watched are lost from now, with those still
+// waited for, one entry each.
+export const leaving = (watching: readonly { name: string; camera: boolean }[], waited: readonly Lost[], now: number): Lost[] => {
+  const key = (l: { name: string; camera: boolean }) => `${l.name.toLowerCase()} ${l.camera}`;
+  const fresh = watching.map((w) => ({ name: w.name, camera: w.camera, until: now + REWATCH_MS }));
+  const mine = new Set(fresh.map(key));
+  return [...waited.filter((l) => l.until > now && !mine.has(key(l))), ...fresh];
+};
+
+// Over a reload: per tab (sessionStorage), as the place (see lib/place).
+type Storage = Parameters<typeof safeGet>[0];
+const isLost = (v: unknown): v is Lost =>
+  typeof v === "object" && v !== null && typeof (v as Lost).name === "string" && typeof (v as Lost).camera === "boolean" && Number.isFinite((v as Lost).until);
+export const saveLost = (storage: Storage, key: string, lost: readonly Lost[]) => safeSet(storage, key, JSON.stringify(lost));
+export const loadLost = (storage: Storage, key: string, now: number): Lost[] => {
+  try {
+    const v: unknown = JSON.parse(safeGet(storage, key) ?? "[]");
+    return Array.isArray(v) ? v.filter(isLost).filter((l) => l.until > now) : [];
+  } catch {
+    return [];
+  }
 };

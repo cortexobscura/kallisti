@@ -86,7 +86,7 @@
   import StreamStage from "./StreamStage.svelte";
   import { shareSources } from "../lib/stream/client.svelte";
   import { CANNOT_STREAM, isCamera, ownerOf, watchAction } from "../lib/stream/protocol";
-  import { follow, NOTHING_WATCHED } from "../lib/stream/rewatch";
+  import { follow, leaving, NOTHING_WATCHED, type StreamMemory } from "../lib/stream/rewatch";
   import { KINDS, qualityOptions, type Kind, type Quality } from "../lib/stream/quality";
   import { goLiveEntries, isLive, streamBlock, type GoLiveAction } from "../lib/stream/goLive";
   import ChannelMenu from "./ChannelMenu.svelte";
@@ -129,6 +129,7 @@
     site = location.origin,
     drafts = { value: new Map() },
     pendingFiles,
+    streams = { watching: [], lost: [] },
     openSettings = false,
     onSettingsOpened,
   }: {
@@ -150,6 +151,8 @@
     // caller, so that they outlive a reconnect.
     drafts?: Drafts;
     pendingFiles?: PendingFiles;
+    // The streams watched, over reconnects and reloads (see lib/stream/rewatch).
+    streams?: StreamMemory;
     // Open the settings at once (back from a fediverse login for them).
     openSettings?: boolean;
     onSettingsOpened?: () => void;
@@ -1237,7 +1240,26 @@
   const nameOfSession = (session: number) => server.users[ownerOf(session)]?.name ?? "someone";
   // Streams that ended, or are in a channel we left, are not watched. One
   // that ended may come back from the same user (see lib/stream/rewatch).
-  let watched = NOTHING_WATCHED;
+  // From before a reconnect or a reload: watched again when they come back.
+  // The memory this Client started with (a new login brings a new one).
+  const memory = untrack(() => streams);
+  let watched = { ...NOTHING_WATCHED, lost: memory.lost.filter((l) => l.until > Date.now()) };
+  // Ours go to the memory while both connections are up (a lost connection
+  // first drops the watched streams); they are lost from the moment the
+  // connection goes, or the Client does (a logout, a reload: see App).
+  const connected = () => !!streamClient && !streamClient.gone && !connection.closed;
+  const remember = () => {
+    memory.watching = [...watched.names].map(([id, name]) => ({ name, camera: isCamera(id) }));
+    memory.lost = watched.lost;
+  };
+  const goneNow = () => {
+    memory.lost = leaving(memory.watching, memory.lost, Date.now());
+    memory.watching = [];
+  };
+  $effect(() => {
+    if (connection.closed) untrack(goneNow);
+  });
+  $effect(() => goneNow);
   const closedByViewer = new Set<number>();
   const closeStream = (id: number) => {
     closedByViewer.add(id);
@@ -1253,6 +1275,7 @@
     untrack(() => {
       const step = follow(watched, { here, live, watching, closed: closedByViewer, inVoice: voiceOn, now: Date.now() });
       watched = step.watched;
+      if (connected()) remember();
       for (const id of closedByViewer) if (!watching.includes(id)) closedByViewer.delete(id);
       step.unwatch.forEach((id) => streamClient.unwatch(id));
       step.watch.forEach((id) => void streamClient.watch(id));

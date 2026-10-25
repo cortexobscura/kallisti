@@ -122,6 +122,10 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
   // Watching: by stream id (see protocol.streamId).
   const watched = new Map<number, Viewer>();
   let watching = $state<number[]>([]);
+  // The streaming connection closed (it drops what was watched): what was
+  // watched before still counts (see lib/stream/rewatch). A new one opens
+  // with the next watch.
+  let gone = $state(false);
   // Watched streams with sound, and their volume (0 to 1).
   let sounds = $state<Record<number, number>>({});
 
@@ -149,6 +153,7 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
       }
       sock.onmessage = (e) => (typeof e.data === "string" ? onText(JSON.parse(e.data)) : onFrame(e.data as ArrayBuffer));
       sock.onclose = () => {
+        gone = true; // before the streams go
         if (ws === sock) ws = null;
         for (const kind of KINDS) {
           out[kind].started?.("the streaming connection closed");
@@ -157,6 +162,7 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
         for (const s of [...watched.keys()]) unwatch(s, false);
       };
       ws = sock;
+      gone = false;
       return sock;
     })().finally(() => (opening = null));
     return opening;
@@ -613,6 +619,9 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
     get watching() {
       return watching;
     },
+    get gone() {
+      return gone;
+    },
     // A watched stream's volume (undefined: it has no sound).
     volumeOf: (session: number): number | undefined => sounds[session],
     setVolume: (session: number, volume: number) => {
@@ -655,7 +664,7 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
       if (v) v.canvas = canvas;
     },
     close: () => {
-      closed = true;
+      closed = gone = true;
       for (const kind of KINDS) stopSharing(kind, true);
       ws?.close();
     },
