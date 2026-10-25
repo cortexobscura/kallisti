@@ -22,6 +22,7 @@
   import AudioPlayer from "./AudioPlayer.svelte";
   import VideoPlayer from "./VideoPlayer.svelte";
   import { opensLightbox } from "../lib/lightbox";
+  import { gridCells, splitFiles } from "../lib/fileGrid";
   import { COMMON_EMOJI, reactedBy } from "../lib/reactions";
   import type { LinkPreview } from "../lib/linkPreview";
   import { highlightMentions, pingsMe, replyPing, suggestNames, SUGGESTIONS } from "../lib/mentions";
@@ -499,8 +500,12 @@
     draft = "";
   };
 
-  // The image shown large (see Lightbox).
-  let lightbox = $state<ReturnType<typeof lightboxOf> | null>(null);
+  // The images shown large, from `start` (see Lightbox): a message's pictures.
+  type Shown = NonNullable<DisplayMessage["uploads"]>[number];
+  const viewerItem = (u: Shown) => ({ ...lightboxOf(u), ...(u.description && { description: u.description }) });
+  let lightbox = $state<{ items: ReturnType<typeof viewerItem>[]; start: number } | null>(null);
+  const showHidden = (u: Shown) => (shownFiles = new Set([...shownFiles, u.url]));
+  const hideAgain = (u: Shown) => (shownFiles = new Set([...shownFiles].filter((url) => url !== u.url)));
   // Attachments that cannot play or show (see attachmentView): files.
   let unplayable = $state(new Set<string>());
 
@@ -1515,8 +1520,9 @@
      own ratio wins ("auto"). A large picture shows its preview, else the
      picture itself (also when the preview fails); one the browser cannot
      show at all is a file card. -->
-{#snippet picture(u: Attachment, alt: string)}
-  {@const box = imageBox(u)}
+<!-- fill: the picture fills its grid cell (the cell keeps the size). -->
+{#snippet picture(u: Attachment, alt: string, fill = false)}
+  {@const box = fill ? null : imageBox(u)}
   <img
     src={chatSrc(u)}
     {alt}
@@ -1533,11 +1539,35 @@
   />
 {/snippet}
 
+<!-- Two or more pictures as a grid (see lib/fileGrid), the other files
+     below it; the viewer goes through the grid's pictures. -->
 {#snippet attachment(m: ChatMessage | DisplayMessage)}
-  {#each ("uploads" in m && m.uploads) || [] as upload (upload.url)}
+  {@const files = ("uploads" in m && m.uploads) || []}
+  {@const split = splitFiles(files, (u) => attachmentView(u, unplayable.has(u.url)))}
+  {#if split.grid.length}
+    {@const cells = gridCells(split.grid.length)}
+    <div class="file-grid">
+      {#each split.grid as upload, i (upload.url)}
+        <div class="cell" class:wide={cells[i]!.cols === 6} class:tall={cells[i]!.rows > 1} style:grid-column="span {cells[i]!.cols}" style:grid-row="span {cells[i]!.rows}">
+          {#if upload.spoiler && !shownFiles.has(upload.url)}
+            <button type="button" class="spoiler-file" aria-label="Spoiler, show the attachment" onclick={() => showHidden(upload)}>
+              {@render picture(upload, "", true)}
+              <span>Spoiler</span>
+            </button>
+          {:else}
+            {@render imageLink(upload, split.grid, i)}
+            {#if upload.spoiler}
+              <button type="button" class="rehide" onclick={() => hideAgain(upload)}>Hide</button>
+            {/if}
+          {/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
+  {#each split.rest as upload (upload.url)}
     {@const view = attachmentView(upload, unplayable.has(upload.url))}
     {#if upload.spoiler && !shownFiles.has(upload.url)}
-      <button type="button" class="spoiler-file" aria-label="Spoiler, show the attachment" onclick={() => (shownFiles = new Set([...shownFiles, upload.url]))}>
+      <button type="button" class="spoiler-file" aria-label="Spoiler, show the attachment" onclick={() => showHidden(upload)}>
         {#if view === "image"}{@render picture(upload, "")}{/if}
         <span>Spoiler</span>
       </button>
@@ -1545,7 +1575,7 @@
       <!-- A shown spoiler can be hidden again. -->
       <div class="unspoiled">
         {@render uploadView(upload)}
-        <button type="button" class="rehide" onclick={() => (shownFiles = new Set([...shownFiles].filter((url) => url !== upload.url)))}>Hide</button>
+        <button type="button" class="rehide" onclick={() => hideAgain(upload)}>Hide</button>
       </div>
     {:else}
       {@render uploadView(upload)}
@@ -1553,23 +1583,30 @@
   {/each}
 {/snippet}
 
-{#snippet uploadView(upload: NonNullable<DisplayMessage["uploads"]>[number])}
+<!-- A picture that opens the viewer, at its place in `all`. -->
+{#snippet imageLink(upload: Shown, all: readonly Shown[], at: number)}
+  <a
+    class="image"
+    href={lightboxOf(upload).url}
+    target="_blank"
+    rel="noopener noreferrer"
+    aria-label="View {upload.description || upload.name}"
+    onclick={(e) => {
+      if (!opensLightbox(e)) return;
+      e.preventDefault();
+      // Not the spoilers still hidden.
+      const shown = all.filter((u, i) => i === at || !u.spoiler || shownFiles.has(u.url));
+      lightbox = { items: shown.map(viewerItem), start: shown.indexOf(upload) };
+    }}
+  >
+    {@render picture(upload, upload.description || upload.name, all.length > 1)}
+  </a>
+{/snippet}
+
+{#snippet uploadView(upload: Shown)}
   {@const view = attachmentView(upload, unplayable.has(upload.url))}
   {#if view === "image"}
-    <a
-      class="image"
-      href={lightboxOf(upload).url}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="View {upload.name}"
-      onclick={(e) => {
-        if (!opensLightbox(e)) return;
-        e.preventDefault();
-        lightbox = lightboxOf(upload);
-      }}
-    >
-      {@render picture(upload, upload.name)}
-    </a>
+    {@render imageLink(upload, [upload], 0)}
   {:else if view !== "file"}
     {@const failed = () => (unplayable = new Set([...unplayable, upload.url]))}
     {#if view === "audio"}
@@ -2314,6 +2351,51 @@
   .image {
     display: inline-block;
     margin-top: 4px;
+  }
+  /* 6 columns (see lib/fileGrid gridCells); cells keep their size while
+     the pictures load. */
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    width: min(520px, 100%);
+    margin-top: 4px;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .cell {
+    position: relative;
+    aspect-ratio: 1;
+    min-width: 0;
+    background: var(--bg-rail);
+  }
+  .cell.wide {
+    aspect-ratio: 2;
+  }
+  .cell.tall {
+    aspect-ratio: auto;
+  }
+  .cell .image {
+    display: block;
+  }
+  .cell .image,
+  .cell .spoiler-file {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    margin: 0;
+    border-radius: 0;
+  }
+  .cell .image img,
+  .cell .spoiler-file img {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    border-radius: 0;
+    object-fit: cover;
   }
   /* The largest box: in step with imageBox (lib/media). contain: a
      picture whose ratio differs from the server's is not squashed. */
