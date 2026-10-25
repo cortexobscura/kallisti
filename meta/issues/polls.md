@@ -4,7 +4,12 @@
 
 Polls in text channels, threads and direct messages, as in Discord: a
 question with answers, people vote, the result shows when it ends.
-Design, not started.
+
+Sub-issues:
+
+- [Polls: store and protocol](polls-server.md)
+- [Polls: ending on time and the result](polls-ending.md)
+- [Polls: the web client](polls-web.md)
 
 ## Requirements
 
