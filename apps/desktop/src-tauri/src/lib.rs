@@ -50,9 +50,12 @@ async fn notify(app: tauri::AppHandle, id: i32, title: String, body: String) -> 
 /// chat.
 fn tapped(app: &tauri::AppHandle, id: i32) {
     if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+        #[cfg(desktop)]
+        {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
         let _ = window.emit("notification-action", serde_json::json!({ "actionId": "tap", "notification": { "id": id } }));
     }
 }
@@ -67,10 +70,13 @@ fn origins() -> Vec<String> {
     origins
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        // Push-to-talk while the app is in the background.
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+    let builder = tauri::Builder::default();
+    // Push-to-talk while the app is in the background.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    builder
         // System notifications (the web view's own: none on macOS, refused
         // on Linux).
         .plugin(tauri_plugin_notification::init())
