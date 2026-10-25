@@ -43,7 +43,7 @@ jobs:
           packages: platform-tools
       - name: Android SDK and NDK
         run: |
-          sdkmanager "platforms;android-37" "build-tools;36.1.0" "ndk;29.0.14206865"
+          sdkmanager "platforms;android-37.0" "build-tools;36.1.0" "ndk;29.0.14206865"
           echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v4
         with:
