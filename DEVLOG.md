@@ -2338,3 +2338,8 @@ From `meta/research/discord-comparison.md`.
 
 - The tile's controls showed on hover only, were small, and in full screen sat under the status bar (Android 15 draws apps under the system bars; the page keeps clear of them with the safe areas, full screen did not). On touch screens (`hover: none`) a tap now shows the controls for 3 s and the next tap picks the stream (`tapAction`), hidden controls take no taps, buttons are at least 44 px and the volume slider wider; full screen pads by the safe areas. The full-screen buttons hide where the browser has no element full screen (iPhone Safari). Checked on the user's Android phone.
 
+## Android app: the keyboard
+
+- pwm: with the keyboard open the channel header was gone. Edge to edge (Android 15+) the keyboard no longer shrinks the window, so the WebView panned the whole page up. `MainActivity` now pads the content view by the keyboard's height (IME insets), and passes no navigation bar inset while it is open (no gesture bar gap above the keyboard): the page gets shorter instead.
+- Then the chat jumped back into history when the keyboard opened: the resize fired a scroll event before the ResizeObserver, and the scroll handler decided the reader had left the bottom. A scroll right after the list's height changed now keeps a reader at the bottom there. Checked on the user's phone (guest login): header visible, newest message above the composer, normal again after closing.
+
