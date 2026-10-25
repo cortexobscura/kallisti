@@ -266,3 +266,4 @@
   - [x] [Stickers in the web app: send and show](issues/stickers-send.md)
 - [x] [Stickers on the website](issues/site-stickers.md)
 - [x] [Site: enlarge screenshots](issues/site-lightbox.md)
+- [x] [iOS: does voice keep running in the background?](issues/ios-background-voice.md)

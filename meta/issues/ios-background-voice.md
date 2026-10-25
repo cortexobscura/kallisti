@@ -27,3 +27,11 @@ built.
 - Test on the user's iPhone (iOS 27); the simulator only for the build
   and first checks.
 - No store release, no push in this step.
+
+## Result
+
+- Yes, without native audio code: `UIBackgroundModes` audio keeps the
+  microphone open, and the web client resumes the audio context WebKit
+  interrupts when the app goes to the background. A short gap on each
+  switch. Tested on the user's iPhone (iOS 27): background and locked for
+  minutes, both directions. Details in the DEVLOG.

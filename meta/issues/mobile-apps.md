@@ -17,10 +17,8 @@ In steps; iOS first (user's choice): issues/ios-background-voice.md.
    CI. Tested by an Android user (calls with the screen off, app
    switches).
 2. iOS prototype: Tauri iOS; microphone permission; UIBackgroundModes
-   audio with an active AVAudioSession while in voice. Open question to
-   answer first: does WKWebView's web process keep running in the
-   background with an active microphone? If not, iOS needs a native audio
-   part (much more work) — decide then.
+   audio while in voice. Answered (issues/ios-background-voice.md): voice
+   goes on in the background without native audio code.
 3. Later: store releases (Google Play, App Store/TestFlight), native push
    (FCM/APNs; Web Push does not work in the WebView), CallKit on iOS.
 
