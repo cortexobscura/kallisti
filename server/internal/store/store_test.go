@@ -1022,4 +1022,11 @@ func TestEditRemovesUploads(t *testing.T) {
 	if _, err := s.UploadByKey("z"); err != nil {
 		t.Fatal("another message's (or no message's) upload went too")
 	}
+	// A message keeps text or a file, also when edits cross.
+	if _, err := s.EditMessage(m.ID, "", "", at, atts[0].ID, atts[2].ID); !errors.Is(err, ErrEmpty) {
+		t.Fatalf("emptied: %v", err)
+	}
+	if got, _ := s.MessageByID(m.ID); got.Text != "y" || len(got.Uploads) != 2 {
+		t.Fatalf("after a refused edit: %+v", got)
+	}
 }

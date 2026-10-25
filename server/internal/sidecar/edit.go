@@ -1,6 +1,7 @@
 package sidecar
 
 import (
+	"errors"
 	"log/slog"
 	"slices"
 	"strings"
@@ -87,15 +88,22 @@ func (c *Conn) changeMessage(id mumble.Identity, req request) {
 			for i, u := range gone {
 				ids[i] = u.ID
 			}
-			if m, err = h.store.EditMessage(m.ID, text, all, h.now(), ids...); err != nil {
+			edited, err := h.store.EditMessage(m.ID, text, all, h.now(), ids...)
+			// The files of the rows that went (also if reading it back failed).
+			for _, u := range gone {
+				if _, e := h.store.UploadByKey(u.Key); errors.Is(e, store.ErrNotFound) {
+					h.deleteFiles(u.Key)
+				}
+			}
+			if errors.Is(err, store.ErrEmpty) {
+				c.sendError(textError)
+				return
+			}
+			if err != nil {
 				c.sendError("cannot edit the message")
 				return
 			}
-			for _, u := range gone {
-				if h.OnUploadDeleted != nil {
-					h.OnUploadDeleted(u.Key)
-				}
-			}
+			m = edited
 			send(map[string]any{"type": "message-edited", "message": toWire(m)})
 			if m.Thread != nil { // its quote
 				h.threadChanged(m.Thread.ID)
@@ -176,9 +184,7 @@ func (h *Hub) removed(gone []store.Message) {
 	byChat := map[int64][]int64{}
 	for _, m := range gone {
 		for _, u := range m.Uploads {
-			if h.OnUploadDeleted != nil {
-				h.OnUploadDeleted(u.Key)
-			}
+			h.deleteFiles(u.Key)
 		}
 		byChat[m.ChannelID] = append(byChat[m.ChannelID], m.ID)
 	}
@@ -220,9 +226,18 @@ func splitUploads(uploads []store.Upload, remove []string) (kept, gone []store.U
 		}
 	}
 	known = !slices.ContainsFunc(remove, func(k string) bool {
-		return !slices.ContainsFunc(gone, func(u store.Upload) bool { return u.Key == k })
+		return !slices.ContainsFunc(uploads, func(u store.Upload) bool { return u.Key == k })
 	})
 	return kept, gone, known
+}
+
+// deleteFiles removes the files of uploads whose rows are gone.
+func (h *Hub) deleteFiles(keys ...string) {
+	for _, k := range keys {
+		if h.OnUploadDeleted != nil {
+			h.OnUploadDeleted(k)
+		}
+	}
 }
 
 // A message has 1 to MaxTextLength characters; with an attachment it may

@@ -573,25 +573,26 @@
 
   // Editing and deleting stored messages.
   // files: the message's; removed: the URLs of those to take off.
-  let editing = $state<{ id: number; text: string; old: string; files: Shown[]; removed: string[] } | null>(null);
+  let editing = $state<{ id: number; text: string; old: string; files: Shown[]; removed: string[]; canDelete: boolean } | null>(null);
   let confirming = $state<number | null>(null);
   let editInput: HTMLTextAreaElement | undefined = $state();
   let cancelButton: HTMLButtonElement | undefined = $state();
   const startEdit = async (m: ChatMessage | DisplayMessage) => {
     if (!("source" in m) || !m.source) return;
     const files = ("uploads" in m && m.uploads) || [];
-    editing = { id: m.source.id, text: fromRefs(m.source.text, custom.mine, custom.urls), old: m.source.text, files, removed: [] };
+    const canDelete = !!(mayDelete?.(m) && onDelete);
+    editing = { id: m.source.id, text: fromRefs(m.source.text, custom.mine, custom.urls), old: m.source.text, files, removed: [], canDelete };
     await tick();
     editInput?.focus();
   };
   const saveEdit = () => {
     if (!editing) return;
     const text = withRefs(editing.text.trim());
-    const id = editing.id;
+    const { id, canDelete } = editing;
     const end = editOutcome({ old: editing.old, text, files: editing.files.map((f) => f.url), removed: editing.removed });
     editing = null;
     // Nothing left: as in Discord, it asks to delete the message.
-    if (end.delete && onDelete) return void startConfirm(id);
+    if (end.delete && canDelete) return void startConfirm(id);
     if (end.save) onEdit?.(id, text, end.remove);
     messageInput?.focus();
   };
@@ -2170,6 +2171,10 @@
   @media (hover: none) {
     .actions {
       display: none;
+    }
+    /* Except the question after an edit that leaves nothing (saveEdit). */
+    .actions.confirming {
+      display: flex;
     }
     .line {
       -webkit-touch-callout: none;

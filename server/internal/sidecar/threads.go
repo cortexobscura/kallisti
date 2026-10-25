@@ -287,11 +287,7 @@ func (c *Conn) threadRequest(id mumble.Identity, req request) {
 			c.sendError("cannot delete the thread")
 			return
 		}
-		for _, k := range keys {
-			if h.OnUploadDeleted != nil {
-				h.OnUploadDeleted(k)
-			}
-		}
+		h.deleteFiles(keys...)
 		h.sendTo(ch, map[string]any{"type": "thread-deleted", "channel": t.Parent, "id": t.ID})
 		for _, user := range followers {
 			h.sendFollows(user)

@@ -886,7 +886,11 @@ func (s *Store) MeasureUploads(measure func(Upload) Media) error {
 }
 
 func (s *Store) UploadByKey(key string) (Upload, error) {
-	return scanUpload(s.db.QueryRow(`SELECT `+uploadColumns+` FROM uploads WHERE key = ?`, key))
+	u, err := scanUpload(s.db.QueryRow(`SELECT `+uploadColumns+` FROM uploads WHERE key = ?`, key))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Upload{}, ErrNotFound
+	}
+	return u, err
 }
 
 // SetUploadPreview keeps an upload's preview type (see Upload.Preview);
@@ -1068,6 +1072,14 @@ func (s *Store) EditMessage(id int64, text, mentionAll string, at time.Time, rem
 		if _, err := tx.Exec(`DELETE FROM uploads WHERE message_id = ? AND id IN (`+in+`)`, append([]any{id}, args...)...); err != nil {
 			return Message{}, err
 		}
+	}
+	// Checked here as well: edits from two connections may cross.
+	var left int
+	if err := tx.QueryRow(`SELECT count(*) FROM uploads WHERE message_id = ?`, id).Scan(&left); err != nil {
+		return Message{}, err
+	}
+	if text == "" && left == 0 {
+		return Message{}, ErrEmpty
 	}
 	if err := tx.Commit(); err != nil {
 		return Message{}, err
@@ -1348,6 +1360,8 @@ func (s *Store) UploadedBytesSince(author string, since time.Time) (int64, error
 
 var (
 	ErrNotFound = errors.New("not found")
+	// An edit would leave a message without text and files.
+	ErrEmpty = errors.New("a message needs text or a file")
 	// A message has reactions with maxReactionKinds different emoji.
 	ErrTooManyReactions = errors.New("too many different reactions")
 	ErrNameTaken        = errors.New("name taken")
