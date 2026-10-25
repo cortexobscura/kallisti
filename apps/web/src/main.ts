@@ -1,6 +1,6 @@
 import { mount } from "svelte";
 import App from "./App.svelte";
-import { currentWindow, isDesktop, openInBrowser } from "./lib/desktop";
+import { androidApp, currentWindow, isDesktop, openInBrowser, setVoiceService } from "./lib/desktop";
 import { openLinksOutside } from "./lib/externalLinks";
 import { watchKeyboard } from "./lib/keyboard";
 import { watchWindowHidden } from "./lib/windowHidden";
@@ -16,6 +16,10 @@ if (isDesktop()) openLinksOutside((url) => openInBrowser(url).catch((err) => con
 void (isDesktop() ? currentWindow() : Promise.resolve(null))
   .catch(() => null)
   .then((win) => watchWindowHidden((hidden) => document.documentElement.toggleAttribute("data-window-hidden", hidden), { doc: document, win }));
+
+// The Android app: a new page (a reload) starts with no voice service; the
+// voice it joins starts it again (see Client.svelte).
+if (androidApp()) void setVoiceService(false, null);
 
 if (window.visualViewport)
   watchKeyboard((open) => document.documentElement.toggleAttribute("data-keyboard", open), {

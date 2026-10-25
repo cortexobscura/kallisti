@@ -130,6 +130,7 @@ describe("createVoiceService", () => {
     const { calls, set } = setup();
     void set(true, "General");
     void set(false, null);
+    await vi.advanceTimersByTimeAsync(0);
     expect(calls).toEqual([[true, "General"]]);
     await vi.advanceTimersByTimeAsync(2000);
     expect(calls).toEqual([[true, "General"], [false, null]]);
@@ -146,4 +147,25 @@ describe("createVoiceService", () => {
     expect(calls).toEqual([[true, "General"], [true, "General"]]);
     vi.useRealTimers();
   });
+
+  it("sends one call at a time, in order (a slow stop cannot overtake a later start)", async () => {
+    vi.useFakeTimers();
+    const order: string[] = [];
+    let release: () => void = () => {};
+    const set = createVoiceService(async (on) => {
+      order.push(`${on ? "start" : "stop"} begins`);
+      if (!on) await new Promise<void>((r) => (release = r));
+      order.push(`${on ? "start" : "stop"} ends`);
+    }, 2000);
+    void set(false, null);
+    await vi.advanceTimersByTimeAsync(2000); // the stop is on its way
+    const start = set(true, "General");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(order).toEqual(["stop begins"]);
+    release();
+    await start;
+    expect(order).toEqual(["stop begins", "stop ends", "start begins", "start ends"]);
+    vi.useRealTimers();
+  });
 });
+

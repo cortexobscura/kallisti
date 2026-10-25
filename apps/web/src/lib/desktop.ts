@@ -42,13 +42,20 @@ export const androidApp = () => isDesktop() && androidAgent(navigator.userAgent)
 // the background), on while in voice, its notification with the channel.
 // Off after a moment: a reconnect replaces the chat view (its cleanup
 // stops, the new one starts), and Android starts such a service again only
-// from the foreground.
+// from the foreground. One call at a time, in order: the app's commands
+// run in parallel, and a stop must not overtake a later start.
 export const createVoiceService = (call: (on: boolean, channel: string | null) => Promise<void>, stopDelayMs: number) => {
   let stopping: ReturnType<typeof setTimeout> | undefined;
+  let queue = Promise.resolve();
+  const send = (on: boolean, channel: string | null) => {
+    const sent = queue.then(() => call(on, channel));
+    queue = sent.catch(() => {});
+    return sent;
+  };
   return (on: boolean, channel: string | null): Promise<void> => {
     clearTimeout(stopping);
-    if (on) return call(true, channel);
-    stopping = setTimeout(() => void call(false, null).catch(() => {}), stopDelayMs);
+    if (on) return send(true, channel);
+    stopping = setTimeout(() => void send(false, null).catch(() => {}), stopDelayMs);
     return Promise.resolve();
   };
 };
