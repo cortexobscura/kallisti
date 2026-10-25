@@ -388,7 +388,7 @@ func TestModerators(t *testing.T) {
 	}
 }
 
-func TestMumbleImagesBecomeAttachments(t *testing.T) {
+func TestMumbleImagesBecomeAttachmentsOfOneMessage(t *testing.T) {
 	h := newHub(t, "general")
 	h.SetVoice(&fakeVoice{}, "")
 	var saved []string
@@ -399,12 +399,13 @@ func TestMumbleImagesBecomeAttachments(t *testing.T) {
 	web := readyAs(t, h, 2, "web")
 	// In the #general mirror (Mumble channel 100 in the fake).
 	h.MumbleText(mumble.Identity{Session: 9, Name: "Jukebox", Registered: true, UserID: 814}, 100, "Now playing: x", []Image{{Type: "image/jpeg", Data: []byte("a")}, {Type: "image/png", Data: []byte("b")}})
-	first := next(t, web)["message"].(map[string]any)
-	second := next(t, web)["message"].(map[string]any)
-	if first["text"] != "Now playing: x" || first["upload"].(map[string]any)["type"] != "image/jpeg" ||
-		second["text"] != "" || second["upload"].(map[string]any)["type"] != "image/png" {
-		t.Fatalf("messages %v %v", first, second)
+	// One message with all of them, in order.
+	m := next(t, web)["message"].(map[string]any)
+	ups, _ := m["uploads"].([]any)
+	if m["text"] != "Now playing: x" || len(ups) != 2 || ups[0].(map[string]any)["type"] != "image/jpeg" || ups[1].(map[string]any)["type"] != "image/png" {
+		t.Fatalf("message %v", m)
 	}
+	empty(t, web)
 	if len(saved) != 2 || saved[0] != "Jukebox:image-1.jpg:image/jpeg" {
 		t.Fatalf("saved %v", saved)
 	}
@@ -475,5 +476,14 @@ func TestListenOnlyChannels(t *testing.T) {
 		if ch["channel"] != float64(4) || sp["id"] != float64(9) || sp["name"] != "user9" {
 			t.Fatalf("got %v", m)
 		}
+	}
+}
+
+func TestMumbleClientsGetALinkForEachFile(t *testing.T) {
+	h := newHub(t, "general")
+	h.SetVoice(&fakeVoice{}, "https://chat.example/")
+	m := store.Message{Text: "look", Uploads: []store.Upload{{Key: "a", Name: "a.png"}, {Key: "b", Name: "b c.png"}}}
+	if got, want := h.mumbleText(m), "look https://chat.example/files/a/a.png https://chat.example/files/b/b%20c.png"; got != want {
+		t.Errorf("got %q", got)
 	}
 }

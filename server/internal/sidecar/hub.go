@@ -869,11 +869,7 @@ func (h *Hub) MumbleText(from mumble.Identity, channel uint32, text string, imag
 // to the chat's readers. It returns how many messages it stored and the
 // last one's id.
 func (h *Hub) storeMumble(from mumble.Identity, where chat, text string, images []Image) (n int, last int64) {
-	store1 := func(text string, upload int64) {
-		var uploads []store.Attachment
-		if upload != 0 {
-			uploads = []store.Attachment{{ID: upload}}
-		}
+	store1 := func(text string, uploads []store.Attachment) {
 		m, err := h.store.AddMessage(store.NewMessage{ChannelID: where.id, Author: from.Name, Verified: from.Registered, AuthorID: from.UserID, Text: text, At: h.now(), Uploads: uploads})
 		if err != nil {
 			slog.Error("store a Mumble message", "err", err)
@@ -885,25 +881,24 @@ func (h *Hub) storeMumble(from mumble.Identity, where chat, text string, images 
 	}
 	// Only registered users' images are kept (with their upload quota):
 	// guests can use any name. Mumble clients see them live anyway.
-	if len(images) == 0 || h.SaveFile == nil || !from.Registered {
-		if text != "" {
-			store1(text, 0)
+	var uploads []store.Attachment
+	if h.SaveFile != nil && from.Registered {
+		for i, img := range images {
+			u, err := h.SaveFile(from.Name, fmt.Sprintf("image-%d%s", i+1, imageExt(img.Type)), img.Type, img.Data)
+			if err != nil {
+				slog.Error("store a Mumble image", "err", err)
+				continue
+			}
+			uploads = append(uploads, store.Attachment{ID: u.ID})
 		}
-		return n, last
 	}
-	for i, img := range images {
-		u, err := h.SaveFile(from.Name, fmt.Sprintf("image-%d%s", i+1, imageExt(img.Type)), img.Type, img.Data)
-		if err != nil {
-			slog.Error("store a Mumble image", "err", err)
-			continue
-		}
-		// If storing the message fails, the upload has no message: the
-		// cleanup of unused uploads removes it.
-		store1(text, u.ID)
-		text = ""
-	}
-	if text != "" { // no image could be stored
-		store1(text, 0)
+	// One message with the text and the images; more than a message takes
+	// go in further ones. If storing fails, the uploads have no message:
+	// the cleanup of unused uploads removes them.
+	for len(uploads) > 0 || text != "" {
+		batch := uploads[:min(len(uploads), store.MaxUploads)]
+		store1(text, batch)
+		text, uploads = "", uploads[len(batch):]
 	}
 	return n, last
 }
