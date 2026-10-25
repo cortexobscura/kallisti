@@ -1,3 +1,4 @@
+pub mod android;
 pub mod background;
 pub mod bridge;
 pub mod crypt;
@@ -73,7 +74,7 @@ fn origins() -> Vec<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default().plugin(android::plugin());
     // Push-to-talk while the app is in the background.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
@@ -124,7 +125,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![bridge_info, trust_server, notify])
+        .invoke_handler(tauri::generate_handler![bridge_info, trust_server, notify, android::voice_service])
         .run(tauri::generate_context!())
         .expect("error while running the Kallisti app");
 }
