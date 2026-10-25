@@ -7,7 +7,7 @@ when the screen goes dark or on app switches). Native apps keep calls
 alive. Tauri 2 builds for Android and iOS; the web client runs inside
 unchanged (Kallisti mode with session tokens, voice over the WebSocket,
 the Opus WASM fallback). Native parts are small Kotlin/Swift plugins.
-Not started; in steps.
+In steps; iOS first (user's choice): issues/ios-background-voice.md.
 
 ## Steps
 
