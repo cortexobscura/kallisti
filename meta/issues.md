@@ -19,3 +19,4 @@
 - [ ] [WHIP streams: picture and sound out of sync](issues/whip-av-sync.md)
 - [ ] [Desktop (Linux, Wayland): GPU use while minimised](issues/wayland-minimised-gpu.md)
 - [ ] [Watched streams come back after a reload and a lost connection](issues/rewatch-after-reload.md)
+- [ ] [A lost connection: quiet for the first 10 seconds](issues/quiet-reconnect.md)
