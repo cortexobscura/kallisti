@@ -147,8 +147,12 @@ func (c *Conn) viewer() *uint32 {
 	return viewerOf(*c.identity)
 }
 
-// sendPoll sends the chat's readers a poll's counts, each with its votes.
+// sendPoll sends the chat's readers a poll's counts, each with its votes
+// (none for a poll deleted meanwhile).
 func (h *Hub) sendPoll(ch chat, m store.Message) {
+	if m.Poll == nil {
+		return
+	}
 	h.eachReady(func(conn *Conn, id mumble.Identity) {
 		if h.may(id, ch, false) {
 			conn.send(map[string]any{"type": "poll", "channel": m.ChannelID, "message": m.ID, "poll": toWirePoll(*m.Poll, viewerOf(id))})
@@ -215,7 +219,7 @@ func (h *Hub) endPoll(ch chat, id int64) {
 		return
 	}
 	m, err := h.store.MessageByID(id)
-	if err != nil {
+	if err != nil || m.Poll == nil { // deleted meanwhile
 		return
 	}
 	h.sendPoll(ch, m)

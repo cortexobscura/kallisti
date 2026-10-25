@@ -449,8 +449,8 @@ func TestReadyTellsTheUploadLimit(t *testing.T) {
 	c := h.Connect()
 	defer c.Close()
 	c.SetIdentity(mumble.Identity{Session: 1, Name: "alice"})
-	if m := next(t, c); m["uploadMax"] != float64(10<<20) || m["maxUploads"] != float64(store.MaxUploads) {
-		t.Fatalf("got %v %v", m["uploadMax"], m["maxUploads"])
+	if m := next(t, c); m["uploadMax"] != float64(10<<20) || m["maxUploads"] != float64(store.MaxUploads) || m["polls"] != true {
+		t.Fatalf("got %v %v %v", m["uploadMax"], m["maxUploads"], m["polls"])
 	}
 }
 

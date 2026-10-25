@@ -1320,8 +1320,8 @@ const maxMessagesAfter = 500
 
 // MessagesAfter is a channel's newest message id (0: none), and its
 // messages after `after` whose text contains `contains` or that answer
-// another (newest first, among the newest maxMessagesAfter): for unread
-// marks and mention counts.
+// another (newest first, among the newest maxMessagesAfter), with their
+// files: for unread marks, mention counts and Mumble's catch-up.
 func (s *Store) MessagesAfter(channel, after int64, contains string) (int64, []Message, error) {
 	var latest int64
 	if err := s.db.QueryRow(`SELECT coalesce(max(id), 0) FROM messages WHERE channel_id = ?`, channel).Scan(&latest); err != nil {
@@ -1343,7 +1343,11 @@ func (s *Store) MessagesAfter(channel, after int64, contains string) (int64, []M
 		}
 		out = append(out, m)
 	}
-	return latest, out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return 0, nil, err
+	}
+	rows.Close()
+	return latest, out, withUploads(s.db, out) // Mumble's catch-up shows them
 }
 
 // DeleteUnusedUploads removes uploads created before `before` that were

@@ -1030,3 +1030,16 @@ func TestEditRemovesUploads(t *testing.T) {
 		t.Fatalf("after a refused edit: %+v", got)
 	}
 }
+
+// Mumble's catch-up of missed direct messages shows their files as links.
+func TestMessagesAfterHaveTheirFiles(t *testing.T) {
+	s := open(t)
+	s.EnsureChannels([]string{"general"})
+	at := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	u, _ := s.AddUpload(Upload{Key: "f", Name: "f.png", Type: "image/png", Size: 1, Author: "a"}, at)
+	m, _ := s.AddMessage(NewMessage{ChannelID: 1, Author: "a", At: at, ReplyTo: 0, Text: "", Uploads: []Attachment{{ID: u.ID}}})
+	_, got, err := s.MessagesAfter(1, 0, "")
+	if err != nil || len(got) != 1 || got[0].ID != m.ID || len(got[0].Uploads) != 1 {
+		t.Fatalf("%+v %v", got, err)
+	}
+}

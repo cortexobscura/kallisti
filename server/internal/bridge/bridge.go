@@ -30,8 +30,9 @@ import (
 // MaxPayload is the Mumble frame limit. Larger messages close with 1009.
 const MaxPayload = 8 * 1024 * 1024
 
-// maxTextFrame limits sidecar requests (a 2000-character message fits).
-const maxTextFrame = 16 * 1024
+// maxTextFrame limits sidecar requests: the largest send fits (a
+// 2000-character message with 10 files' descriptions, see the test).
+const maxTextFrame = 64 * 1024
 
 type Options struct {
 	AllowedOrigins    []string

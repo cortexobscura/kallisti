@@ -1009,7 +1009,7 @@ func (c *Conn) post(id mumble.Identity, req request, ch chat) {
 			c.sendError("a poll is sent on its own")
 			return
 		}
-		n.Poll = req.poll
+		n.Poll, n.NoPing = req.poll, n.ReplyTo != 0 // polls ping nobody
 	}
 	// A sticker is a message of its own; its text is its name, for what
 	// only shows text (Mumble clients, previews, quotes, search).

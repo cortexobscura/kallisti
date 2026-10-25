@@ -238,8 +238,23 @@ func TestPollsDoNotPing(t *testing.T) {
 	if msg["mentionAll"] != nil || pings(stored, false, "bob", 8) || pollOf(m)["question"] != "@bob @everyone?" {
 		t.Fatalf("got %v", m)
 	}
+	// Nor as a reply (the form sends none; a crafted request may).
+	alice.Handle([]byte(`{"type":"send","channel":1,"text":"","reply":` + fmt.Sprint(msg["id"]) + `,"poll":` + pizzaPoll + `}`))
+	if r := nextOf(t, alice, "message")["message"].(map[string]any); r["noPing"] != true {
+		t.Fatalf("a poll reply pings: %v", r)
+	}
 	result := store.Message{Text: pollResult(*stored.Poll), Author: "alice"}
 	if pings(result, false, "bob", 8) {
 		t.Fatalf("the result pings: %q", result.Text)
 	}
+}
+
+// A poll deleted while it ends (or while a vote reads it back) is a
+// message without its poll: nothing goes out, nothing crashes.
+func TestAPollThatIsGoneIsSkipped(t *testing.T) {
+	h := newHub(t, "general")
+	alice, _ := pollUsers(t, h)
+	ch, _ := h.chatOf(1)
+	h.sendPoll(ch, store.Message{ID: 99, ChannelID: 1})
+	empty(t, alice)
 }

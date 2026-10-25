@@ -12,7 +12,7 @@ import (
 func (h *Hub) readyFor(id mumble.Identity) map[string]any {
 	channels := h.channelsFor(id)
 	ready := map[string]any{"type": "ready", "channels": channels, "categories": h.categoriesFor(id, channels), "threads": h.threadsFor(id),
-		"threadArchive": h.threadArchive(), "voiceChats": h.voice != nil, "emoji": h.customEmoji(), "stickers": h.stickerList(), "uploadMax": h.UploadMax, "maxUploads": store.MaxUploads,
+		"threadArchive": h.threadArchive(), "voiceChats": h.voice != nil, "emoji": h.customEmoji(), "stickers": h.stickerList(), "uploadMax": h.UploadMax, "maxUploads": store.MaxUploads, "polls": true,
 		"myEmoji": h.userEmojiFor(id), "removedEmoji": h.removedEmoji()}
 	if h.Avatars {
 		ready["avatars"] = true
