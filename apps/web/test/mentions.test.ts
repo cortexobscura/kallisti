@@ -7,6 +7,7 @@ import {
   pingsMe,
   replyPing,
   suggestNames,
+  mentionNames,
 } from "../src/lib/mentions";
 import { initialTextState, type TextMessage, type TextState } from "../src/lib/textChannels";
 
@@ -146,3 +147,16 @@ describe("@everyone and @here (flagged by the server)", () => {
     expect(mentionCounts(state, {}, "lain")).toEqual({ 1: 1 });
   });
 });
+
+describe("mentionNames", () => {
+  it("offers who is online, who wrote here, and registered users who are offline", () => {
+    const names = mentionNames({ online: ["lain"], authors: ["bob"], members: ["carla", "lain"], all: false });
+    expect(names).toEqual(expect.arrayContaining(["lain", "bob", "carla"]));
+    expect(suggestNames(names, "car", "lain")).toEqual(["carla"]);
+  });
+
+  it("adds everyone and here when allowed", () => {
+    expect(mentionNames({ online: [], authors: [], members: [], all: true })).toEqual(["everyone", "here"]);
+  });
+});
+

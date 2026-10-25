@@ -115,6 +115,14 @@ export const mentionCounts = (
   return out;
 };
 
+// Names "@" suggests: who is online, who wrote in the open chat, and the
+// registered users who are offline (built-in server); for moderators also
+// everyone and here (all).
+export const mentionNames = (s: { online: readonly string[]; authors: readonly string[]; members: readonly string[]; all: boolean }): string[] => [
+  ...new Set([...s.online, ...s.authors, ...s.members]),
+  ...(s.all ? MENTION_ALL : []),
+];
+
 export const SUGGESTIONS = 8; // at most, in a suggestion list
 const byName = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
 

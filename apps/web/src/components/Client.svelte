@@ -67,7 +67,7 @@
   } from "../lib/moderation";
   import { chatSeen, notificationBody, notifier, shouldNotify } from "../lib/notify";
   import { createNotifyLeader } from "../lib/notifyLeader";
-  import { MENTION_ALL, pingsMe, replyPing } from "../lib/mentions";
+  import { mentionNames, pingsMe, replyPing } from "../lib/mentions";
   import { blockedUsers, channelPrefs, collapsedCategories, directPrefs, settings, userAudio } from "../lib/settings.svelte";
   import { textOrder } from "../lib/categories";
   import { forgetPref, isMuted, mutedIds, notifies, prefOf, pushLists, setThreadPref, withoutMuted, withParents, type ChannelPref } from "../lib/channelPrefs";
@@ -924,12 +924,16 @@
       ? null
       : { seconds: textChannel.slowMode, lastPost: lastTurnAt(chat, mine, startedIn(text.threads, id, me, joinedAt)), until: text.slowUntil[id] };
   const slow = $derived(slowIn(textId, textChat));
-  // Names "@" suggests: who is online, and who wrote in the open chat;
-  // for moderators also everyone and here (stored chats, see lib/mentions).
-  const people = $derived([
-    ...new Set([...users.map((u) => u.name), ...textChat.flatMap((m) => (m.actorName ? [m.actorName] : []))]),
-    ...((textId ?? voiceChatId) !== null && canManageText(server, text) ? MENTION_ALL : []),
-  ]);
+  // Names "@" suggests (see lib/mentions); everyone and here only for
+  // moderators of stored chats.
+  const people = $derived(
+    mentionNames({
+      online: users.map((u) => u.name),
+      authors: textChat.flatMap((m) => (m.actorName ? [m.actorName] : [])),
+      members: Object.values(text.members),
+      all: (textId ?? voiceChatId) !== null && canManageText(server, text),
+    }),
+  );
   // One upload at a time. Settles once the server stored the message, or
   // fails (the message box keeps the file and shows why).
   let uploading = $state(false);
