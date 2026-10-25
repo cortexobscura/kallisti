@@ -341,6 +341,12 @@ describe("several files", () => {
     expect(reduceText(initialTextState, parseServerEvent('{"type":"ready","channels":[]}')!).maxUploads).toBe(1);
     expect(reduceText(initialTextState, parseServerEvent('{"type":"ready","channels":[],"maxUploads":0}')!).maxUploads).toBe(1);
   });
+  it("asks for the tokens of several files in one request", () => {
+    expect(JSON.parse(uploadTokenRequest(3))).toEqual({ type: "upload-token", count: 3 });
+    expect(JSON.parse(uploadTokenRequest(1))).toEqual({ type: "upload-token" });
+    expect(parseServerEvent('{"type":"upload-token","token":"a","tokens":["a","b"]}')).toEqual({ type: "upload-token", token: "a", tokens: ["a", "b"] });
+    expect(parseServerEvent('{"type":"upload-token","token":"a","tokens":["a",1]}')).toEqual({ type: "upload-token", token: "a" });
+  });
   it("confirms a send without nonce by any of its files", () => {
     const m = { id: 1, channel: 2, author: "me", text: "", at: 0, uploads: [file("k0"), file("k1")] };
     expect(sendAnswer({ type: "message", message: m }, "n1", "k0")).toEqual({});

@@ -105,11 +105,12 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
   let closeReason = $state("");
   // Text channels from the Kallisti server (unavailable on plain Mumble).
   let text = $state.raw<TextState>(initialTextState);
-  // One upload token request at a time (the UI uploads one file at a time).
+  // One upload token request at a time (the UI sends one message's files
+  // at a time).
   // Live text events for the UI (notifications), after the state took them.
   const textListeners = new Set<(ev: ServerEvent) => void>();
   // emoji: for a custom emoji (a refusal comes as a manage error).
-  let tokenWaiter: { resolve: (token: string) => void; reject: (err: Error) => void; emoji: boolean } | null = null;
+  let tokenWaiter: { resolve: (tokens: string[]) => void; reject: (err: Error) => void; emoji: boolean } | null = null;
   // Tokens asked for over the WebSocket (type: the request and answer).
   // Answered in order; a waiter that timed out leaves the queue, so a late
   // answer cannot go to the wrong one.
@@ -255,7 +256,7 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     // Text frames: the Kallisti server's JSON API. Binary: the Mumble stream.
     if (typeof event.data === "string") {
       const ev = parseServerEvent(event.data);
-      if (ev?.type === "upload-token") tokenWaiter?.resolve(ev.token);
+      if (ev?.type === "upload-token") tokenWaiter?.resolve(ev.tokens ?? [ev.token]);
       else if (ev?.type === "error" && ev.about === "manage" && tokenWaiter?.emoji) tokenWaiter.reject(new Error(ev.message));
       else if (ev?.type === "stream-token" || ev?.type === "recording-token") tokenWaiters[ev.type].shift()?.(ev.token);
       else if (ev && !settleWaiters("text", ev.type === "error" && ev.about === "manage" ? ev.message : null, (w) => w.via === "text" && w.confirms(ev)))
@@ -301,11 +302,11 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     closed = true;
   };
 
-  // An upload: a token over the WebSocket, then the file over HTTP.
-  const upload = async (tokenRequest: string, path: string, file: File, emoji: boolean) => {
+  // Uploads: tokens over the WebSocket (one request), then the files over HTTP.
+  const uploadTokens = (tokenRequest: string, emoji: boolean) => {
     if (ws.readyState !== WebSocket.OPEN) throw new Error("not connected");
     if (tokenWaiter) throw new Error("an upload is already starting");
-    const token = await new Promise<string>((resolve, reject) => {
+    return new Promise<string[]>((resolve, reject) => {
       // The server may answer with an error instead (rate limit): give up
       // after a while, so the next upload can try again.
       const timeout = setTimeout(() => done(() => reject(new Error("no upload token from the server"))), 10_000);
@@ -321,6 +322,8 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
       };
       ws.send(tokenRequest);
     });
+  };
+  const sendFile = async (path: string, file: File, token: string) => {
     const res = await fetch(`${base}${path}`, {
       method: "POST",
       headers: {
@@ -334,6 +337,8 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     if (!res.ok) throw new Error(body.error ?? `upload failed (${res.status})`);
     return body;
   };
+  const upload = async (tokenRequest: string, path: string, file: File, emoji: boolean) =>
+    sendFile(path, file, (await uploadTokens(tokenRequest, emoji))[0]!);
 
   return {
     get state() {
@@ -465,11 +470,19 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
       }),
     // The server's HTTP origin (uploads and files).
     httpBase: base,
-    // Uploads a file and returns its key, to attach with sendToTextChannel.
-    uploadFile: async (file: File): Promise<string> => {
-      const body = await upload(uploadTokenRequest(), "/api/upload", file, false);
-      if (!body.key) throw new Error("upload failed");
-      return body.key;
+    // Uploads files one after another and returns their keys, to attach
+    // with sendConfirmed; onFile: before each.
+    uploadFiles: async (files: readonly File[], onFile?: (index: number) => void): Promise<string[]> => {
+      const tokens = await uploadTokens(uploadTokenRequest(files.length), false);
+      if (tokens.length < files.length) throw new Error("too few upload tokens from the server");
+      const keys = [];
+      for (const [i, file] of files.entries()) {
+        onFile?.(i);
+        const body = await sendFile("/api/upload", file, tokens[i]!);
+        if (!body.key) throw new Error("upload failed");
+        keys.push(body.key);
+      }
+      return keys;
     },
     // Adds a custom emoji (admins and moderators); the list comes as an
     // event.

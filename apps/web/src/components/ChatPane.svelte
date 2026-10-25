@@ -360,7 +360,8 @@
   // Chosen files wait above the message box until they are sent with
   // Enter (with the typed text as caption) or removed; kept per chat in
   // pendingFiles (over another chat, a reconnect, a reload).
-  let pending = $state<Pending[]>([]);
+  // Raw: kept files go to IndexedDB, which cannot store state proxies.
+  let pending = $state.raw<Pending[]>([]);
   const pendingList = $derived(pending.map((p) => p.file));
   const WAIT_UPLOAD = "Wait for the upload to finish";
   // Pictures' previews (object URLs) by file; those of files gone are let go.

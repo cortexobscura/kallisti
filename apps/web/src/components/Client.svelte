@@ -945,13 +945,13 @@
     if (uploading) throw new Error("Wait for the upload to finish");
     uploading = true;
     try {
-      const keys = [];
-      for (const [i, f] of files.entries()) {
-        if (files.length > 1) uploadStep = `Uploading ${i + 1} of ${files.length}…`;
-        keys.push({ key: await connection.uploadFile(f.file), ...(f.description && { description: f.description }) });
-      }
+      const keys = await connection.uploadFiles(
+        files.map((f) => f.file),
+        (i) => files.length > 1 && (uploadStep = `Uploading ${i + 1} of ${files.length}…`),
+      );
       uploadStep = undefined;
-      await connection.sendConfirmed(channel, caption, nonce, keys, reply, noPing);
+      const uploads = keys.map((key, i) => ({ key, ...(files[i]!.description && { description: files[i]!.description }) }));
+      await connection.sendConfirmed(channel, caption, nonce, uploads, reply, noPing);
     } finally {
       uploading = false;
       uploadStep = undefined;

@@ -245,7 +245,7 @@ export type ServerEvent =
       returned?: { channel: number; text: string };
       nonce?: string;
     }
-  | { type: "upload-token"; token: string }
+  | { type: "upload-token"; token: string; tokens?: string[] } // tokens: for several files
   // A message's reactions changed (all of them).
   | { type: "reactions"; channel: number; message: number; reactions: Reaction[] }
   // A message's link preview (null: none).
@@ -715,7 +715,9 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
       return v.about === "manage" || v.about === "rate" ? { ...error, about: v.about } : error;
     }
     case "upload-token":
-      return isStr(v.token) ? { type: "upload-token", token: v.token } : null;
+      return isStr(v.token)
+        ? { type: "upload-token", token: v.token, ...(Array.isArray(v.tokens) && v.tokens.length && v.tokens.every(isStr) && { tokens: v.tokens }) }
+        : null;
     case "resync":
       return { type: "resync" };
     case "typing":
@@ -1050,7 +1052,8 @@ export const sendAnswer = (ev: ServerEvent, nonce: string, upload?: string): { e
   return ours ? {} : null;
 };
 
-export const uploadTokenRequest = () => JSON.stringify({ type: "upload-token" });
+// count: the tokens for the files of one message, in one request.
+export const uploadTokenRequest = (count = 1) => JSON.stringify(count > 1 ? { type: "upload-token", count } : { type: "upload-token" });
 // Custom emoji (admins and moderators; the server checks): a token to
 // upload one, and deleting one.
 export const emojiTokenRequest = (name: string) => JSON.stringify({ type: "emoji-token", name });
