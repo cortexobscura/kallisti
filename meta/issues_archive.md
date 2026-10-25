@@ -274,3 +274,4 @@
 - [x] [Stream controls on phones](issues/stream-controls-touch.md)
 - [x] ["@" suggests all registered users](issues/mention-all-members.md)
 - [x] [Android app (prototype)](issues/android-app.md)
+- [x] [Mention pills for every name "@" suggests](issues/pills-match-suggestions.md)
