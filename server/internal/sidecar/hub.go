@@ -444,6 +444,7 @@ type wireMessage struct {
 	MentionAll string          `json:"mentionAll,omitempty"` // "here" or "everyone"
 	NoPing     bool            `json:"noPing,omitempty"`     // a reply that does not ping
 	Thread     *wireThread     `json:"thread,omitempty"`     // the thread started from it
+	Poll       *wirePoll       `json:"poll,omitempty"`       // a poll message (text: the poll as text)
 }
 
 // wireMsgSticker is the sticker a message is: its id and name (a client
@@ -518,7 +519,10 @@ func (h *Hub) UploadPreview(key string) {
 	}
 }
 
-func toWire(m store.Message) wireMessage {
+func toWire(m store.Message) wireMessage { return toWireFor(m, nil) }
+
+// toWireFor: for one reader (see toWirePoll).
+func toWireFor(m store.Message, viewer *uint32) wireMessage {
 	w := wireMessage{ID: m.ID, Channel: m.ChannelID, Author: m.Author, Text: m.Text, At: m.CreatedAt.UnixMilli(), Verified: m.Verified, AuthorID: m.AuthorID}
 	if !m.EditedAt.IsZero() {
 		w.Edited = m.EditedAt.UnixMilli()
@@ -538,6 +542,9 @@ func toWire(m store.Message) wireMessage {
 	}
 	if s := m.Sticker; s != nil {
 		w.Sticker = &wireMsgSticker{ID: s.ID, Name: s.Name}
+	}
+	if m.Poll != nil {
+		w.Poll = toWirePoll(*m.Poll, viewer)
 	}
 	if len(m.Reactions) > 0 {
 		w.Reactions = toWireReactions(m.Reactions)
@@ -562,9 +569,12 @@ type request struct {
 	Channel     int64            `json:"channel"`
 	Before      int64            `json:"before"`
 	Text        string           `json:"text"`
-	Uploads     []wireAttachment `json:"uploads"`     // send: the uploads to attach, in order
-	Count       int              `json:"count"`       // upload-token: how many (the files of one message)
-	Remove      []string         `json:"remove"`      // edit-message: the keys of files to take off
+	Uploads     []wireAttachment `json:"uploads"` // send: the uploads to attach, in order
+	Count       int              `json:"count"`   // upload-token: how many (the files of one message)
+	Remove      []string         `json:"remove"`  // edit-message: the keys of files to take off
+	Poll        *wirePollRequest `json:"poll"`    // send: a poll message
+	Answers     []int            `json:"answers"` // vote: the answers (none: the vote taken back)
+	poll        *store.Poll      // send: the checked Poll
 	Upload      string           `json:"upload"`      // send: one upload's key (older clients)
 	Message     int64            `json:"message"`     // edit-message, delete-message, create-thread
 	Reply       int64            `json:"reply"`       // send: the message it answers
@@ -597,6 +607,15 @@ type request struct {
 // overLimit answers a request over the rate limit, marked so the client
 // does not show it as a lasting error (a send comes back for the composer),
 // and logs which requests do it, once a minute per connection.
+// composerText goes back to the composer with a refused send (a poll
+// stays in its form).
+func (r request) composerText() string {
+	if r.poll != nil {
+		return ""
+	}
+	return r.Text
+}
+
 func (c *Conn) overLimit(id mumble.Identity, req request) {
 	const text = "too many requests, slow down"
 	c.mu.Lock()
@@ -609,7 +628,7 @@ func (c *Conn) overLimit(id mumble.Identity, req request) {
 		slog.Warn("requests over the limit", "user", id.Name, "session", id.Session, "type", req.Type)
 	}
 	if req.Type == "send" {
-		c.send(map[string]any{"type": "error", "message": text, "about": "refused", "channel": req.Channel, "text": req.Text})
+		c.send(map[string]any{"type": "error", "message": text, "about": "refused", "channel": req.Channel, "text": req.composerText()})
 		return
 	}
 	c.send(map[string]any{"type": "error", "message": text, "about": "rate"})
@@ -628,6 +647,15 @@ func (c *Conn) Handle(raw []byte) {
 	if req.Type == "send" && len(req.Nonce) <= maxNonce {
 		c.setAnswering(req.Nonce)
 		defer c.setAnswering("")
+	}
+	// A poll's text goes through the rules as any text.
+	if req.Type == "send" && req.Poll != nil {
+		p, why := newPoll(*req.Poll, c.hub.now())
+		if why != "" {
+			c.sendError(why)
+			return
+		}
+		req.poll, req.Text = &p, pollText(p)
 	}
 	c.mu.Lock()
 	id, ready := c.identity, c.ready
@@ -679,6 +707,9 @@ func (c *Conn) Handle(raw []byte) {
 		return
 	case "react":
 		c.react(*id, req)
+		return
+	case "vote", "end-poll":
+		c.pollAction(*id, req)
 		return
 	case "pin":
 		c.pin(*id, req)
@@ -946,7 +977,7 @@ func (c *Conn) history(req request) {
 	}
 	wire := make([]wireMessage, len(msgs))
 	for i, m := range msgs {
-		wire[i] = toWire(m)
+		wire[i] = toWireFor(m, c.viewer())
 	}
 	c.send(map[string]any{"type": "history", "channel": req.Channel, "messages": wire, "more": more})
 }
@@ -968,7 +999,18 @@ func (c *Conn) post(id mumble.Identity, req request, ch chat) {
 	if stored() {
 		return
 	}
-	typed := req.Text // what goes back to the composer (slow mode)
+	typed := req.composerText() // what goes back to the composer (slow mode)
+	if req.poll != nil {
+		switch {
+		case !id.Registered:
+			c.sendError("join with an account (or a guest account) to make a poll")
+			return
+		case req.Sticker != 0 || len(req.Uploads) > 0:
+			c.sendError("a poll is sent on its own")
+			return
+		}
+		n.Poll = req.poll
+	}
 	// A sticker is a message of its own; its text is its name, for what
 	// only shows text (Mumble clients, previews, quotes, search).
 	if req.Sticker != 0 {
@@ -1023,36 +1065,42 @@ func (c *Conn) post(id mumble.Identity, req request, ch chat) {
 	if !id.Registered {
 		c.hub.rememberGuest(m.ID, id.Session)
 	}
+	c.hub.deliver(id, ch, m, c, req.Nonce)
+}
+
+// deliver sends a stored message of `from` to the chat's readers (from's
+// connection `by` gets it with the nonce: it confirms that send), the
+// thread's followers, push, and Mumble clients.
+func (h *Hub) deliver(from mumble.Identity, ch chat, m store.Message, by *Conn, nonce string) {
 	if ch.direct {
-		c.hub.announceDirect(ch)
+		h.announceDirect(ch)
 	}
 	if ch.parent != 0 {
-		c.hub.threadFollowers(id, ch, m)
+		h.threadFollowers(from, ch, m)
 	}
-	// The sender's copy has the nonce: it confirms that send.
 	ev := map[string]any{"type": "message", "message": toWire(m)}
 	mine := ev
-	if req.Nonce != "" {
-		mine = map[string]any{"type": "message", "message": ev["message"], "nonce": req.Nonce}
+	if nonce != "" {
+		mine = map[string]any{"type": "message", "message": ev["message"], "nonce": nonce}
 	}
-	for _, conn := range c.hub.readers(ch) {
-		if conn == c {
+	for _, conn := range h.readers(ch) {
+		if conn == by {
 			conn.send(mine)
 		} else {
 			conn.send(ev)
 		}
 	}
 	if ch.direct {
-		c.hub.relayDirect(id, ch, m)
+		h.relayDirect(from, ch, m)
 	}
 	if ch.parent != 0 {
-		c.hub.threadPosted(ch)
+		h.threadPosted(ch)
 	}
-	c.hub.pushFor(ch, m)
+	h.pushFor(ch, m)
 	if ch.isVoice {
-		c.hub.voice.SendChannelText(id.Session, ch.voice, c.hub.mumbleText(m))
-	} else if mirror := c.hub.mirrorOf(req.Channel); mirror != 0 && c.hub.voice != nil {
-		c.hub.voice.SendChannelText(id.Session, mirror, c.hub.mumbleText(m))
+		h.voice.SendChannelText(from.Session, ch.voice, h.mumbleText(m))
+	} else if mirror := h.mirrorOf(ch.id); mirror != 0 && h.voice != nil {
+		h.voice.SendChannelText(from.Session, mirror, h.mumbleText(m))
 	}
 }
 

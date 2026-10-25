@@ -49,7 +49,8 @@ func (s *Server) MayWrite(session, channel uint32) bool {
 
 // SendChannelText delivers a plain text from a user to the others in a
 // channel, as if the user had sent it (for messages written in the web
-// client). Mumble clients read HTML, so it goes out escaped.
+// client); from 0: from the server. Mumble clients read HTML, so it goes
+// out escaped.
 func (s *Server) SendChannelText(from, channel uint32, text string) {
 	if mumbleHTML(text) == "" {
 		return
@@ -61,6 +62,8 @@ func (s *Server) SendChannelText(from, channel uint32, text string) {
 		msg.Actor = proto.Uint32(actor)
 	} else if u := s.state.Users[from]; u != nil {
 		msg.Actor, msg.Message = nil, proto.String(mumbleHTML(u.Name+": "+text))
+	} else if from == 0 {
+		msg.Actor = nil
 	}
 	frame := mumble.MessageFrame(mumble.TypeTextMessage, msg)
 	for _, u := range s.state.Users {

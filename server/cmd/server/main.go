@@ -215,6 +215,7 @@ func run() error {
 		for range time.Tick(time.Minute) {
 			fileHandler.DeleteUnused()
 			hub.ArchiveIdleThreads()
+			hub.EndDuePolls()
 			cleanup(time.Now())
 			if err := accounts.DeleteExpiredSessions(); err != nil {
 				slog.Error("delete expired sessions", "err", err)

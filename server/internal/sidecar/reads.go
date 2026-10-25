@@ -130,7 +130,7 @@ func (c *Conn) search(id mumble.Identity, req request) {
 	}
 	wire := make([]wireMessage, len(msgs))
 	for i, m := range msgs {
-		wire[i] = toWire(m)
+		wire[i] = toWireFor(m, c.viewer())
 	}
 	c.send(map[string]any{"type": "search-results", "text": req.Text, "messages": wire, "threads": c.hub.threadsOf(msgs, threads)})
 }

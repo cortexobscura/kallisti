@@ -7,6 +7,7 @@ import (
 
 	"kallisti.chat/server/internal/msgrules"
 	"kallisti.chat/server/internal/mumble"
+	"kallisti.chat/server/internal/store"
 )
 
 // Message rules: the built-in server checks sends, edits and uploads (see
@@ -39,14 +40,33 @@ func (c *Conn) refused(id mumble.Identity, req *request) bool {
 	}
 	if err != nil {
 		if req.Type == "send" { // the text comes back for the composer
-			c.send(map[string]any{"type": "error", "message": err.Error(), "about": "refused", "channel": req.Channel, "text": req.Text})
+			c.send(map[string]any{"type": "error", "message": err.Error(), "about": "refused", "channel": req.Channel, "text": req.composerText()})
 		} else {
 			c.sendError(err.Error())
 		}
 		return true
 	}
 	*field = text
+	if req.poll != nil { // the replacements in the poll itself too
+		c.replaceWords(id, req.poll)
+		req.Text = pollText(*req.poll)
+	}
 	return false
+}
+
+// replaceWords applies the rules' word replacements to a poll's question
+// and answers (the whole poll passed the rules).
+func (c *Conn) replaceWords(id mumble.Identity, p *store.Poll) {
+	clean := func(s string) string {
+		if text, err := c.hub.voice.CheckMessage(id.Session, msgrules.Message{Text: s}); err == nil && strings.TrimSpace(text) != "" {
+			return oneLine(text)
+		}
+		return s
+	}
+	p.Question = clean(p.Question)
+	for i := range p.Answers {
+		p.Answers[i].Text = clean(p.Answers[i].Text)
+	}
 }
 
 // messageRules answers an admin: the rules, or new ones saved.

@@ -51,7 +51,7 @@ func (c *Conn) pins(req request) {
 	}
 	wire := make([]wireMessage, len(msgs))
 	for i, m := range msgs {
-		wire[i] = toWire(m)
+		wire[i] = toWireFor(m, c.viewer())
 	}
 	c.send(map[string]any{"type": "pins", "channel": req.Channel, "messages": wire})
 }

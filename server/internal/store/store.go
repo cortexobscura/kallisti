@@ -830,8 +830,10 @@ func (s *Store) AddMessage(n NewMessage) (Message, error) {
 	if err := withUploads(tx, msgs); err != nil {
 		return Message{}, err
 	}
-	if err := withPolls(tx, msgs); err != nil {
-		return Message{}, err
+	if n.Poll != nil {
+		if err := withPolls(tx, msgs); err != nil {
+			return Message{}, err
+		}
 	}
 	return msgs[0], tx.Commit()
 }

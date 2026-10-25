@@ -152,7 +152,8 @@ func (s *Store) Vote(message int64, v Voter, answers []int, at time.Time) (Messa
 		return Message{}, err
 	}
 	sorted := slices.Sorted(slices.Values(answers))
-	if len(answers) > 1 && !multiple || len(slices.Compact(slices.Clone(sorted))) != len(sorted) ||
+	distinct := len(slices.Compact(slices.Clone(sorted))) // Compact changes what it gets
+	if len(answers) > 1 && !multiple || distinct != len(sorted) ||
 		len(sorted) > 0 && (sorted[0] < 0 || sorted[len(sorted)-1] >= len(list)) {
 		return Message{}, ErrBadVote
 	}
