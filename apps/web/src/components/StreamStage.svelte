@@ -166,6 +166,14 @@
         <button class="screen" onclick={() => pick(session)} tabindex={sessions.length > 1 ? 0 : -1} aria-label={focusing && session === focused ? "Grid view" : `Focus ${label}`}>
           <canvas use:canvasOf={session} aria-label={label}></canvas>
         </button>
+        {#if pip === session}
+          <!-- The canvas draws on below: the floating window shows it. -->
+          <div class="pip-note">
+            <Icon name="pip" size={28} />
+            <span>Playing in picture-in-picture</span>
+            <button onclick={() => pips.toggle(session)}>Bring it back</button>
+          </div>
+        {/if}
         <div class="overlay">
           <span class="who"><span class="live">{#if isCamera(session)}<Icon name="camera" size={12} /><span class="sr-only">Camera</span>{:else}LIVE{/if}</span> {nameOf(session)}</span>
           <span class="tools">
@@ -301,6 +309,28 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+  }
+  .pip-note {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #111;
+    color: rgb(255 255 255 / 0.8);
+    font-size: 14px;
+    text-align: center;
+  }
+  .pip-note button {
+    padding: 4px 12px;
+    border-radius: 4px;
+    background: rgb(255 255 255 / 0.15);
+    color: #fff;
+  }
+  .pip-note button:hover {
+    background: rgb(255 255 255 / 0.25);
   }
   .overlay {
     position: absolute;
