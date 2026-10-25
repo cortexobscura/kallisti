@@ -998,3 +998,28 @@ func TestMigratesSingleUploads(t *testing.T) {
 		t.Fatalf("upload_id still set: %d", old)
 	}
 }
+
+// An edit can take files off its message (their rows go; the caller deletes
+// the files).
+func TestEditRemovesUploads(t *testing.T) {
+	s := open(t)
+	s.EnsureChannels([]string{"general"})
+	at := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	var atts []Attachment
+	for _, k := range []string{"a", "b", "c"} {
+		u, _ := s.AddUpload(Upload{Key: k, Name: k, Type: "image/png", Size: 1, Author: "alice"}, at)
+		atts = append(atts, Attachment{ID: u.ID})
+	}
+	m, _ := s.AddMessage(NewMessage{ChannelID: 1, Author: "alice", Text: "x", At: at, Uploads: atts})
+	other, _ := s.AddUpload(Upload{Key: "z", Name: "z", Type: "image/png", Size: 1, Author: "alice"}, at)
+	edited, err := s.EditMessage(m.ID, "y", "", at.Add(time.Minute), atts[1].ID, other.ID)
+	if err != nil || edited.Text != "y" || len(edited.Uploads) != 2 || edited.Uploads[0].Key != "a" || edited.Uploads[1].Key != "c" {
+		t.Fatalf("edited %+v %v", edited, err)
+	}
+	if _, err := s.UploadByKey("b"); err == nil {
+		t.Fatal("removed upload still there")
+	}
+	if _, err := s.UploadByKey("z"); err != nil {
+		t.Fatal("another message's (or no message's) upload went too")
+	}
+}

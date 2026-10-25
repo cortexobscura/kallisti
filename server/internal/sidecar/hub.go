@@ -564,6 +564,7 @@ type request struct {
 	Text        string           `json:"text"`
 	Uploads     []wireAttachment `json:"uploads"`     // send: the uploads to attach, in order
 	Count       int              `json:"count"`       // upload-token: how many (the files of one message)
+	Remove      []string         `json:"remove"`      // edit-message: the keys of files to take off
 	Upload      string           `json:"upload"`      // send: one upload's key (older clients)
 	Message     int64            `json:"message"`     // edit-message, delete-message, create-thread
 	Reply       int64            `json:"reply"`       // send: the message it answers

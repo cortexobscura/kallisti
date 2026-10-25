@@ -70,6 +70,45 @@ func TestEditAndDeleteOwnMessages(t *testing.T) {
 	}
 }
 
+// As in Discord: an edit can take files off (not add them); a message
+// keeps text or a file.
+func TestEditRemovesFiles(t *testing.T) {
+	h := newHub(t, "general")
+	var removed []string
+	h.OnUploadDeleted = func(key string) { removed = append(removed, key) }
+	alice := joinAs(t, h, mumble.Identity{Session: 1, Name: "alice", Registered: true, UserID: 435})
+	bob := joinAs(t, h, mumble.Identity{Session: 2, Name: "bob", Registered: true, UserID: 504})
+	for _, k := range []string{"k0", "k1"} {
+		h.store.AddUpload(store.Upload{Key: k, Name: k + ".png", Type: "image/png", Size: 1, Author: "alice"}, clock)
+	}
+	alice.Handle([]byte(`{"type":"send","channel":1,"text":"","uploads":[{"key":"k0"},{"key":"k1"}]}`))
+	id := fmt.Sprint(next(t, alice)["message"].(map[string]any)["id"])
+	next(t, bob)
+	for _, req := range []string{
+		`{"type":"edit-message","message":` + id + `,"text":"","remove":["nope"]}`,    // not its file
+		`{"type":"edit-message","message":` + id + `,"text":"","remove":["k0","k1"]}`, // nothing left
+	} {
+		if alice.Handle([]byte(req)); next(t, alice)["type"] != "error" {
+			t.Fatalf("%s: accepted", req)
+		}
+	}
+	bob.Handle([]byte(`{"type":"edit-message","message":` + id + `,"text":"","remove":["k0"]}`))
+	if next(t, bob)["type"] != "error" {
+		t.Fatal("bob removed a file")
+	}
+	alice.Handle([]byte(`{"type":"edit-message","message":` + id + `,"text":"","remove":["k0"]}`))
+	for _, c := range []*Conn{alice, bob} {
+		m := next(t, c)
+		ups, _ := m["message"].(map[string]any)["uploads"].([]any)
+		if m["type"] != "message-edited" || len(ups) != 1 || ups[0].(map[string]any)["name"] != "k1.png" {
+			t.Fatalf("got %v", m)
+		}
+	}
+	if fmt.Sprint(removed) != "[k0]" {
+		t.Fatalf("files deleted: %v", removed)
+	}
+}
+
 func must(n int, _ error) int { return n }
 
 func TestGuestsEditOnlyWhatTheyWroteThisVisit(t *testing.T) {

@@ -1047,14 +1047,30 @@ func (s *Store) MessageByID(id int64) (Message, error) {
 	return msgs[0], nil
 }
 
-// EditMessage replaces a message's text (and its MentionAll) and returns it.
-func (s *Store) EditMessage(id int64, text, mentionAll string, at time.Time) (Message, error) {
-	res, err := s.db.Exec(`UPDATE messages SET text = ?, edited_at = ?, mention_all = ? WHERE id = ?`, text, at.UnixMilli(), mentionAll, id)
+// EditMessage replaces a message's text (and its MentionAll), takes the
+// uploads `remove` off it (others are left alone; the caller deletes the
+// files), and returns it.
+func (s *Store) EditMessage(id int64, text, mentionAll string, at time.Time, remove ...int64) (Message, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Message{}, err
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(`UPDATE messages SET text = ?, edited_at = ?, mention_all = ? WHERE id = ?`, text, at.UnixMilli(), mentionAll, id)
 	if err != nil {
 		return Message{}, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return Message{}, ErrNotFound
+	}
+	if len(remove) > 0 {
+		in, args := inList(remove)
+		if _, err := tx.Exec(`DELETE FROM uploads WHERE message_id = ? AND id IN (`+in+`)`, append([]any{id}, args...)...); err != nil {
+			return Message{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return Message{}, err
 	}
 	return s.MessageByID(id)
 }

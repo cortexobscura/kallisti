@@ -2,6 +2,7 @@ package sidecar
 
 import (
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -65,12 +66,15 @@ func (c *Conn) changeMessage(id mumble.Identity, req request) {
 	send := func(v any) { h.sendTo(ch, v) }
 	own := h.wrote(id, m)
 	if req.Type == "edit-message" {
-		text, valid := validText(req.Text, len(m.Uploads) > 0)
+		kept, gone, known := splitUploads(m.Uploads, req.Remove)
+		text, valid := validText(req.Text, len(kept) > 0)
 		switch {
 		case !own:
 			c.sendError("you may only edit your own messages")
 		case m.Sticker != nil:
 			c.sendError("a sticker cannot be edited")
+		case !known:
+			c.sendError("unknown upload")
 		case !valid:
 			c.sendError(textError)
 		default:
@@ -79,9 +83,18 @@ func (c *Conn) changeMessage(id mumble.Identity, req request) {
 			if all != "" && mentionAllOf(text) != all {
 				all = ""
 			}
-			if m, err = h.store.EditMessage(m.ID, text, all, h.now()); err != nil {
+			ids := make([]int64, len(gone))
+			for i, u := range gone {
+				ids[i] = u.ID
+			}
+			if m, err = h.store.EditMessage(m.ID, text, all, h.now(), ids...); err != nil {
 				c.sendError("cannot edit the message")
 				return
+			}
+			for _, u := range gone {
+				if h.OnUploadDeleted != nil {
+					h.OnUploadDeleted(u.Key)
+				}
 			}
 			send(map[string]any{"type": "message-edited", "message": toWire(m)})
 			if m.Thread != nil { // its quote
@@ -194,6 +207,22 @@ func (h *Hub) removed(gone []store.Message) {
 	for _, t := range threads {
 		h.threadChanged(t.ID)
 	}
+}
+
+// splitUploads: the uploads an edit keeps and those it takes off (by key);
+// known is false if a key is not one of them.
+func splitUploads(uploads []store.Upload, remove []string) (kept, gone []store.Upload, known bool) {
+	for _, u := range uploads {
+		if slices.Contains(remove, u.Key) {
+			gone = append(gone, u)
+		} else {
+			kept = append(kept, u)
+		}
+	}
+	known = !slices.ContainsFunc(remove, func(k string) bool {
+		return !slices.ContainsFunc(gone, func(u store.Upload) bool { return u.Key == k })
+	})
+	return kept, gone, known
 }
 
 // A message has 1 to MaxTextLength characters; with an attachment it may
