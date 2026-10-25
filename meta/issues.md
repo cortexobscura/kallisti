@@ -15,6 +15,7 @@
 - [ ] [Disconnects when the app is in the background](issues/background-disconnects.md)
 - [ ] [Request ids for manage requests](issues/request-ids.md)
 - [ ] [Mobile apps (Android and iOS) with background calls](issues/mobile-apps.md)
+  - [ ] [Android app (prototype)](issues/android-app.md)
 - [ ] [Desktop app: links do nothing, videos don't play (Linux)](issues/desktop-links-and-video.md)
 - [ ] [WHIP streams: picture and sound out of sync](issues/whip-av-sync.md)
 - [ ] [Desktop (Linux, Wayland): GPU use while minimised](issues/wayland-minimised-gpu.md)
