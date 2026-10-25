@@ -17,12 +17,15 @@ import (
 	"kallisti.chat/server/internal/fedi/fedifake"
 )
 
-func fingerJSON(w http.ResponseWriter, subject, actor, media string) {
+func fingerJSON(t *testing.T, w http.ResponseWriter, subject, actor, media string) {
+	t.Helper()
 	w.Header().Set("Content-Type", "application/jrd+json")
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"subject": subject,
 		"links":   []map[string]string{{"rel": "self", "type": media, "href": actor}},
-	})
+	}); err != nil {
+		t.Errorf("write WebFinger response: %v", err)
+	}
 }
 
 func TestResolveInstanceDiscovery(t *testing.T) {
@@ -43,7 +46,7 @@ func TestResolveInstanceDiscovery(t *testing.T) {
 					http.Redirect(w, r, "/discovery?"+r.URL.RawQuery, http.StatusFound)
 					return
 				}
-				fingerJSON(w, "acct:alice@"+domain, api.URL+"/users/alice", media)
+				fingerJSON(t, w, "acct:alice@"+domain, api.URL+"/users/alice", media)
 			}))
 			defer apex.Close()
 			domain = strings.TrimPrefix(apex.URL, "https://")
@@ -92,19 +95,25 @@ func TestDiscoveryRejectsInvalidDocuments(t *testing.T) {
 				case "fragment":
 					actor += "#other"
 				case "conflicting-links":
-					fmt.Fprintf(w, `{"subject":%q,"links":[{"rel":"self","type":"application/activity+json","href":%q},{"rel":"self","type":"application/activity+json","href":"https://other.example/users/alice"}]}`, subject, actor)
+					if _, err := fmt.Fprintf(w, `{"subject":%q,"links":[{"rel":"self","type":"application/activity+json","href":%q},{"rel":"self","type":"application/activity+json","href":"https://other.example/users/alice"}]}`, subject, actor); err != nil {
+						t.Errorf("write conflicting actor links: %v", err)
+					}
 					return
 				case "too-large":
-					fmt.Fprintf(w, `{"subject":%q,"padding":%q}`, subject, strings.Repeat("a", 65<<10))
+					if _, err := fmt.Fprintf(w, `{"subject":%q,"padding":%q}`, subject, strings.Repeat("a", 65<<10)); err != nil {
+						t.Errorf("write oversized response: %v", err)
+					}
 					return
 				case "not-json":
-					fmt.Fprint(w, "not JSON")
+					if _, err := fmt.Fprint(w, "not JSON"); err != nil {
+						t.Errorf("write malformed response: %v", err)
+					}
 					return
 				case "not-found":
 					http.NotFound(w, r)
 					return
 				}
-				fingerJSON(w, subject, actor, media)
+				fingerJSON(t, w, subject, actor, media)
 			}))
 			defer srv.Close()
 			domain = strings.TrimPrefix(srv.URL, "https://")
@@ -130,7 +139,7 @@ func TestDiscoverHandleConfirmsTheAccountDomain(t *testing.T) {
 					http.NotFound(w, r)
 					return
 				}
-				fingerJSON(w, subject, actor, "application/activity+json")
+				fingerJSON(t, w, subject, actor, "application/activity+json")
 			}))
 			defer apex.Close()
 			domain = strings.TrimPrefix(apex.URL, "https://")
@@ -142,7 +151,7 @@ func TestDiscoverHandleConfirmsTheAccountDomain(t *testing.T) {
 				if failure == "foreign-actor" {
 					actor = apex.URL + "/users/alice"
 				}
-				fingerJSON(w, subject, actor, "application/activity+json")
+				fingerJSON(t, w, subject, actor, "application/activity+json")
 			}))
 			defer api.Close()
 			apiURL = api.URL
@@ -181,7 +190,7 @@ func TestDiscoveryNetworkLimits(t *testing.T) {
 					http.Redirect(w, r, r.URL.String(), http.StatusFound)
 					return
 				}
-				fingerJSON(w, "acct:alice@"+domain, "https://social.example/users/alice", "application/activity+json")
+				fingerJSON(t, w, "acct:alice@"+domain, "https://social.example/users/alice", "application/activity+json")
 			}))
 			defer srv.Close()
 			domain = strings.TrimPrefix(srv.URL, "https://")

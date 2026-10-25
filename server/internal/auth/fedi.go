@@ -261,15 +261,7 @@ func (a *Service) fediStart(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "log in with the fediverse account linked to this account"})
 			return
 		}
-		// A display handle may name another domain. Reauthenticate at the
-		// stored API host, not a host supplied by the browser or discovery.
-		inst, err = fedi.ParseInstance(id.Host, a.Fedi.Dev)
-		if a.Fedi.Dev {
-			// Preserve plain HTTP for local development instances only.
-			if typed, parseErr := fedi.ParseInstance(c.Instance, true); parseErr == nil && typed.Host == id.Host {
-				inst, err = typed, nil
-			}
-		}
+		inst, err = a.Fedi.reauthInstance(id.Host, c.Instance)
 		flow.link, flow.session, flow.reauth = acc.ID, SessionKey(r), true
 	} else if c.Link {
 		acc, ok := a.AccountFor(r)
@@ -313,6 +305,28 @@ func (a *Service) fediStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"url": authorize})
+}
+
+// reauthInstance uses the stored API host, never the display handle's domain.
+func (f *FediLogin) reauthInstance(host, input string) (fedi.Instance, error) {
+	if f.Dev {
+		// Preserve plain HTTP for local development instances only.
+		if typed, err := fedi.ParseInstance(input, true); err == nil && typed.Host == host {
+			return typed, nil
+		}
+	}
+	return fedi.ParseInstance(host, f.Dev)
+}
+
+// displayHandle prefers a confirmed account-domain address. OAuth already
+// established the account, so optional discovery failure keeps logins working.
+func (f *FediLogin) displayHandle(ctx context.Context, inst fedi.Instance, remote fedi.Account) string {
+	handle, err := f.Client.DiscoverHandle(ctx, inst, remote.Username, f.Dev)
+	if err != nil {
+		slog.Debug("fediverse display handle", "instance", inst.Host, "err", err)
+		return remote.Handle(inst)
+	}
+	return handle
 }
 
 // fediApp is our app on the instance, registered on first use (and again
@@ -388,14 +402,7 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 		back("error", "unreachable")
 		return
 	}
-	handle := remote.Handle(flow.inst)
-	if discovered, err := a.Fedi.Client.DiscoverHandle(r.Context(), flow.inst, remote.Username, a.Fedi.Dev); err == nil {
-		handle = discovered
-	} else {
-		// OAuth establishes the account; optional display discovery must
-		// not break logins on servers without WebFinger.
-		slog.Debug("fediverse display handle", "instance", flow.inst.Host, "err", err)
-	}
+	handle := a.Fedi.displayHandle(r.Context(), flow.inst, remote)
 	id := store.FediIdentity{Host: flow.inst.Host, RemoteID: remote.ID, Handle: handle}
 	if flow.reauth {
 		back(a.fediReauth(linkTo, flow.session, id))
