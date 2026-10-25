@@ -84,7 +84,8 @@ try {
   );
   await run(stubMicrophone);
   await click(general); // a real click: a user gesture for audio
-  await waitFor("the microphone", `return !!window.__mic`);
+  // Safari on the CI machine can take over 20 s to start the microphone.
+  await waitFor("the microphone", `return !!window.__mic`, browser === "safari" ? 45_000 : 20_000);
   console.log("voice:", await run(`return document.querySelector('[aria-label="Your status"]')?.textContent.replace(/\\s+/g, " ")`));
   console.log("audio:", await run(`return window.__mic.context.state`));
   await sleep(2000);

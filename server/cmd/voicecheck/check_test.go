@@ -69,3 +69,41 @@ func TestASpurtRunningAtTheEndIsOpen(t *testing.T) {
 		t.Fatalf("report %+v", r)
 	}
 }
+
+// A sender that stalls (nothing for a moment, then the waiting packets at
+// once, frame numbers going on) has not ended its spurt: a stall, reported,
+// up to maxStall. A longer pause still ends the spurt.
+func TestAStallIsNotASpurtEnd(t *testing.T) {
+	t0 := time.Unix(0, 0)
+	ps := makeSpurt(t0, 0, 91)
+	for i := 26; i < len(ps); i++ {
+		ps[i].at = ps[i].at.Add(600 * time.Millisecond)
+	}
+	r := check(ps, ps[len(ps)-1].at.Add(time.Second))
+	if len(r.spurts) != 1 || !r.ok() || r.spurts[0].stalls != 1 || r.spurts[0].packets != 91 {
+		t.Fatalf("report %+v", r)
+	}
+	if s := r.spurts[0].String(); s != "frames 0-180, 91 packets: ok, 1 stall (longest 620 ms)" {
+		t.Fatalf("%q", s)
+	}
+	for i := 26; i < len(ps); i++ {
+		ps[i].at = ps[i].at.Add(time.Second)
+	}
+	if r := check(ps, ps[len(ps)-1].at.Add(time.Second)); len(r.spurts) != 2 || r.ok() {
+		t.Fatalf("a long pause: %+v", r)
+	}
+}
+
+// A pause where frame numbers jump is still a spurt end.
+func TestAPauseWithAJumpEndsTheSpurt(t *testing.T) {
+	t0 := time.Unix(0, 0)
+	ps := makeSpurt(t0, 0, 20)
+	ps[9].terminator = false
+	for i := 10; i < len(ps); i++ {
+		ps[i].at = ps[i].at.Add(500 * time.Millisecond)
+		ps[i].frame += 50
+	}
+	if r := check(ps, ps[len(ps)-1].at.Add(time.Second)); len(r.spurts) != 2 || r.ok() {
+		t.Fatalf("report %+v", r)
+	}
+}
