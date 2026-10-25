@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fullScreenStep, gridColumns, nextFocus, stripOf } from "../src/lib/stream/layout";
+import { fullScreenStep, gridColumns, nextFocus, stripOf, tapAction } from "../src/lib/stream/layout";
 
 describe("gridColumns", () => {
   it("is one column for one tile or none", () => {
@@ -61,3 +61,15 @@ describe("fullScreenStep", () => {
     expect(fullScreenStep("tile", "tile")).toBe("exit");
   });
 });
+
+describe("tapAction", () => {
+  it("with a mouse: a click picks the stream (focus or back to the grid)", () => {
+    expect(tapAction({ touch: false, shown: false })).toBe("pick");
+  });
+
+  it("on a touch screen: the first tap shows the controls, the next one picks", () => {
+    expect(tapAction({ touch: true, shown: false })).toBe("show");
+    expect(tapAction({ touch: true, shown: true })).toBe("pick");
+  });
+});
+

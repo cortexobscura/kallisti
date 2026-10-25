@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Icon from "./Icon.svelte";
-  import { fullScreenStep, gridColumns, nextFocus, stripOf, type StageView } from "../lib/stream/layout";
+  import { fullScreenStep, gridColumns, nextFocus, stripOf, tapAction, type StageView } from "../lib/stream/layout";
   import { createPip } from "../lib/stream/pip";
   import { isCamera } from "../lib/stream/protocol";
   import { streamLabel } from "../lib/stream/quality";
@@ -81,6 +81,25 @@
     focused = session;
   };
 
+  // Touch screens: no hover, so a tap shows a stream's controls for a few
+  // seconds (see tapAction); using them keeps them.
+  const touch = matchMedia("(hover: none)").matches;
+  let shown = $state<number | null>(null);
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  const reveal = (session: number) => {
+    shown = session;
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => (shown = null), 3000);
+  };
+  $effect(() => () => clearTimeout(hideTimer));
+  const tap = (session: number) => {
+    if (tapAction({ touch, shown: shown === session }) === "show") return reveal(session);
+    pick(session);
+    if (touch) shown = null;
+  };
+  // iPhones have no full screen for page elements (only for videos).
+  const fullScreenSupported = document.fullscreenEnabled === true;
+
   const fullScreen = (el: Element | null | undefined) => {
     if (!el) return;
     if (fullScreenStep(document.fullscreenElement, el) === "exit") void document.exitFullscreen();
@@ -153,9 +172,11 @@
           {stripHidden ? "Show others" : "Hide others"}
         </button>
       {/if}
-      <button onclick={() => fullScreen(stage)} title="Full screen" aria-label="Full screen, all streams">
-        <Icon name="fullscreen" />
-      </button>
+      {#if fullScreenSupported}
+        <button onclick={() => fullScreen(stage)} title="Full screen" aria-label="Full screen, all streams">
+          <Icon name="fullscreen" />
+        </button>
+      {/if}
     </div>
   {/if}
   <div class="tiles" class:many={sessions.length > 1} bind:clientWidth={width} bind:clientHeight={height} style:--cols={cols} style:--strip={strip.length} style:--share={share}>
@@ -163,7 +184,7 @@
       {@const at = strip.indexOf(session)}
       {@const label = streamLabel(nameOf(session), isCamera(session))}
       <div class="tile" class:focused={focusing && session === focused} style:grid-column={at >= 0 ? at + 2 : null}>
-        <button class="screen" onclick={() => pick(session)} tabindex={sessions.length > 1 ? 0 : -1} aria-label={focusing && session === focused ? "Grid view" : `Focus ${label}`}>
+        <button class="screen" onclick={() => tap(session)} tabindex={sessions.length > 1 ? 0 : -1} aria-label={focusing && session === focused ? "Grid view" : `Focus ${label}`}>
           <canvas use:canvasOf={session} aria-label={label}></canvas>
         </button>
         {#if pip === session}
@@ -174,7 +195,8 @@
             <button onclick={() => pips.toggle(session)}>Bring it back</button>
           </div>
         {/if}
-        <div class="overlay">
+        <!-- svelte-ignore a11y_no_static_element_interactions (only keeps the controls shown) -->
+        <div class="overlay" class:shown={shown === session} onpointerdown={() => touch && reveal(session)}>
           <span class="who"><span class="live">{#if isCamera(session)}<Icon name="camera" size={12} /><span class="sr-only">Camera</span>{:else}LIVE{/if}</span> {nameOf(session)}</span>
           <span class="tools">
             {#if volumeOf(session) !== undefined}
@@ -193,7 +215,9 @@
                 <Icon name="pip" size={16} />
               </button>
             {/if}
-            <button onclick={(e) => fullScreen(e.currentTarget.closest(".tile"))} title="Full screen" aria-label="Full screen">⛶</button>
+            {#if fullScreenSupported}
+              <button onclick={(e) => fullScreen(e.currentTarget.closest(".tile"))} title="Full screen" aria-label="Full screen">⛶</button>
+            {/if}
             <button onclick={() => onClose(session)} title="Stop watching" aria-label="Stop watching {label}">×</button>
           </span>
         </div>
@@ -353,7 +377,8 @@
     text-overflow: ellipsis;
   }
   .tile:hover .overlay,
-  .tile:focus-within .overlay {
+  .tile:focus-within .overlay,
+  .overlay.shown {
     opacity: 1;
   }
   .live {
@@ -390,6 +415,32 @@
   .tools button:hover,
   .bar button:hover {
     background: rgb(255 255 255 / 0.15);
+  }
+  /* Full screen covers the system bars (phones): keep clear of them. */
+  .tile:fullscreen .overlay,
+  .stage:fullscreen .bar {
+    padding-top: max(6px, var(--safe-top));
+    padding-right: max(8px, var(--safe-right));
+    padding-left: max(8px, var(--safe-left));
+  }
+  .stage:fullscreen {
+    padding-bottom: max(8px, var(--safe-bottom));
+  }
+  /* Touch screens: controls a finger can hit, and none while hidden. */
+  @media (hover: none) {
+    .overlay:not(.shown) .tools {
+      pointer-events: none;
+    }
+    .tools button,
+    .bar button {
+      justify-content: center;
+      min-width: 44px;
+      min-height: 44px;
+    }
+    .tools input {
+      width: 120px;
+      height: 32px;
+    }
   }
   @media (max-width: 700px) {
     .stage {

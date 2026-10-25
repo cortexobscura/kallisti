@@ -30,3 +30,8 @@ export const stripOf = (sessions: number[], focused: number | null): number[] =>
 // full screen, else puts it there (a tile of the full screen stage too: its
 // own button then goes back to the stage).
 export const fullScreenStep = <T>(current: T | null, target: T): "enter" | "exit" => (current === target ? "exit" : "enter");
+
+// A tap or click on a stream. A mouse shows the controls on hover, so a
+// click picks it (focus, or back to the grid). On a touch screen the first
+// tap shows its controls, the next picks: no switch by accident.
+export const tapAction = ({ touch, shown }: { touch: boolean; shown: boolean }): "show" | "pick" => (touch && !shown ? "show" : "pick");
