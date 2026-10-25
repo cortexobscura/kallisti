@@ -35,7 +35,20 @@
   import { escapeHtml, type ChatMessage } from "@kallisti/protocol";
   import { formatSize, type Attachment, type DisplayMessage } from "../lib/textChannels";
   import { replyBoxText, type Thread } from "../lib/threads";
-  import { afterUpload, canAttach, clipboardImage, emptyPaste, keepDraft, pastedFiles, refusedDraft, switchDraft, tooLarge, uploadTitle, type Drafts } from "../lib/composer";
+  import {
+    addFiles,
+    afterUpload,
+    canAttach,
+    clipboardImage,
+    emptyPaste,
+    keepDraft,
+    pastedFiles,
+    refusedDraft,
+    switchDraft,
+    uploadTitle,
+    type Drafts,
+    type OutgoingUpload,
+  } from "../lib/composer";
   import { createPendingFiles, type Pending, type PendingFiles } from "../lib/pendingFiles";
   import { linuxApp } from "../lib/desktop";
   import { formatSeconds, slowLeft } from "../lib/slowMode";
@@ -63,7 +76,9 @@
     error = null,
     onUpload,
     uploading = false,
+    uploadStep,
     uploadMax,
+    maxUploads = 1,
     returned = null,
     stickers = [],
     onSticker,
@@ -220,13 +235,15 @@
     // threads and these: notification settings and the chat's link.
     phone?: boolean;
     details?: Pick<ComponentProps<typeof ChannelSheet>, "notify" | "onNotify"> & { link?: string };
-    // Text channels: attach a file (button, paste or drop), with a caption.
+    // Text channels: attach files (button, paste or drop), with a caption.
     // Settles once the server confirmed the message; fails with why (busy,
-    // upload failed, refused, no answer, disconnected: the file stays).
-    // nonce: the same for each retry of this file (see lib/pendingFiles).
-    onUpload?: (file: File, caption: string, nonce: string, reply?: number, noPing?: boolean) => Promise<void>;
+    // upload failed, refused, no answer, disconnected: the files stay).
+    // nonce: the same for each retry of these files (see lib/pendingFiles).
+    onUpload?: (files: OutgoingUpload[], caption: string, nonce: string, reply?: number, noPing?: boolean) => Promise<void>;
     uploading?: boolean;
+    uploadStep?: string; // how far the upload is ("Uploading 2 of 5…")
     uploadMax?: number; // the server's limit per file (bytes)
+    maxUploads?: number; // files per message
     // The server's stickers (urls absolute) and sending one as a message
     // of its own (stored chats; settles once the server stored it).
     stickers?: readonly Sticker[];
@@ -340,35 +357,45 @@
   const unblock = (groups: MessageGroup[]) => (unblocked = new Set([...unblocked, ...groups.map(groupKey)]));
   // Spoiler attachments shown (by URL).
   let shownFiles = $state<ReadonlySet<string>>(new Set());
-  // A chosen file waits above the message box until it is sent with Enter
-  // (with the typed text as caption) or cancelled; kept per chat in
+  // Chosen files wait above the message box until they are sent with
+  // Enter (with the typed text as caption) or removed; kept per chat in
   // pendingFiles (over another chat, a reconnect, a reload).
-  let pending = $state<(Pending & { preview: string | null }) | null>(null);
+  let pending = $state<Pending[]>([]);
+  const pendingList = $derived(pending.map((p) => p.file));
   const WAIT_UPLOAD = "Wait for the upload to finish";
-  const showPending = (next: Pending | null) => {
-    if (pending?.preview) URL.revokeObjectURL(pending.preview);
-    pending = next && { ...next, preview: next.file.type.startsWith("image/") ? URL.createObjectURL(next.file) : null };
+  // Pictures' previews (object URLs) by file; those of files gone are let go.
+  let previews = $state(new Map<File, string>());
+  const showPending = (next: readonly Pending[] | undefined) => {
+    pending = [...(next ?? [])];
+    const kept = new Map<File, string>();
+    for (const { file } of pending) {
+      const url = previews.get(file) ?? (file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined);
+      if (url) kept.set(file, url);
+    }
+    for (const [file, url] of previews) if (!kept.has(file)) URL.revokeObjectURL(url);
+    previews = kept;
+  };
+  const setPending = (next: Pending[]) => {
+    showPending(next);
+    pendingFiles.set(chat, next, uploadMax);
   };
   const cancelPending = () => {
     pendingFiles.clear(chat);
-    showPending(null);
+    showPending([]);
   };
-  const togglePendingSpoiler = () => {
-    if (!pending) return;
-    pending.spoiler = !pending.spoiler;
-    pendingFiles.set(chat, { file: pending.file, spoiler: pending.spoiler }, uploadMax);
-  };
+  const removePending = (i: number) => setPending(pending.filter((_, j) => j !== i));
+  const togglePendingSpoiler = (i: number) => setPending(pending.map((p, j) => (j === i ? { ...p, spoiler: !p.spoiler } : p)));
   const sendFiles = (files: ArrayLike<File> | null | undefined) => {
-    const file = files?.[0];
-    if (!file) return;
-    if (!canAttach(!!onUpload, uploading)) {
-      if (uploading) notify(WAIT_UPLOAD);
+    const picked = Array.from(files ?? []);
+    if (!picked.length) return;
+    if (!canAttach(!!onUpload, uploading || !!sendStatus?.sending)) {
+      if (onUpload) notify(WAIT_UPLOAD);
       return;
     }
-    const big = tooLarge(file.size, uploadMax);
-    if (big) return notify(big);
-    showPending({ file, spoiler: false });
-    pendingFiles.set(chat, { file, spoiler: false }, uploadMax);
+    const added = addFiles(pending, picked, maxUploads, uploadMax);
+    if (added.note) notify(added.note);
+    if (added.files.length === pending.length) return;
+    setPending(added.files);
     messageInput?.focus(); // after the file picker or a drop: Enter sends
   };
   let returnedSeen = 0; // each refusal fills the box once
@@ -383,16 +410,16 @@
   // this pane closes; draftFor: the chat of `draft`. A waiting file stays
   // in pendingFiles and comes back with its chat.
   const chat = $derived(chatKey ?? target);
-  // The waiting file's send (also one a pane before a reconnect started):
-  // sending, or why it failed. A send that ends elsewhere takes it here too.
+  // The waiting files' send (also one a pane before a reconnect started):
+  // sending, or why it failed. A send that ends elsewhere takes them here too.
   let filesChanged = $state(0);
   $effect(() =>
     pendingFiles.watch(() => {
       filesChanged++;
-      if (pending && !pendingFiles.holds(chat, pending.file)) showPending(null);
+      if (pending.length && !pendingFiles.holds(chat, pendingList)) showPending(pendingFiles.current(chat));
     }),
   );
-  const sendStatus = $derived((void filesChanged, pending && pendingFiles.status(chat, pending.file)));
+  const sendStatus = $derived((void filesChanged, pending.length ? pendingFiles.status(chat, pendingList) : undefined));
   let draftFor = "";
   $effect(() => {
     const to = chat;
@@ -400,9 +427,9 @@
       if (to === draftFor) return;
       ({ drafts: drafts.value, draft } = switchDraft(drafts.value, draftFor, to, draft));
       draftFor = to;
-      showPending(null);
+      showPending([]);
       void pendingFiles.get(to).then((back) => {
-        if (back && !closed && chat === to && !pending) showPending(back);
+        if (back && !closed && chat === to && !pending.length) showPending(back);
       });
       replying = null;
       editing = null;
@@ -415,7 +442,7 @@
   $effect(() => () => {
     closed = true;
     drafts.value = keepDraft(drafts.value, draftFor, draft);
-    showPending(null);
+    showPending([]);
   });
   const onPaste = (event: ClipboardEvent) => {
     if (!onUpload) return;
@@ -444,17 +471,20 @@
   const submit = (event: SubmitEvent) => {
     event.preventDefault();
     const text = draft.trim();
-    if (slowWait > 0 && (text || pending)) return void notify(`Slow mode: wait ${waitText}`);
-    if (pending && onUpload) {
-      // The file waits while another one is sent (see canAttach).
+    if (slowWait > 0 && (text || pending.length)) return void notify(`Slow mode: wait ${waitText}`);
+    if (pending.length && onUpload) {
+      // The files wait while others are sent (see canAttach).
       if (uploading || sendStatus?.sending) return void notify(WAIT_UPLOAD);
-      const { file, spoiler } = pending;
-      const sent = { chat, caption: text, file, reply: replying?.id };
+      // More than the server takes (kept from another server or a reload).
+      if (pending.length > maxUploads) return void notify(`At most ${maxUploads} files per message: remove ${pending.length - maxUploads}.`);
+      const files = pending;
+      const sent = { chat, caption: text, files: files.map((p) => p.file), reply: replying?.id };
       sentAway ||= away;
       const [upload, caption, noPing] = [onUpload, withRefs(text), replying ? !replying.ping : undefined];
-      void pendingFiles.send(chat, file, (nonce) => upload(asSpoiler(file, spoiler), caption, nonce, sent.reply, noPing)).then((ok) => {
-        const done = afterUpload(ok, sent, { chat: closed ? "" : chat, draft, file: pending?.file, drafts: drafts.value });
-        if (done.file) showPending(null);
+      const outgoing = files.map((p) => ({ file: asSpoiler(p.file, p.spoiler), description: p.description }));
+      void pendingFiles.send(chat, sent.files, (nonce) => upload(outgoing, caption, nonce, sent.reply, noPing)).then((ok) => {
+        const done = afterUpload(ok, sent, { chat: closed ? "" : chat, draft, files: pendingList, drafts: drafts.value });
+        if (done.files) showPending([]);
         if (done.caption) draft = "";
         drafts.value = done.drafts;
         if (ok && replying?.id === sent.reply) replying = null;
@@ -1062,22 +1092,32 @@
         {/if}
       </div>
     {:else}
-      {#if pending}
+      {#if pending.length}
         <div class="pending">
-          {#if pending.preview}
-            <img src={pending.preview} alt="" onerror={(e) => e.currentTarget.remove()} />
-          {/if}
-          <span class="pending-name ellipsis">{pending.file.name}</span>
-          <span class="file-size">{formatSize(pending.file.size)}</span>
           {#if sendStatus}
             <span class="pending-status ellipsis" class:failed={!sendStatus.sending} role="status"
-              >{sendStatus.sending ? "Sending…" : `Not sent: ${sendStatus.error}`}</span
+              >{sendStatus.sending ? (uploadStep ?? "Sending…") : `Not sent: ${sendStatus.error}`}</span
             >
           {/if}
-          <button type="button" class="pending-spoiler" aria-pressed={pending.spoiler} onclick={togglePendingSpoiler}
-            >Spoiler</button
-          >
-          <button type="button" class="pending-cancel" onclick={cancelPending} aria-label="Remove attachment">×</button>
+          <ul class="pending-files" aria-label="Files to send">
+            {#each pending as p, i (p.file)}
+              <li class="pending-file">
+                {#if previews.has(p.file)}
+                  <img src={previews.get(p.file)} alt="" onerror={(e) => e.currentTarget.remove()} />
+                {/if}
+                <span class="pending-name ellipsis" title={p.file.name}>{p.file.name}</span>
+                <span class="file-size">{formatSize(p.file.size)}</span>
+                <span class="pending-actions">
+                  <button type="button" class="pending-spoiler" aria-pressed={p.spoiler} disabled={sendStatus?.sending}
+                    aria-label="Spoiler {p.file.name}" onclick={() => togglePendingSpoiler(i)}>Spoiler</button
+                  >
+                  <button type="button" class="pending-cancel" disabled={sendStatus?.sending} onclick={() => removePending(i)}
+                    aria-label="Remove {p.file.name}">×</button
+                  >
+                </span>
+              </li>
+            {/each}
+          </ul>
         </div>
       {/if}
       {#if replying}
@@ -1099,7 +1139,7 @@
           type="button"
           class="attach"
           class:busy={uploading}
-          title={uploading ? "Uploading…" : onUpload ? uploadTitle(uploadMax) : "Uploads work in text channels and stored voice channel chats"}
+          title={uploading ? "Uploading…" : onUpload ? uploadTitle(uploadMax, maxUploads) : "Uploads work in text channels and stored voice channel chats"}
           aria-label="Upload a file"
           disabled={!canAttach(!!onUpload, uploading)}
           onclick={() => filePicker?.click()}
@@ -1108,6 +1148,7 @@
         </button>
         <input
           type="file"
+          multiple={maxUploads > 1}
           class="sr-only"
           tabindex="-1"
           bind:this={filePicker}
@@ -1138,7 +1179,7 @@
             // Enter picks a word in an input method (229: Safari, after
             // compositionend).
             if (e.isComposing || e.keyCode === 229) return;
-            if (e.key === "ArrowUp" && !e.altKey && draft === "" && !pending && editLast()) {
+            if (e.key === "ArrowUp" && !e.altKey && draft === "" && !pending.length && editLast()) {
               e.preventDefault();
               return;
             }
@@ -1149,11 +1190,11 @@
               return;
             }
             if (e.key === "Escape" && replying) replying = null;
-            else if (e.key === "Escape" && pending) cancelPending();
+            else if (e.key === "Escape" && pending.length && !sendStatus?.sending) cancelPending();
           }}
           {...box.aria}
           bind:value={draft}
-          placeholder={cannotWrite ?? (pending ? "Add a caption (optional), Enter to send" : onSend ? `Message ${target}` : `${title} left the server`)}
+          placeholder={cannotWrite ?? (pending.length ? "Add a caption (optional), Enter to send" : onSend ? `Message ${target}` : `${title} left the server`)}
           disabled={!onSend || !!cannotWrite}
           aria-label="Message"
         ></textarea>
@@ -1179,7 +1220,7 @@
           {/if}
           <!-- Touch screens: a send button (Enter is the only other way).
                The press keeps the keyboard open. -->
-          {#if draft.trim() || pending}
+          {#if draft.trim() || pending.length}
             <button type="submit" class="send-button" aria-label="Send" title="Send" onpointerdown={(e) => e.preventDefault()}>
               <Icon name="send" size={20} />
             </button>
@@ -2299,25 +2340,56 @@
     font-size: 12px;
   }
   .pending {
-    display: flex;
-    align-items: center;
-    gap: 10px;
     margin-bottom: 8px;
     padding: 8px 12px;
     border-radius: 8px;
     background: var(--bg-sidebar);
   }
-  .pending img {
-    width: 48px;
-    height: 48px;
+  /* A row of cards, as in Discord; it scrolls sideways. */
+  .pending-files {
+    display: flex;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    overflow-x: auto;
+    list-style: none;
+  }
+  .pending-file {
+    position: relative;
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 2px;
+    width: 140px;
+    min-height: 96px;
+    padding: 6px;
     border-radius: 6px;
+    background: var(--bg-main);
+  }
+  .pending-file img {
+    width: 100%;
+    height: 96px;
+    border-radius: 4px;
     object-fit: cover;
   }
-  .pending-name {
-    flex: 1;
+  .pending-actions {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: flex;
+    gap: 4px;
+  }
+  .pending-actions button {
+    background: var(--bg-sidebar);
+  }
+  .pending-actions button:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
   .pending-status {
-    max-width: 40%;
+    display: block;
+    margin-bottom: 6px;
     font-size: 12px;
     color: var(--text-muted);
   }
@@ -2325,6 +2397,8 @@
     color: var(--danger);
   }
   .pending-cancel {
+    padding: 0 6px;
+    border-radius: 4px;
     font-size: 20px;
     line-height: 1;
     color: var(--text-muted);

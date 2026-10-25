@@ -1,8 +1,9 @@
+import { sameFiles, type Pending } from "./pendingFiles";
 import type { View } from "./place";
 
 // The message box of a chat (see ChatPane).
 
-// One upload at a time: no new file waits while one is sent.
+// One send of files at a time: no new file waits while one is sent.
 export const canAttach = (uploads: boolean, uploading: boolean) => uploads && !uploading;
 
 // Files in a paste: some engines give a pasted image only as an item, not
@@ -43,18 +44,39 @@ export const refusedDraft = (draft: string, text: string) => (draft.trim() ? dra
 const mb = (bytes: number) => `${+(bytes / 1024 / 1024).toFixed(1)} MB`;
 export const tooLarge = (size: number, max: number | undefined) =>
   max && size > max ? `The file is too large (at most ${mb(max)}).` : null;
+// A file to upload with a message (spoiler: in its name, see lib/media).
+export type OutgoingUpload = { file: File; description?: string };
+
+// Picked files join the waiting ones: those over the size limit are left
+// out one by one, and only `max` files go in one message (note: why some
+// were left out). With one file per message, a pick replaces the waiting
+// file.
+export const addFiles = (waiting: readonly Pending[], picked: readonly File[], max: number, sizeMax: number | undefined) => {
+  const notes: string[] = [];
+  const fits = picked.filter((file) => {
+    const big = tooLarge(file.size, sizeMax);
+    if (big) notes.push(`${file.name}: ${big[0]!.toLowerCase()}${big.slice(1)}`);
+    return !big;
+  });
+  const files = [...(max === 1 && fits.length ? [] : waiting), ...fits.map((file) => ({ file, spoiler: false }))];
+  if (files.length > max && max > 1) notes.push(max === 1 ? "One file per message on this server." : `At most ${max} files per message.`);
+  return { files: files.slice(0, max), note: notes.join(" ") || null };
+};
 // The upload button's tooltip, with the limit if known.
-export const uploadTitle = (max: number | undefined) => (max ? `Upload a file (up to ${mb(max)})` : "Upload a file");
+export const uploadTitle = (max: number | undefined, count = 1) => {
+  const what = count > 1 ? "Upload files" : "Upload a file";
+  return max ? `${what} (up to ${mb(max)}${count > 1 ? " each" : ""})` : what;
+};
 
 // The open chat, for its draft: channels by id (voice channel names
 // repeat in the tree, a rename keeps the draft), private chats by name.
 export const chatKeyOf = (view: View, voiceChannel: number) =>
   view.kind === "text" ? `text ${view.id}` : view.kind === "dm" ? `dm ${view.name}` : `voice ${voiceChannel}`;
 
-type Sent = { chat: string; caption: string; file: File };
-type Now = { chat: string; draft: string; file: File | undefined; drafts: ReadonlyMap<string, string> };
+type Sent = { chat: string; caption: string; files: readonly File[] };
+type Now = { chat: string; draft: string; files: readonly File[]; drafts: ReadonlyMap<string, string> };
 
-// What goes after an upload finished: only a success takes the file and
+// What goes after an upload finished: only a success takes the files and
 // the caption (a failure leaves them for a retry), and only while they
 // are still what was sent (the same chat, the caption not changed). A
 // caption kept as the draft of the chat we left goes from `drafts`.
@@ -62,7 +84,7 @@ export const afterUpload = (ok: boolean, sent: Sent, now: Now) => {
   const here = now.chat === sent.chat;
   const kept = ok && !here && now.drafts.get(sent.chat)?.trim() === sent.caption;
   return {
-    file: ok && now.file === sent.file,
+    files: ok && sameFiles(now.files, sent.files),
     caption: ok && here && now.draft.trim() === sent.caption,
     drafts: kept ? new Map([...now.drafts].filter(([chat]) => chat !== sent.chat)) : now.drafts,
   };

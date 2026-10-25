@@ -48,7 +48,7 @@
   import { statusOfSession } from "../lib/presence";
   import { ownsMessage } from "../lib/messages";
   import { lastTurnAt } from "../lib/slowMode";
-  import { chatKeyOf, type Drafts } from "../lib/composer";
+  import { chatKeyOf, type Drafts, type OutgoingUpload } from "../lib/composer";
   import type { PendingFiles } from "../lib/pendingFiles";
   import { relinkDirect, type Place, type View } from "../lib/place";
   import { rejoinTarget } from "../lib/reconnect";
@@ -327,9 +327,11 @@
     loadingOlder: textView.loadingOlder(id),
     onLoadOlder: () => textView.loadOlder(id),
     error: text.quietError ? null : text.lastError,
-    onUpload: id === null ? undefined : (file: File, caption: string, nonce: string, reply?: number, noPing?: boolean) => upload(file, caption, nonce, reply, noPing, id),
+    onUpload: id === null ? undefined : (files: OutgoingUpload[], caption: string, nonce: string, reply?: number, noPing?: boolean) => upload(files, caption, nonce, reply, noPing, id),
     uploading,
+    uploadStep,
     uploadMax: text.uploadMax,
+    maxUploads: text.maxUploads,
     returned: id !== null && text.returned?.channel === id ? text.returned : null,
     stickers,
     onSticker:
@@ -934,16 +936,25 @@
       all: (textId ?? voiceChatId) !== null && canManageText(server, text),
     }),
   );
-  // One upload at a time. Settles once the server stored the message, or
-  // fails (the message box keeps the file and shows why).
+  // One send of files at a time, the files one after another. Settles once
+  // the server stored the message, or fails (the message box keeps the
+  // files and shows why).
   let uploading = $state(false);
-  const upload = async (file: File, caption: string, nonce: string, reply: number | undefined, noPing: boolean | undefined, channel: number) => {
+  let uploadStep = $state<string>();
+  const upload = async (files: OutgoingUpload[], caption: string, nonce: string, reply: number | undefined, noPing: boolean | undefined, channel: number) => {
     if (uploading) throw new Error("Wait for the upload to finish");
     uploading = true;
     try {
-      await connection.sendConfirmed(channel, caption, nonce, [{ key: await connection.uploadFile(file) }], reply, noPing);
+      const keys = [];
+      for (const [i, f] of files.entries()) {
+        if (files.length > 1) uploadStep = `Uploading ${i + 1} of ${files.length}…`;
+        keys.push({ key: await connection.uploadFile(f.file), ...(f.description && { description: f.description }) });
+      }
+      uploadStep = undefined;
+      await connection.sendConfirmed(channel, caption, nonce, keys, reply, noPing);
     } finally {
       uploading = false;
+      uploadStep = undefined;
     }
   };
 

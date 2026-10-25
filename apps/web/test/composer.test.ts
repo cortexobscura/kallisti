@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addFiles,
   afterUpload,
   canAttach,
   chatKeyOf,
@@ -23,16 +24,16 @@ describe("canAttach", () => {
 
 describe("afterUpload", () => {
   const file = new File(["x"], "a.png");
-  const sent = { chat: "text 1", caption: "look", file };
+  const sent = { chat: "text 1", caption: "look", files: [file] };
   const none = new Map<string, string>();
-  const now = { chat: "text 1", draft: "look ", file, drafts: none };
+  const now = { chat: "text 1", draft: "look ", files: [file], drafts: none };
 
   it("clears the file and caption after a success", () => {
-    expect(afterUpload(true, sent, now)).toEqual({ file: true, caption: true, drafts: none });
+    expect(afterUpload(true, sent, now)).toEqual({ files: true, caption: true, drafts: none });
   });
 
   it("keeps both after a failure, for a retry", () => {
-    expect(afterUpload(false, sent, now)).toEqual({ file: false, caption: false, drafts: none });
+    expect(afterUpload(false, sent, now)).toEqual({ files: false, caption: false, drafts: none });
   });
 
   it("keeps a caption that was changed during the upload", () => {
@@ -40,17 +41,48 @@ describe("afterUpload", () => {
   });
 
   it("keeps the text of another chat", () => {
-    const other = { ...now, chat: "text 2", draft: "look", file: undefined };
-    expect(afterUpload(true, sent, other)).toEqual({ file: false, caption: false, drafts: none });
+    const other = { ...now, chat: "text 2", draft: "look", files: [] };
+    expect(afterUpload(true, sent, other)).toEqual({ files: false, caption: false, drafts: none });
   });
 
   it("forgets the sent caption kept for the chat it was sent in", () => {
-    const other = { ...now, chat: "text 2", draft: "", file: undefined };
+    const other = { ...now, chat: "text 2", draft: "", files: [] };
     const kept = new Map([["text 1", "look"], ["text 3", "hi"]]);
     expect(afterUpload(true, sent, { ...other, drafts: kept }).drafts).toEqual(new Map([["text 3", "hi"]]));
     expect(afterUpload(false, sent, { ...other, drafts: kept }).drafts).toBe(kept);
     const changed = new Map([["text 1", "look again"]]);
     expect(afterUpload(true, sent, { ...other, drafts: changed }).drafts).toBe(changed);
+  });
+
+  it("keeps files changed during the upload", () => {
+    expect(afterUpload(true, sent, { ...now, files: [file, new File(["y"], "b.png")] }).files).toBe(false);
+  });
+});
+
+describe("addFiles", () => {
+  const f = (name: string, size = 1) => new File(["x".repeat(size)], name);
+  const pending = (file: File) => ({ file, spoiler: false });
+  it("adds picked files after the waiting ones", () => {
+    const a = pending(f("a"));
+    const added = addFiles([a], [f("b"), f("c")], 10, undefined);
+    expect(added.files.map((p) => p.file.name)).toEqual(["a", "b", "c"]);
+    expect(added.files[0]).toBe(a);
+    expect(added.note).toBeNull();
+  });
+  it("refuses files over the size limit one by one", () => {
+    const added = addFiles([], [f("small", 1), f("big", 5), f("ok", 2)], 10, 3);
+    expect(added.files.map((p) => p.file.name)).toEqual(["small", "ok"]);
+    expect(added.note).toBe("big: the file is too large (at most 0 MB).");
+  });
+  it("takes at most the server's number of files", () => {
+    const added = addFiles([pending(f("a"))], [f("b"), f("c")], 2, undefined);
+    expect(added.files.map((p) => p.file.name)).toEqual(["a", "b"]);
+    expect(added.note).toBe("At most 2 files per message.");
+  });
+  it("with one file per message, a new pick takes the place of the waiting file", () => {
+    const added = addFiles([pending(f("a"))], [f("b"), f("c")], 1, undefined);
+    expect(added.files.map((p) => p.file.name)).toEqual(["b"]);
+    expect(added.note).toBeNull();
   });
 });
 
@@ -113,6 +145,8 @@ describe("uploadTitle", () => {
   it("names the server's limit when known", () => {
     expect(uploadTitle(10 * 1024 * 1024)).toBe("Upload a file (up to 10 MB)");
     expect(uploadTitle(undefined)).toBe("Upload a file");
+    expect(uploadTitle(10 * 1024 * 1024, 10)).toBe("Upload files (up to 10 MB each)");
+    expect(uploadTitle(undefined, 10)).toBe("Upload files");
   });
 });
 

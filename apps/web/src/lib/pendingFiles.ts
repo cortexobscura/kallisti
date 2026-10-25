@@ -1,14 +1,22 @@
-// A file picked for a chat but not sent yet (see ChatPane), kept per chat
+// Files picked for a chat but not sent yet (see ChatPane), kept per chat
 // over reconnects (in memory) and reloads (in IndexedDB): on Android the
 // file picker can send the app away long enough to lose the page.
 
-export type Pending = { file: File; spoiler: boolean };
-// A send of a pending file: in flight, or failed (the file stays).
+// description: the alt text ("" or missing: none).
+export type Pending = { file: File; spoiler: boolean; description?: string };
+// A send of the pending files: in flight, or failed (the files stay).
 export type SendStatus = { sending: true } | { sending: false; error: string };
-// nonce: the id each send of this file goes with (see sendRequest), so a
-// retry cannot post it twice; missing in rows from before.
-type Kept = Pending & { nonce: string };
-export type StoredFile = Pending & { key: string; at: number; nonce?: string };
+// nonce: the id each send of these files goes with (see sendRequest), so a
+// retry cannot post them twice; missing in rows from before.
+type Kept = { files: Pending[]; nonce: string };
+export type StoredFile = { key: string; at: number; nonce?: string; files: Pending[] };
+// Rows from before lists have one file (file, spoiler) instead of files.
+type ReadRow = Omit<StoredFile, "files"> & { files?: Pending[]; file?: File; spoiler?: boolean };
+const rowFiles = (row: ReadRow): Pending[] => row.files ?? (row.file ? [{ file: row.file, spoiler: !!row.spoiler }] : []);
+
+// The same files in the same order.
+export const sameFiles = (a: readonly File[], b: readonly File[]) => a.length === b.length && a.every((f, i) => f === b[i]);
+const filesOf = (list: readonly Pending[]) => list.map((p) => p.file);
 
 // The storage, injectable for tests. Any call may fail (private mode, full
 // storage): then the files live in memory only.
@@ -38,7 +46,7 @@ export const createPendingFiles = (store: FileStore | null, origin: string, now 
   const memory = new Map<string, Kept>();
   // Sends by chat, in memory only: a pane after a reconnect sees a send
   // the old one started, and cannot start it again.
-  const sends = new Map<string, SendStatus & { file: File }>();
+  const sends = new Map<string, SendStatus & { files: readonly File[] }>();
   const watchers = new Set<() => void>();
   const changed = () => watchers.forEach((fn) => fn());
   const key = (chat: string) => `${origin} ${chat}`;
@@ -52,56 +60,68 @@ export const createPendingFiles = (store: FileStore | null, origin: string, now 
   const prune = (s: FileStore) =>
     s.all().then((rows) => Promise.all(staleKeys(rows, now()).map((k) => s.delete(k))));
   void later(prune);
-  // A failed send's error goes with its file; a send in flight stays.
-  const drop = (chat: string, file?: File) => {
-    if (file && memory.get(chat)?.file !== file) return;
+  const holds = (chat: string, files: readonly File[]) => {
+    const kept = memory.get(chat);
+    return !!kept && sameFiles(filesOf(kept.files), files);
+  };
+  // A failed send's error goes with its files; a send in flight stays.
+  const drop = (chat: string, files?: readonly File[]) => {
+    if (files && !holds(chat, files)) return;
     memory.delete(chat);
     if (sends.get(chat)?.sending === false) sends.delete(chat);
     void later((s) => s.delete(key(chat)));
   };
-  const status = (chat: string, file: File): SendStatus | undefined => {
+  const status = (chat: string, files: readonly File[]): SendStatus | undefined => {
     const s = sends.get(chat);
-    return s?.file !== file ? undefined : s.sending ? { sending: true } : { sending: false, error: s.error };
+    return !s || !sameFiles(s.files, files) ? undefined : s.sending ? { sending: true } : { sending: false, error: s.error };
   };
 
   return {
-    // Picked or changed (spoiler). max: the server's upload limit.
-    set(chat: string, { file, spoiler }: Pending, max: number | undefined) {
+    // Picked, removed or changed (spoiler, description); none: discarded.
+    // The nonce stays while the files do. max: the server's upload limit
+    // (all files together, for the store).
+    set(chat: string, files: readonly Pending[], max: number | undefined) {
+      if (!files.length) {
+        drop(chat);
+        return changed();
+      }
       const before = memory.get(chat);
-      const kept = { file, spoiler, nonce: before?.file === file ? before.nonce : newNonce() };
+      const kept = { files: [...files], nonce: before && sameFiles(filesOf(before.files), filesOf(files)) ? before.nonce : newNonce() };
       memory.set(chat, kept);
       const row = { key: key(chat), at: now(), ...kept };
+      const size = files.reduce((n, p) => n + p.file.size, 0);
       void later(async (s) => {
-        if (file.size > (max ?? FALLBACK_MAX)) return s.delete(row.key);
+        if (size > (max ?? FALLBACK_MAX)) return s.delete(row.key);
         await s.put(row);
         await prune(s);
       });
     },
-    // Sent or discarded; with `file`, only while it is still that file (an
-    // upload that ends after another file was picked).
-    clear(chat: string, file?: File) {
-      drop(chat, file);
+    // Sent or discarded; with `files`, only while it still holds those (a
+    // send that ends after the files changed).
+    clear(chat: string, files?: readonly File[]) {
+      drop(chat, files);
       changed();
     },
-    // Still waiting in this chat (in memory).
-    holds: (chat: string, file: File) => memory.get(chat)?.file === file,
+    // Still waiting in this chat (in memory): these files, or which.
+    holds,
+    current: (chat: string): Pending[] | undefined => memory.get(chat)?.files,
     status,
-    // Sends the file with run, which settles once the server confirmed the
-    // message (or failed): only then the file goes. False: not sent (failed,
-    // or this file is sending already).
-    async send(chat: string, file: File, run: (nonce: string) => Promise<void>): Promise<boolean> {
-      if (status(chat, file)?.sending) return false;
-      sends.set(chat, { file, sending: true });
+    // Sends the files with run, which settles once the server confirmed the
+    // message (or failed): only then the files go. False: not sent (failed,
+    // or these files are sending already).
+    async send(chat: string, files: readonly File[], run: (nonce: string) => Promise<void>): Promise<boolean> {
+      if (status(chat, files)?.sending) return false;
+      sends.set(chat, { files, sending: true });
       changed();
-      const mine = () => sends.get(chat)?.file === file;
+      const mine = () => sameFiles(sends.get(chat)?.files ?? [], files);
       const kept = memory.get(chat);
       try {
-        await run(kept?.file === file ? kept.nonce : newNonce());
+        await run(kept && holds(chat, files) ? kept.nonce : newNonce());
         if (mine()) sends.delete(chat);
-        drop(chat, file);
+        drop(chat, files);
         return true;
       } catch (err) {
-        if (mine()) sends.set(chat, { file, sending: false, error: err instanceof Error ? err.message : String(err) });
+        if (mine()) sends.set(chat, { files, sending: false, error: err instanceof Error ? err.message : String(err) });
         return false;
       } finally {
         changed();
@@ -112,8 +132,8 @@ export const createPendingFiles = (store: FileStore | null, origin: string, now 
       watchers.add(fn);
       return () => void watchers.delete(fn);
     },
-    async get(chat: string): Promise<Pending | undefined> {
-      const shown = (k: Kept | undefined) => k && { file: k.file, spoiler: k.spoiler };
+    async get(chat: string): Promise<Pending[] | undefined> {
+      const shown = (k: Kept | undefined) => k?.files;
       if (memory.has(chat)) return shown(memory.get(chat));
       const row = await later(async (s) => {
         const found = await s.get(key(chat));
@@ -122,7 +142,9 @@ export const createPendingFiles = (store: FileStore | null, origin: string, now 
         return undefined;
       });
       if (memory.has(chat) || !row) return shown(memory.get(chat));
-      const kept = { file: row.file, spoiler: row.spoiler, nonce: row.nonce ?? newNonce() };
+      const files = rowFiles(row);
+      if (!files.length) return undefined;
+      const kept = { files, nonce: row.nonce ?? newNonce() };
       memory.set(chat, kept);
       return shown(kept);
     },
