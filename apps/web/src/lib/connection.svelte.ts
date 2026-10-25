@@ -56,6 +56,7 @@ import {
   type ManageAction,
   type ServerEvent,
   type TextState,
+  type OutgoingFile,
 } from "./textChannels";
 import { deleteStickerRequest, renameStickerRequest, stickerTokenRequest, type StickerFields } from "./stickers";
 import { untrack } from "svelte";
@@ -439,13 +440,13 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     deleteMessage: (message: number) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(deleteMessageRequest(message));
     },
-    sendToTextChannel: (channel: number, message: string, upload?: string, reply?: number, noPing?: boolean) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(sendRequest(channel, message, upload, reply, noPing));
+    sendToTextChannel: (channel: number, message: string, reply?: number, noPing?: boolean) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(sendRequest(channel, message, [], reply, noPing));
     },
-    // Sends a message (with an uploaded file: its key) with a nonce; settles
+    // Sends a message (with uploaded files: their keys) with a nonce; settles
     // once the server stored it (our message came), refused it, or did not
     // answer. A retry with the same nonce cannot post it twice.
-    sendConfirmed: (channel: number, message: string, nonce: string, upload?: string, reply?: number, noPing?: boolean, sticker?: number) =>
+    sendConfirmed: (channel: number, message: string, nonce: string, uploads: readonly OutgoingFile[] = [], reply?: number, noPing?: boolean, sticker?: number) =>
       new Promise<void>((resolve, reject) => {
         if (ws.readyState !== WebSocket.OPEN) return reject(new Error("Not connected"));
         const done = (error?: string) => {
@@ -456,11 +457,11 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
         };
         const timeout = setTimeout(() => done("No answer from the server"), SEND_ANSWER_MS);
         const check = (ev: ServerEvent | null) => {
-          const a = ev ? sendAnswer(ev, nonce, upload) : { error: "Not connected" };
+          const a = ev ? sendAnswer(ev, nonce, uploads[0]?.key) : { error: "Not connected" };
           if (a) done(a.error);
         };
         confirming.add(check);
-        ws.send(sendRequest(channel, message, upload, reply, noPing, nonce, sticker));
+        ws.send(sendRequest(channel, message, uploads, reply, noPing, nonce, sticker));
       }),
     // The server's HTTP origin (uploads and files).
     httpBase: base,

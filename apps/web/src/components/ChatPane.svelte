@@ -533,7 +533,7 @@
   let cancelButton: HTMLButtonElement | undefined = $state();
   const startEdit = async (m: ChatMessage | DisplayMessage) => {
     if (!("source" in m) || !m.source) return;
-    editing = { id: m.source.id, text: fromRefs(m.source.text, custom.mine, custom.urls), old: m.source.text, upload: !!("upload" in m && m.upload) };
+    editing = { id: m.source.id, text: fromRefs(m.source.text, custom.mine, custom.urls), old: m.source.text, upload: !!("uploads" in m && m.uploads?.length) };
     await tick();
     editInput?.focus();
   };
@@ -1492,8 +1492,7 @@
 {/snippet}
 
 {#snippet attachment(m: ChatMessage | DisplayMessage)}
-  {#if "upload" in m && m.upload}
-    {@const upload = m.upload}
+  {#each ("uploads" in m && m.uploads) || [] as upload (upload.url)}
     {@const view = attachmentView(upload, unplayable.has(upload.url))}
     {#if upload.spoiler && !shownFiles.has(upload.url)}
       <button type="button" class="spoiler-file" aria-label="Spoiler, show the attachment" onclick={() => (shownFiles = new Set([...shownFiles, upload.url]))}>
@@ -1509,10 +1508,10 @@
     {:else}
       {@render uploadView(upload)}
     {/if}
-  {/if}
+  {/each}
 {/snippet}
 
-{#snippet uploadView(upload: NonNullable<DisplayMessage["upload"]>)}
+{#snippet uploadView(upload: NonNullable<DisplayMessage["uploads"]>[number])}
   {@const view = attachmentView(upload, unplayable.has(upload.url))}
   {#if view === "image"}
     <a

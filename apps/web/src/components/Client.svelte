@@ -333,7 +333,7 @@
     returned: id !== null && text.returned?.channel === id ? text.returned : null,
     stickers,
     onSticker:
-      id === null ? undefined : (sticker: number, reply?: number, noPing?: boolean) => connection.sendConfirmed(id, "", crypto.randomUUID(), undefined, reply, noPing, sticker),
+      id === null ? undefined : (sticker: number, reply?: number, noPing?: boolean) => connection.sendConfirmed(id, "", crypto.randomUUID(), [], reply, noPing, sticker),
   });
   const pane = $derived.by(() => {
     if (view.kind === "text")
@@ -941,7 +941,7 @@
     if (uploading) throw new Error("Wait for the upload to finish");
     uploading = true;
     try {
-      await connection.sendConfirmed(channel, caption, nonce, await connection.uploadFile(file), reply, noPing);
+      await connection.sendConfirmed(channel, caption, nonce, [{ key: await connection.uploadFile(file) }], reply, noPing);
     } finally {
       uploading = false;
     }
@@ -1076,7 +1076,7 @@
     return user && user.name === dm?.name ? user : undefined;
   });
   const send = (message: string, reply?: number, noPing?: boolean) => {
-    if (chatId !== null) connection.sendToTextChannel(chatId, message, undefined, reply, noPing);
+    if (chatId !== null) connection.sendToTextChannel(chatId, message, reply, noPing);
     else if (dm === null) connection.sendText({ channelId }, message);
     else if (dm.session !== null) connection.sendText({ session: dm.session }, message);
   };
@@ -1897,7 +1897,7 @@
       messages={threadChat}
       welcomeText=""
       {...storedPane(t.id)}
-      onSend={(message, reply, noPing) => connection.sendToTextChannel(t.id, message, undefined, reply, noPing)}
+      onSend={(message, reply, noPing) => connection.sendToTextChannel(t.id, message, reply, noPing)}
       {...chatCommon}
       {...(readOnly ? { onSend: undefined, onUpload: undefined, onSticker: undefined } : {})}
       chatKey="thread {t.id}"

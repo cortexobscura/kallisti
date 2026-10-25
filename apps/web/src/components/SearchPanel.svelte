@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { TextMessage } from "../lib/textChannels";
+  import { messageFiles, type TextMessage } from "../lib/textChannels";
   import { previewText } from "../lib/markdown";
   import { spoilerUpload } from "../lib/media";
   import { formatTimestamp } from "../lib/chat";
@@ -61,7 +61,7 @@
             <Avatar name={m.author} size={24} />
             <span class="body">
               <span class="meta"><strong>{m.author}</strong> in {where(m)} · {formatTimestamp(m.at, now, undefined, settings.value.timeFormat)}</span>
-              <span class="text">{previewText(m.text) || (m.upload ? spoilerUpload(m.upload).name : "")}</span>
+              <span class="text">{previewText(m.text) || (messageFiles(m)[0] ? spoilerUpload(messageFiles(m)[0]!).name : "")}</span>
             </span>
           </button>
         </li>

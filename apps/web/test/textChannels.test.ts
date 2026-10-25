@@ -153,7 +153,7 @@ describe("requests", () => {
     expect(JSON.parse(sendRequest(2, "yes", undefined, 7))).toEqual({ type: "send", channel: 2, text: "yes", reply: 7 });
     expect(JSON.parse(sendRequest(2, "yes", undefined, 7, true))).toEqual({ type: "send", channel: 2, text: "yes", reply: 7, noPing: true });
     expect(JSON.parse(sendRequest(2, "no reply", undefined, undefined, true))).toEqual({ type: "send", channel: 2, text: "no reply" });
-    expect(JSON.parse(sendRequest(2, "", "k1", undefined, undefined, "n1"))).toEqual({ type: "send", channel: 2, text: "", upload: "k1", nonce: "n1" });
+    expect(JSON.parse(sendRequest(2, "", [{ key: "k1" }], undefined, undefined, "n1"))).toEqual({ type: "send", channel: 2, text: "", upload: "k1", nonce: "n1" });
   });
 });
 
@@ -271,7 +271,7 @@ describe("uploads", () => {
     const upload = { url: "/files/k/a.mp4", name: "a.mp4", type: "video/mp4", size: 3, width: 1280, height: 720, duration: 2500 };
     const ev = parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), upload } }));
     expect(ev?.type === "message" && ev.message.upload).toEqual(upload);
-    expect(toChatMessage({ ...msg(2), upload }, "http://srv").upload).toMatchObject({ width: 1280, height: 720, duration: 2500 });
+    expect(toChatMessage({ ...msg(2), upload }, "http://srv").uploads?.[0]).toMatchObject({ width: 1280, height: 720, duration: 2500 });
     const broken = { ...upload, width: "wide" };
     expect(parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), upload: broken } }))).toBeNull();
   });
@@ -285,7 +285,7 @@ describe("uploads", () => {
   });
 
   it("sends an upload key with a message", () => {
-    expect(JSON.parse(sendRequest(1, "", "key1"))).toEqual({ type: "send", channel: 1, text: "", upload: "key1" });
+    expect(JSON.parse(sendRequest(1, "", [{ key: "key1" }]))).toEqual({ type: "send", channel: 1, text: "", upload: "key1" });
     expect(JSON.parse(uploadTokenRequest())).toEqual({ type: "upload-token" });
   });
 
@@ -294,19 +294,56 @@ describe("uploads", () => {
       { ...msg(9), upload: { url: "/files/k/cat.png", name: "cat.png", type: "image/png", size: 3 } },
       "http://srv:8080",
     );
-    expect(m.upload).toEqual({ url: "http://srv:8080/files/k/cat.png", name: "cat.png", type: "image/png", size: 3 });
+    expect(m.uploads).toEqual([{ url: "http://srv:8080/files/k/cat.png", name: "cat.png", type: "image/png", size: 3 }]);
   });
 
   it("keeps a preview on our server", () => {
     const upload = { url: "/files/k/a.mp4", name: "a.mp4", type: "video/mp4", size: 3, preview: "/files/k/a.mp4?preview" };
     const ev = parseServerEvent(JSON.stringify({ type: "message-edited", message: { ...msg(1), upload } }));
     expect(ev?.type === "message-edited" && ev.message.upload?.preview).toBe("/files/k/a.mp4?preview");
-    expect(toChatMessage({ ...msg(3), upload }, "http://srv").upload?.preview).toBe("http://srv/files/k/a.mp4?preview");
+    expect(toChatMessage({ ...msg(3), upload }, "http://srv").uploads?.[0]?.preview).toBe("http://srv/files/k/a.mp4?preview");
     // Elsewhere: dropped, the attachment stays.
-    const away = toChatMessage({ ...msg(4), upload: { ...upload, preview: "https://evil.example/files/x" } }, "http://srv").upload;
+    const away = toChatMessage({ ...msg(4), upload: { ...upload, preview: "https://evil.example/files/x" } }, "http://srv").uploads?.[0];
     expect(away?.url).toBe("http://srv/files/k/a.mp4");
     expect(away && "preview" in away).toBe(false);
     expect(parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), upload: { ...upload, preview: 1 } } }))).toBeNull();
+  });
+});
+
+describe("several files", () => {
+  const file = (k: string, extra = {}) => ({ url: `/files/${k}/${k}.png`, name: `${k}.png`, type: "image/png", size: 1, ...extra });
+  it("parses the list, with descriptions", () => {
+    const uploads = [file("a", { description: "a cat" }), file("b")];
+    const ev = parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), uploads, upload: uploads[0] } }));
+    expect(ev?.type === "message" && ev.message.uploads).toEqual(uploads);
+    expect(parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), uploads: [file("a"), { url: 1 }] } }))).toBeNull();
+    expect(parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), uploads: [file("a", { description: 1 })] } }))).toBeNull();
+    expect(parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), uploads: file("a") } }))).toBeNull();
+  });
+  it("shows the list, or the one upload of an older server, with spoilers", () => {
+    const shown = toChatMessage({ ...msg(1), uploads: [file("a"), file("SPOILER_b")], upload: file("a") }, "http://srv").uploads;
+    expect(shown?.map((u) => [u.url, u.name, u.spoiler])).toEqual([
+      ["http://srv/files/a/a.png", "a.png", undefined],
+      ["http://srv/files/SPOILER_b/SPOILER_b.png", "b.png", true],
+    ]);
+    expect(toChatMessage({ ...msg(2), upload: file("a") }, "http://srv").uploads?.map((u) => u.name)).toEqual(["a.png"]);
+    expect(toChatMessage(msg(3), "http://srv")).not.toHaveProperty("uploads");
+  });
+  it("sends one file in the old form, more (or a description) as a list", () => {
+    expect(JSON.parse(sendRequest(1, "", [{ key: "a" }]))).toEqual({ type: "send", channel: 1, text: "", upload: "a" });
+    expect(JSON.parse(sendRequest(1, "", [{ key: "a", description: "a cat" }]))).toEqual({ type: "send", channel: 1, text: "", uploads: [{ key: "a", description: "a cat" }] });
+    expect(JSON.parse(sendRequest(1, "x", [{ key: "a" }, { key: "b" }]))).toEqual({ type: "send", channel: 1, text: "x", uploads: [{ key: "a" }, { key: "b" }] });
+    expect(JSON.parse(sendRequest(1, "x", []))).toEqual({ type: "send", channel: 1, text: "x" });
+  });
+  it("reads how many files the server takes (older servers: one)", () => {
+    const ev = parseServerEvent('{"type":"ready","channels":[],"maxUploads":10}');
+    expect(reduceText(initialTextState, ev!).maxUploads).toBe(10);
+    expect(reduceText(initialTextState, parseServerEvent('{"type":"ready","channels":[]}')!).maxUploads).toBe(1);
+    expect(reduceText(initialTextState, parseServerEvent('{"type":"ready","channels":[],"maxUploads":0}')!).maxUploads).toBe(1);
+  });
+  it("confirms a send without nonce by any of its files", () => {
+    const m = { id: 1, channel: 2, author: "me", text: "", at: 0, uploads: [file("k0"), file("k1")] };
+    expect(sendAnswer({ type: "message", message: m }, "n1", "k0")).toEqual({});
   });
 });
 
@@ -329,15 +366,15 @@ describe("attachment URL check", () => {
   const withUrl = (url: string) => toChatMessage({ ...msg(Math.random() * 1e9), upload: { url, name: "x", type: "image/png", size: 1 } }, "https://srv.example");
 
   it("keeps files on our server", () => {
-    expect(withUrl("/files/k/x.png").upload?.url).toBe("https://srv.example/files/k/x.png");
+    expect(withUrl("/files/k/x.png").uploads?.[0]?.url).toBe("https://srv.example/files/k/x.png");
   });
 
   it("drops URLs that leave the server or the files path", () => {
-    expect(withUrl("@evil.example/x").upload).toBeUndefined();
-    expect(withUrl(".evil.example/x").upload).toBeUndefined();
-    expect(withUrl("//evil.example/files/x").upload).toBeUndefined();
-    expect(withUrl("javascript:alert(1)").upload).toBeUndefined();
-    expect(withUrl("/api/upload").upload).toBeUndefined();
+    expect(withUrl("@evil.example/x").uploads).toBeUndefined();
+    expect(withUrl(".evil.example/x").uploads).toBeUndefined();
+    expect(withUrl("//evil.example/files/x").uploads).toBeUndefined();
+    expect(withUrl("javascript:alert(1)").uploads).toBeUndefined();
+    expect(withUrl("/api/upload").uploads).toBeUndefined();
   });
 });
 

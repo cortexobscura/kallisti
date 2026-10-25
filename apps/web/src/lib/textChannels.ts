@@ -30,7 +30,19 @@ export type TextChannel = { id: number; name: string; mumble?: number; topic?: s
 // width, height: pixels (as shown); duration: milliseconds. Missing when
 // the server does not know them.
 // preview: a smaller picture (see lib/media chatSrc), once the server made one.
-export type Attachment = { url: string; name: string; type: string; size: number; width?: number; height?: number; duration?: number; preview?: string };
+// description: the alt text. A spoiler's name starts with "SPOILER_" (see
+// lib/media spoilerUpload).
+export type Attachment = {
+  url: string;
+  name: string;
+  type: string;
+  size: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+  preview?: string;
+  description?: string;
+};
 export type TextMessage = {
   id: number;
   channel: number;
@@ -41,7 +53,8 @@ export type TextMessage = {
   // with this user id (unknown for old messages).
   verified?: boolean;
   authorId?: number;
-  upload?: Attachment;
+  uploads?: Attachment[]; // in order
+  upload?: Attachment; // older servers: the one file (see messageFiles)
   // A sticker message (text: its name, for what shows only text).
   sticker?: MessageSticker;
   edited?: number; // Unix milliseconds
@@ -58,7 +71,7 @@ export type Quote = { id: number; author: string; text: string };
 // and a verified mark.
 // source: the stored message (id and plain text), for editing.
 export type DisplayMessage = ChatMessage & {
-  upload?: Attachment & { spoiler?: true };
+  uploads?: (Attachment & { spoiler?: true })[];
   sticker?: MessageSticker;
   verified?: boolean;
   authorId?: number;
@@ -99,6 +112,7 @@ export type ServerEvent =
       categories?: TextCategory[];
       voiceChats?: boolean;
       uploadMax?: number; // bytes per upload
+      maxUploads?: number; // files per message
       // Online users' pictures are at /api/avatars/<name> too (see
       // lib/avatar onlinePicture).
       avatars?: boolean;
@@ -248,6 +262,7 @@ export type TextState = {
   categories: readonly TextCategory[];
   voiceChats: boolean;
   uploadMax?: number; // the server's size limit per upload
+  maxUploads: number; // files per message (older servers: 1)
   avatars: boolean; // see ready
   // Voice channel id -> the channel that holds its chat.
   voiceChannels: Readonly<Record<number, number>>;
@@ -336,6 +351,7 @@ export const initialTextState: TextState = {
   channels: [],
   categories: [],
   voiceChats: false,
+  maxUploads: 1,
   avatars: false,
   roles: { admins: [], moderators: [] },
   listenOnly: {},
@@ -461,7 +477,16 @@ const withCategories = (v: Record<string, unknown>) => (isCategories(v.categorie
 const optStr = (v: unknown) => v === undefined || isStr(v);
 const optSize = (v: unknown) => v === undefined || (isNum(v) && v > 0);
 const isAttachment = (v: unknown): v is Attachment =>
-  isObj(v) && isStr(v.url) && isStr(v.name) && isStr(v.type) && isNum(v.size) && optSize(v.width) && optSize(v.height) && optSize(v.duration) && optStr(v.preview);
+  isObj(v) &&
+  isStr(v.url) &&
+  isStr(v.name) &&
+  isStr(v.type) &&
+  isNum(v.size) &&
+  optSize(v.width) &&
+  optSize(v.height) &&
+  optSize(v.duration) &&
+  optStr(v.preview) &&
+  optStr(v.description);
 const isPreview = (v: unknown): v is LinkPreview =>
   isObj(v) &&
   isStr(v.url) &&
@@ -499,6 +524,7 @@ const isMessage = (v: unknown): v is TextMessage =>
   (v.pinned === undefined || isNum(v.pinned)) &&
   (v.reply === undefined || (isObj(v.reply) && isNum(v.reply.id) && isStr(v.reply.author) && isStr(v.reply.text))) &&
   (v.upload === undefined || isAttachment(v.upload)) &&
+  (v.uploads === undefined || (Array.isArray(v.uploads) && v.uploads.every(isAttachment))) &&
   (v.sticker === undefined || isMessageSticker(v.sticker)) &&
   (v.reactions === undefined || isReactions(v.reactions)) &&
   (v.mentionAll === undefined || isMentionAll(v.mentionAll)) &&
@@ -532,6 +558,7 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
         ...withCategories(v),
         ...(v.voiceChats === true ? { voiceChats: true } : {}),
         ...(isNum(v.uploadMax) && v.uploadMax > 0 ? { uploadMax: v.uploadMax } : {}),
+        ...(isNum(v.maxUploads) && v.maxUploads >= 1 ? { maxUploads: Math.floor(v.maxUploads) } : {}),
         ...(v.avatars === true ? { avatars: true } : {}),
         ...(roles ? { roles } : {}),
         ...(isListenOnly(v.listenOnly) ? { listenOnly: v.listenOnly } : {}),
@@ -742,6 +769,7 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
         categories: event.categories ?? [],
         voiceChats: event.voiceChats === true,
         uploadMax: event.uploadMax,
+        maxUploads: event.maxUploads ?? 1,
         avatars: event.avatars === true,
         roles: event.roles ?? initialTextState.roles,
         emoji: event.emoji ?? [],
@@ -986,13 +1014,24 @@ export const historyRequest = (channel: number, before?: number) =>
 
 // nonce: our id for the send, the same on a retry (the server stores the
 // message once and confirms it with the nonce, see sendAnswer).
-// sticker: a sticker message (no text, no upload).
-export const sendRequest = (channel: number, text: string, upload?: string, reply?: number, noPing?: boolean, nonce?: string, sticker?: number) =>
+// sticker: a sticker message (no text, no upload). One file without a
+// description goes as "upload", which older servers know too.
+export type OutgoingFile = { key: string; description?: string };
+const oldForm = (uploads: readonly OutgoingFile[]) => uploads.length === 1 && !uploads[0]!.description;
+export const sendRequest = (
+  channel: number,
+  text: string,
+  uploads: readonly OutgoingFile[] = [],
+  reply?: number,
+  noPing?: boolean,
+  nonce?: string,
+  sticker?: number,
+) =>
   JSON.stringify({
     type: "send",
     channel,
     text,
-    ...(upload ? { upload } : {}),
+    ...(oldForm(uploads) ? { upload: uploads[0]!.key } : uploads.length ? { uploads } : {}),
     ...(reply ? { reply } : {}),
     ...(reply && noPing ? { noPing } : {}),
     ...(nonce ? { nonce } : {}),
@@ -1006,7 +1045,8 @@ export const sendRequest = (channel: number, text: string, upload?: string, repl
 export const sendAnswer = (ev: ServerEvent, nonce: string, upload?: string): { error?: string } | null => {
   if (ev.type === "error") return ev.nonce === nonce ? { error: ev.message } : null;
   if (ev.type !== "message") return null;
-  const ours = ev.nonce === undefined ? !!upload && !!ev.message.upload?.url.startsWith(`/files/${upload}/`) : ev.nonce === nonce;
+  const ours =
+    ev.nonce === undefined ? !!upload && messageFiles(ev.message).some((f) => f.url.startsWith(`/files/${upload}/`)) : ev.nonce === nonce;
   return ours ? {} : null;
 };
 
@@ -1172,6 +1212,9 @@ const ownAttachment = ({ preview, ...u }: Attachment, base: string): Attachment 
   return url ? { ...u, url, ...(own && { preview: own }) } : null;
 };
 
+// A message's files: the list, or the one file of an older server.
+export const messageFiles = (m: TextMessage): Attachment[] => m.uploads ?? (m.upload ? [m.upload] : []);
+
 const chatCache =new WeakMap<TextMessage, { chat: DisplayMessage; channels?: ReadonlyMap<string, number> }>();
 
 // Text channel messages are plain text: escape, then Markdown. Attachment
@@ -1181,7 +1224,7 @@ export const toChatMessage = (m: TextMessage, base = "", channels?: ReadonlyMap<
   const cached = chatCache.get(m);
   let chat = cached?.channels === channels ? cached?.chat : undefined;
   if (!chat) {
-    const upload = m.upload && ownAttachment(m.upload, base);
+    const uploads = messageFiles(m).flatMap((u) => ownAttachment(u, base) ?? []);
     chat = {
       actor: null,
       actorName: m.author,
@@ -1200,7 +1243,7 @@ export const toChatMessage = (m: TextMessage, base = "", channels?: ReadonlyMap<
       ...(m.reactions?.length && { reactions: m.reactions }),
       ...(m.mentionAll && { mentionAll: m.mentionAll }),
       ...(m.noPing && { noPing: true }),
-      ...(upload && { upload: spoilerUpload(upload) }),
+      ...(uploads.length && { uploads: uploads.map(spoilerUpload) }),
       ...(m.sticker && { sticker: m.sticker }),
     };
     chatCache.set(m, { chat, channels });
