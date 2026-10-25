@@ -563,6 +563,7 @@ type request struct {
 	Before      int64            `json:"before"`
 	Text        string           `json:"text"`
 	Uploads     []wireAttachment `json:"uploads"`     // send: the uploads to attach, in order
+	Count       int              `json:"count"`       // upload-token: how many (the files of one message)
 	Upload      string           `json:"upload"`      // send: one upload's key (older clients)
 	Message     int64            `json:"message"`     // edit-message, delete-message, create-thread
 	Reply       int64            `json:"reply"`       // send: the message it answers
@@ -642,7 +643,7 @@ func (c *Conn) Handle(raw []byte) {
 		return
 	}
 	if req.Type == "upload-token" {
-		c.send(map[string]any{"type": "upload-token", "token": c.hub.issueUploadToken(id.Name, "")})
+		c.uploadTokens(*id, req.Count)
 		return
 	}
 	if chatWrites[req.Type] && c.timedOut(*id, req) {
@@ -1238,6 +1239,20 @@ func (h *Hub) Overflows() map[uint32]uint64 {
 		c.mu.Unlock()
 	}
 	return out
+}
+
+// uploadTokens: one token, or `count` of them (at most store.MaxUploads)
+// for the files of one message, in one request.
+func (c *Conn) uploadTokens(id mumble.Identity, count int) {
+	if count <= 1 {
+		c.send(map[string]any{"type": "upload-token", "token": c.hub.issueUploadToken(id.Name, "")})
+		return
+	}
+	tokens := make([]string, min(count, store.MaxUploads))
+	for i := range tokens {
+		tokens[i] = c.hub.issueUploadToken(id.Name, "")
+	}
+	c.send(map[string]any{"type": "upload-token", "token": tokens[0], "tokens": tokens})
 }
 
 func (h *Hub) issueUploadToken(author, emoji string) string {

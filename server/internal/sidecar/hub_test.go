@@ -250,6 +250,32 @@ func TestUploadTokens(t *testing.T) {
 	}
 }
 
+// Several files: their tokens in one request (count, at most
+// store.MaxUploads), each working once.
+func TestSeveralUploadTokens(t *testing.T) {
+	h := newHub(t, "general")
+	c := ready(t, h, "alice")
+	c.Handle([]byte(`{"type":"upload-token","count":3}`))
+	m := next(t, c)
+	tokens, _ := m["tokens"].([]any)
+	if m["type"] != "upload-token" || len(tokens) != 3 || m["token"] != tokens[0] {
+		t.Fatalf("got %v", m)
+	}
+	for _, tok := range tokens {
+		if author, ok := h.RedeemUploadToken(tok.(string)); !ok || author != "alice" {
+			t.Fatalf("redeem %v: %q %v", tok, author, ok)
+		}
+	}
+	c.Handle([]byte(`{"type":"upload-token","count":1000}`))
+	if tokens, _ := next(t, c)["tokens"].([]any); len(tokens) != store.MaxUploads {
+		t.Fatalf("count not capped: %d", len(tokens))
+	}
+	c.Handle([]byte(`{"type":"upload-token","count":1}`))
+	if m := next(t, c); m["tokens"] != nil || m["token"] == nil {
+		t.Fatalf("one: %v", m)
+	}
+}
+
 func TestUploadTokensExpire(t *testing.T) {
 	h := newHub(t, "general")
 	now := clock
