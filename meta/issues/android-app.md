@@ -23,3 +23,7 @@ crate, as for iOS, installed on the user's phone.
 ## Notes
 
 - Signing for releases and CI builds come later.
+
+## Result
+
+- Done: in v0.10.0 (APK on the release and the website, signed with the release key from CI). Tested on the user's phone: voice in the background and with the screen off.

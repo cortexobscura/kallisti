@@ -273,3 +273,4 @@
 - [x] [Picture-in-picture: no picture in the page meanwhile](issues/pip-placeholder.md)
 - [x] [Stream controls on phones](issues/stream-controls-touch.md)
 - [x] ["@" suggests all registered users](issues/mention-all-members.md)
+- [x] [Android app (prototype)](issues/android-app.md)
