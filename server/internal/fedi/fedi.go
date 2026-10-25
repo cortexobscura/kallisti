@@ -192,15 +192,21 @@ func NewClient(allow func(netip.AddrPort) bool, tlsConfig *tls.Config, allowHTTP
 
 // do sends a request and reads a JSON answer (at most maxBody) into v.
 func (c *Client) do(req *http.Request, v any) error {
-	req.Header.Set("Accept", "application/json")
+	return c.doLimit(req, v, maxBody)
+}
+
+func (c *Client) doLimit(req *http.Request, v any, limit int) error {
+	if req.Header.Get("Accept") == "" {
+		req.Header.Set("Accept", "application/json")
+	}
 	req.Header.Set("User-Agent", "Kallisti")
 	res, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
 	defer res.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(res.Body, maxBody+1))
-	if err != nil || len(body) > maxBody {
+	body, err := io.ReadAll(io.LimitReader(res.Body, int64(limit)+1))
+	if err != nil || len(body) > limit {
 		return fmt.Errorf("%w: answer too large or cut", ErrUnreachable)
 	}
 	if res.StatusCode != http.StatusOK {

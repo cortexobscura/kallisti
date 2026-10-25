@@ -247,22 +247,21 @@ func (a *Service) fediStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	inst, err := fedi.ParseInstance(c.Instance, a.Fedi.Dev)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "enter your fediverse server, for example mastodon.social"})
-		return
-	}
-	flow := fediFlow{inst: inst, verifier: fedi.NewVerifier()}
+	var inst fedi.Instance
+	var err error
+	flow := fediFlow{verifier: fedi.NewVerifier()}
 	if c.Purpose == "reauth" {
 		acc, ok := a.AccountFor(r)
 		if !ok {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not logged in"})
 			return
 		}
-		if id, err := a.Store.FediIdentityOf(acc.ID); err != nil || id.Host != inst.Host {
+		id, lookupErr := a.Store.FediIdentityOf(acc.ID)
+		if lookupErr != nil {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "log in with the fediverse account linked to this account"})
 			return
 		}
+		inst, err = a.Fedi.reauthInstance(id.Host, c.Instance)
 		flow.link, flow.session, flow.reauth = acc.ID, SessionKey(r), true
 	} else if c.Link {
 		acc, ok := a.AccountFor(r)
@@ -281,6 +280,19 @@ func (a *Service) fediStart(w http.ResponseWriter, r *http.Request) {
 		}
 		flow.link, flow.session = acc.ID, SessionKey(r)
 	}
+	if !flow.reauth {
+		inst, err = a.Fedi.Client.ResolveInstance(r.Context(), c.Instance, a.Fedi.Dev)
+	}
+	if errors.Is(err, fedi.ErrInstance) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "enter your fediverse server or @user@domain"})
+		return
+	}
+	if err != nil {
+		slog.Info("fediverse discovery", "err", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "cannot discover this account's server; try its server address instead"})
+		return
+	}
+	flow.inst = inst
 	if flow.app, err = a.fediApp(r.Context(), inst); err != nil {
 		slog.Info("fediverse app registration", "instance", inst.Host, "err", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "cannot reach " + inst.Host + ", or it does not offer logins for apps"})
@@ -293,6 +305,28 @@ func (a *Service) fediStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"url": authorize})
+}
+
+// reauthInstance uses the stored API host, never the display handle's domain.
+func (f *FediLogin) reauthInstance(host, input string) (fedi.Instance, error) {
+	if f.Dev {
+		// Preserve plain HTTP for local development instances only.
+		if typed, err := fedi.ParseInstance(input, true); err == nil && typed.Host == host {
+			return typed, nil
+		}
+	}
+	return fedi.ParseInstance(host, f.Dev)
+}
+
+// displayHandle prefers a confirmed account-domain address. OAuth already
+// established the account, so optional discovery failure keeps logins working.
+func (f *FediLogin) displayHandle(ctx context.Context, inst fedi.Instance, remote fedi.Account) string {
+	handle, err := f.Client.DiscoverHandle(ctx, inst, remote.Username, f.Dev)
+	if err != nil {
+		slog.Debug("fediverse display handle", "instance", inst.Host, "err", err)
+		return remote.Handle(inst)
+	}
+	return handle
 }
 
 // fediApp is our app on the instance, registered on first use (and again
@@ -368,7 +402,8 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 		back("error", "unreachable")
 		return
 	}
-	id := store.FediIdentity{Host: flow.inst.Host, RemoteID: remote.ID, Handle: remote.Handle(flow.inst)}
+	handle := a.Fedi.displayHandle(r.Context(), flow.inst, remote)
+	id := store.FediIdentity{Host: flow.inst.Host, RemoteID: remote.ID, Handle: handle}
 	if flow.reauth {
 		back(a.fediReauth(linkTo, flow.session, id))
 		return
