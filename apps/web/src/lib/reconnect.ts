@@ -26,6 +26,17 @@ const DELAYS_MS = [1000, 2000, 5000, 10_000, 20_000, 30_000];
 // The wait before attempt n (0: the first).
 export const reconnectDelay = (attempt: number) => DELAYS_MS[Math.min(attempt, DELAYS_MS.length - 1)]!;
 
+// The server is usually back within seconds: a loss stays quiet at first
+// (the view as it was, a try each second), then a small sign, then the
+// banner with the growing waits (counted from the first again).
+export const QUIET_MS = 10_000;
+const SIGN_MS = 2000;
+const QUIET_RETRY_MS = 1000;
+export const lossNotice = (lostForMs: number): "none" | "sign" | "banner" =>
+  lostForMs < SIGN_MS ? "none" : lostForMs < QUIET_MS ? "sign" : "banner";
+// loudAttempt: the attempts since the quiet time ended.
+export const nextDelay = (lostForMs: number, loudAttempt: number) => (lostForMs < QUIET_MS ? QUIET_RETRY_MS : reconnectDelay(loudAttempt));
+
 // Refused because the name is in use: right after a drop, that is often our
 // own old session, which the server has not let go yet. Worth a few tries.
 export const busyName = (s: Pick<ServerState, "status" | "rejectType">) =>

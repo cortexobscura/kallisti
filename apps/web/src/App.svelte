@@ -23,7 +23,7 @@
   import { loadPlace, placeKey, savePlace, type Place } from "./lib/place";
   import type { Drafts } from "./lib/composer";
   import { createPendingFiles, indexedDbStore } from "./lib/pendingFiles";
-  import { busyName, loggedOut, reconnectDelay, shouldReconnect } from "./lib/reconnect";
+  import { busyName, loggedOut, lossNotice, nextDelay, QUIET_MS, shouldReconnect } from "./lib/reconnect";
   import { untrack } from "svelte";
   import { checkForUpdate } from "./lib/update";
   import { browserPushSupport, turnOffPush } from "./lib/push";
@@ -88,6 +88,16 @@
       }),
   );
   const error = $derived(connection && !lost ? connectionError(connection.state, connection.closed) : null);
+  // Since when it is lost, and a clock while it is (see lossNotice).
+  let lostAt = $state<number | null>(null);
+  let now = $state(Date.now());
+  $effect(() => {
+    if (!lost) return void (lostAt = null);
+    untrack(() => (lostAt = now = Date.now()));
+    const tick = setInterval(() => (now = Date.now()), 500);
+    return () => clearInterval(tick);
+  });
+  const notice = $derived(lostAt === null ? "none" : lossNotice(now - lostAt));
 
   // Rejected or kicked: do not wait for the server to close the socket.
   $effect(() => {
@@ -413,8 +423,12 @@
       starting = false;
     }
   };
+  // Each second while quiet; the growing waits count only after it.
   const schedule = () => {
-    if (timer === undefined) timer = setTimeout(tryNow, reconnectDelay(attempts++));
+    if (timer !== undefined) return;
+    const lostFor = Date.now() - (lostAt ?? Date.now());
+    timer = setTimeout(tryNow, nextDelay(lostFor, attempts));
+    if (lostFor >= QUIET_MS) attempts++;
   };
   $effect(() => {
     if (lost && !attempt) untrack(schedule);
@@ -467,11 +481,15 @@
     onFediSignupDone={() => (fediSignup = false)}
   />
 {:else if connection.state.status === "synced"}
-  {#if lost}
+  <!-- Quiet first (the server is usually back within seconds): a small
+       sign, then the banner (see lossNotice). -->
+  {#if lost && notice === "banner"}
     <div class="reconnecting" role="status">
       Connection lost. Reconnecting…
       <button type="button" onclick={() => void tryNow()}>Retry now</button>
     </div>
+  {:else if lost && notice === "sign"}
+    <div class="reconnecting quiet" role="status">Reconnecting…</div>
   {/if}
   <!-- While lost, the old view stays readable but takes no input (it would be lost). -->
   <div class="client" inert={lost}>
@@ -565,6 +583,15 @@
     font-size: 13px;
     font-weight: 600;
     box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
+  }
+  .reconnecting.quiet {
+    padding: 3px 10px;
+    border-color: var(--border-subtle);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 400;
+    box-shadow: none;
+    opacity: 0.85;
   }
   .reconnecting button {
     padding: 4px 10px;

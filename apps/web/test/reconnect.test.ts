@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { proto } from "@kallisti/protocol";
-import { busyName, loggedOut, reconnectDelay, rejoinTarget, shouldReconnect } from "../src/lib/reconnect";
+import { busyName, loggedOut, reconnectDelay, rejoinTarget, shouldReconnect, lossNotice, nextDelay, QUIET_MS } from "../src/lib/reconnect";
 import type { Place } from "../src/lib/place";
 
 const lost = { status: "synced" as const, closed: true, closeReason: "", wasSynced: true };
@@ -68,5 +68,21 @@ describe("rejoinTarget", () => {
   it("not from another device of the account that went into voice meanwhile", () => {
     expect(rejoinTarget(back, 0, exists, 4)).toBe(null);
     expect(rejoinTarget({ ...back, session: null }, 0, exists, 4)).toBe(null);
+  });
+});
+
+describe("a quiet loss", () => {
+  it("shows nothing at first, a small sign after 2 s, the banner after 10 s", () => {
+    expect(lossNotice(0)).toBe("none");
+    expect(lossNotice(1999)).toBe("none");
+    expect(lossNotice(2000)).toBe("sign");
+    expect(lossNotice(9999)).toBe("sign");
+    expect(lossNotice(QUIET_MS)).toBe("banner");
+  });
+  it("tries each second while quiet, then the growing waits from the first", () => {
+    expect(nextDelay(0, 0)).toBe(1000);
+    expect(nextDelay(9000, 0)).toBe(1000);
+    expect(nextDelay(QUIET_MS, 0)).toBe(reconnectDelay(0));
+    expect(nextDelay(QUIET_MS + 5000, 3)).toBe(reconnectDelay(3));
   });
 });
