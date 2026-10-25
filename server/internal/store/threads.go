@@ -243,6 +243,9 @@ func (s *Store) withExtras(msgs []Message) error {
 	if err := withUploads(s.db, msgs); err != nil {
 		return err
 	}
+	if err := withPolls(s.db, msgs); err != nil {
+		return err
+	}
 	if err := s.withReactions(msgs); err != nil {
 		return err
 	}

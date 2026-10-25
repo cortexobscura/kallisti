@@ -50,6 +50,7 @@ type Message struct {
 	MentionAll string
 	NoPing     bool    // a reply that does not ping the original's author
 	Thread     *Thread // the thread started from it
+	Poll       *Poll   // a poll message (its Text: the poll as text)
 }
 
 // MessageSticker is the sticker a message is (its name now, also once
@@ -93,6 +94,7 @@ type NewMessage struct {
 	ReplyTo    int64        // 0: not a reply; else a message in the same channel
 	MentionAll string       // "", "here" or "everyone" (see Message)
 	NoPing     bool         // see Message
+	Poll       *Poll        // a poll (answers without voters)
 	// The sender's id for this send ("": none), the same on each retry: a
 	// second send with it finds the first (see MessageByNonce).
 	Nonce string
@@ -243,7 +245,7 @@ func Open(path string) (*Store, error) {
 	// One writer at a time is all SQLite allows anyway, and an in-memory
 	// database exists only for one connection.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + reactionsTable + ";" + statusTable + ";" + emojiTable + ";" + userEmojiTables + ";" + stickersTable + ";" + invitesTable + ";" + pushTables + ";" + streamKeysTable + ";" + categoriesTable + ";" + threadsTable + ";" + fediTables); err != nil {
+	if _, err := db.Exec(schema + reactionsTable + ";" + statusTable + ";" + emojiTable + ";" + userEmojiTables + ";" + stickersTable + ";" + invitesTable + ";" + pushTables + ";" + streamKeysTable + ";" + categoriesTable + ";" + threadsTable + ";" + fediTables + ";" + pollsTables); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
@@ -819,8 +821,16 @@ func (s *Store) AddMessage(n NewMessage) (Message, error) {
 			return Message{}, errors.New("upload is missing or already attached")
 		}
 	}
+	if n.Poll != nil {
+		if err := addPoll(tx, id, *n.Poll); err != nil {
+			return Message{}, err
+		}
+	}
 	msgs := []Message{{ID: id, ChannelID: n.ChannelID, Author: n.Author, Verified: n.Verified, AuthorID: authorID, Text: n.Text, CreatedAt: n.At, Sticker: ms, Reply: quote, MentionAll: n.MentionAll, NoPing: n.NoPing}}
 	if err := withUploads(tx, msgs); err != nil {
+		return Message{}, err
+	}
+	if err := withPolls(tx, msgs); err != nil {
 		return Message{}, err
 	}
 	return msgs[0], tx.Commit()
@@ -1144,7 +1154,8 @@ func deleteMessages(tx *sql.Tx, ids []int64) ([]Message, error) {
 	if err := withUploads(tx, gone); err != nil {
 		return nil, err
 	}
-	for _, q := range []string{`DELETE FROM messages WHERE id IN (` + in + `)`, `DELETE FROM uploads WHERE message_id IN (` + in + `)`} {
+	for _, q := range []string{`DELETE FROM messages WHERE id IN (` + in + `)`, `DELETE FROM uploads WHERE message_id IN (` + in + `)`,
+		`DELETE FROM polls WHERE message_id IN (` + in + `)`, `DELETE FROM poll_votes WHERE message_id IN (` + in + `)`} {
 		if _, err := tx.Exec(q, args...); err != nil {
 			return nil, err
 		}
@@ -1261,7 +1272,10 @@ func (s *Store) Search(text string, channels []int64, author string, limit int) 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return out, withUploads(s.db, out)
+	if err := withUploads(s.db, out); err != nil {
+		return nil, err
+	}
+	return out, withPolls(s.db, out)
 }
 
 // SetReadMark notes that a user read a channel up to a message; marks never
