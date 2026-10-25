@@ -2347,3 +2347,17 @@ From `meta/research/discord-comparison.md`.
 
 - Rain (melonbread.xyz, Sharkey): the first login went through, every later one ended on Sharkey's "An error has occurred". Misskey and Sharkey give a Mastodon app whose client_id is base64 of an auth session URL (`<base>/auth/<id>`); `/oauth/authorize` only decodes it and redirects there, and one login uses the session up. We kept the app per instance. `fedi.SingleUse` spots such a client_id, and `fediApp` then registers a new app for each login. The fake instance has `SingleUseApps` for the test.
 
+## Several files in one message
+
+As in Discord: up to 10 files per message (`store.MaxUploads`), each with the size limit of one file and an optional description (alt text, up to 1024 characters).
+
+- Store: the uploads name their message (`uploads.message_id`, `position`, `description`). A one-time migration (`upload_messages` in `store_meta`) copies the old `messages.upload_id` over and clears it, as its foreign key would keep an upload that an edit takes off.
+- Protocol: messages carry `uploads` and still `upload` (the first), as the desktop and mobile apps bundle older web clients for a while. `send` takes `uploads: [{key, description}]` and still `upload: key`; the web client sends one file without a description in the old form, which older servers know. `ready` tells `maxUploads`; without it the client allows one file.
+- Spoilers stay a file-name prefix (`SPOILER_`), as in Discord: older clients understand it too.
+- `upload-token` with `count` gives the tokens for all files in one request: one request per file hit the WebSocket rate limit (burst 10) with 10 files.
+- Composer: the waiting files are a list per chat in `pendingFiles` (old IndexedDB rows with one file are read). The list is `$state.raw`: IndexedDB cannot store Svelte's state proxies, and the write failed without a message. A send uploads the files one after another ("Uploading 2 of 5…"); a failed send keeps all files and a retry uploads them again.
+- Chat: two or more pictures form a grid as in Discord (`lib/fileGrid`); videos, audio and other files stay below. The viewer goes through the grid's visible pictures (buttons, arrow keys, swipe) and shows the description.
+- Mumble: a text with several images is one message; web messages reach Mumble with a link for each file.
+- Edit: as in Discord, files can be taken off, not added; an edit that leaves no text and no file asks to delete the message.
+- Headless checks: a hidden tab (`visibilityState` hidden) stops painting pictures on purpose (`data-window-hidden`), so screenshots show empty cells until the mark is removed.
+

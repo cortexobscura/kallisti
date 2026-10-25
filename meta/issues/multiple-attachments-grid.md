@@ -4,9 +4,9 @@ Parent: [Several files in one message](multiple-attachments.md)
 
 ## Summary
 
-Several images (and videos) of a message show as a grid as in Discord:
+Several pictures of a message show as a grid as in Discord:
 2 side by side, 3 as one big and two small, 4 as 2x2, more in rows of
-3. Other files show as file cards below. The viewer goes through the
+3. Videos, audio and other files show below, as players and file cards. The viewer goes through the
 message's images (arrow keys, buttons, swipe on touch screens).
 
 ## Acceptance Criteria
