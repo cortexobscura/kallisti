@@ -3,14 +3,15 @@
 // The visitor's system comes first: its card is marked, and the big
 // button at the top downloads it.
 const REPO = "kallisti-chat/kallisti";
-const NAMES = { mac: "macOS", windows: "Windows", linux: "Linux" };
+const NAMES = { mac: "macOS", windows: "Windows", linux: "Linux", android: "Android" };
 
 const systemOf = () => {
+  if (/android/i.test(navigator.userAgent)) return "android";
   const p = (navigator.userAgentData?.platform || navigator.platform || navigator.userAgent).toLowerCase();
   if (p.includes("mac")) return "mac";
   if (p.includes("win")) return "windows";
-  if (p.includes("linux") && !/android/i.test(navigator.userAgent)) return "linux";
-  return null; // phones and others: the browser is the way
+  if (p.includes("linux")) return "linux";
+  return null; // iPhones and others: the browser is the way
 };
 
 const system = systemOf();
