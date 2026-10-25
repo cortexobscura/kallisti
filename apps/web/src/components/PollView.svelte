@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import Emoji from "./Emoji.svelte";
   import { plural, pollOpen, share, showResults, timeLeft, winners, type Poll } from "../lib/polls";
 
   // A poll in the chat (see lib/polls): pick answers and vote; the counts
@@ -51,7 +52,7 @@
           <div class="result" class:won={top.includes(i)} class:chosen title={answer.voters?.join(", ")}>
             <span class="bar" style:width="{percent}%"></span>
             <span class="label"
-              >{#if answer.emoji}<span class="emoji">{answer.emoji}</span>{/if}{answer.text}{#if chosen}<span class="sr-only"> (your vote)</span>
+              >{#if answer.emoji}<span class="emoji"><Emoji text={answer.emoji} /></span>{/if}{answer.text}{#if chosen}<span class="sr-only"> (your vote)</span>
                 <span aria-hidden="true">✓</span>{/if}</span
             >
             <span class="count">{plural(answer.votes, "vote")} · {percent}%</span>
@@ -66,7 +67,7 @@
               disabled={!onVote || !open}
               onchange={(e) => pick(i, e.currentTarget.checked)}
             />
-            {#if answer.emoji}<span class="emoji">{answer.emoji}</span>{/if}{answer.text}
+            {#if answer.emoji}<span class="emoji"><Emoji text={answer.emoji} /></span>{/if}{answer.text}
           </label>
         {/if}
       </li>
@@ -185,6 +186,11 @@
   }
   .emoji {
     margin-right: 6px;
+  }
+  .emoji :global(img.emoji) {
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
   }
   .voters {
     margin: 2px 0 0 10px;

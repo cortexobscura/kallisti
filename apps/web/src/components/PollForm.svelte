@@ -1,5 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import Emoji from "./Emoji.svelte";
+  import EmojiPicker from "./EmojiPicker.svelte";
   import { emptyPollDraft, pollBody, pollProblem, POLL_ANSWER_MAX, POLL_ANSWERS_MAX, POLL_DURATIONS, POLL_QUESTION_MAX, type PollBody } from "../lib/polls";
 
   // A new poll (see lib/polls): question, answers with an emoji each,
@@ -11,6 +13,9 @@
   let draft = $state(emptyPollDraft());
   let error = $state("");
   let sending = $state(false);
+  // The answer whose emoji is being picked (in the dialog: outside it, all
+  // is inert), and where its button is.
+  let picking = $state<{ i: number; anchor: DOMRect } | null>(null);
   $effect(() => dialog?.showModal());
   const problem = $derived(pollProblem(draft));
   const addAnswer = async () => {
@@ -34,8 +39,17 @@
   };
 </script>
 
-<!-- Not closed while posting: a refusal shows here. -->
-<dialog bind:this={dialog} onclose={onClose} oncancel={(e) => sending && e.preventDefault()} aria-labelledby="poll-title">
+<!-- Not closed while posting (a refusal shows here); Escape in the emoji
+     picker closes only the picker. -->
+<dialog
+  bind:this={dialog}
+  onclose={onClose}
+  oncancel={(e) => {
+    if (sending || picking) e.preventDefault();
+    picking = null;
+  }}
+  aria-labelledby="poll-title"
+>
   <form onsubmit={submit}>
     <header>
       <h2 id="poll-title">Create a poll</h2>
@@ -50,7 +64,13 @@
       <legend>Answers</legend>
       {#each draft.answers as answer, i (i)}
         <div class="answer">
-          <input class="emoji" bind:value={answer.emoji} maxlength="16" placeholder="🙂" aria-label="Emoji of answer {i + 1} (optional)" />
+          <button type="button" class="emoji" aria-label={answer.emoji ? `Emoji of answer ${i + 1}: change` : `Add an emoji to answer ${i + 1}`}
+            onclick={(e) => (picking = { i, anchor: e.currentTarget.getBoundingClientRect() })}
+            >{#if answer.emoji}<Emoji text={answer.emoji} />{:else}<span class="add-emoji" aria-hidden="true">🙂</span>{/if}</button
+          >
+          {#if answer.emoji}
+            <button type="button" class="remove" onclick={() => (answer.emoji = undefined)} aria-label="Remove the emoji of answer {i + 1}">⌫</button>
+          {/if}
           <input class="text" bind:value={answer.text} maxlength={POLL_ANSWER_MAX} placeholder="Answer {i + 1}" aria-label="Answer {i + 1}" />
           {#if draft.answers.length > 2}
             <button type="button" class="remove" onclick={() => draft.answers.splice(i, 1)} aria-label="Remove answer {i + 1}">×</button>
@@ -72,6 +92,18 @@
     <label class="check"><input type="checkbox" bind:checked={draft.multiple} /> Allow more than one answer</label>
     <label class="check"><input type="checkbox" bind:checked={draft.anonymous} /> Anonymous votes (nobody sees who voted for what)</label>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if picking}
+      {@const at = picking.i}
+      <EmojiPicker
+        anchor={picking.anchor}
+        label="Emoji of answer {at + 1}"
+        onPick={(emoji) => {
+          if (draft.answers[at]) draft.answers[at].emoji = emoji;
+          picking = null;
+        }}
+        onClose={() => (picking = null)}
+      />
+    {/if}
     <footer>
       <button type="button" class="secondary" onclick={() => dialog?.close()}>Cancel</button>
       <button type="submit" class="primary" disabled={!!problem || sending}>{sending ? "Posting…" : "Post"}</button>
@@ -165,9 +197,21 @@
     font-weight: 400;
     text-transform: none;
   }
-  input.emoji {
-    width: 3.5em;
-    text-align: center;
+  button.emoji {
+    flex: none;
+    width: 3em;
+    border-radius: 4px;
+    background: var(--bg-rail);
+    font-size: 18px;
+  }
+  .add-emoji {
+    opacity: 0.4;
+    filter: grayscale(1);
+  }
+  button.emoji :global(img.emoji) {
+    width: 22px;
+    height: 22px;
+    vertical-align: middle;
   }
   input.text {
     flex: 1;
