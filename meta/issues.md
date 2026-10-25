@@ -24,3 +24,5 @@
   - [ ] [Composer: pick, paste and drop several files](issues/multiple-attachments-composer.md)
   - [ ] [Image grid and a viewer with next and previous](issues/multiple-attachments-grid.md)
   - [ ] [Mumble bridge: several images in one message](issues/multiple-attachments-mumble.md)
+  - [ ] [Edit: remove files from a message](issues/multiple-attachments-edit.md)
+  - [ ] [Files: spoiler and description](issues/multiple-attachments-spoiler-alt.md)
