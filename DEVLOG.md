@@ -2361,3 +2361,12 @@ As in Discord: up to 10 files per message (`store.MaxUploads`), each with the si
 - Edit: as in Discord, files can be taken off, not added; an edit that leaves no text and no file asks to delete the message.
 - Headless checks: a hidden tab (`visibilityState` hidden) stops painting pictures on purpose (`data-window-hidden`), so screenshots show empty cells until the mark is removed.
 
+## Polls
+
+As in Discord: a question (up to 300 characters), 2 to 10 answers (up to 55, each with an optional Unicode emoji), single or multiple choice, anonymous or named, 1 hour to 2 weeks. From the composer's "+" menu, for registered users (guest accounts too) in stored chats.
+
+- A poll is a message with its own rows (`polls`, `poll_votes`, answers as JSON); its text (question and answers, "vote in Kallisti") is for Mumble, search, quotes and push. It goes through `send`, so slow mode, nonces, message rules and the Mumble mirror apply. The rules' word replacements reach the question and answers too, not only the text. Line breaks become spaces: they would fake answers in the text.
+- The server keeps who voted, also in anonymous polls (one vote each, changes); it never sends their names. Each reader gets `mine` (its answers) where a message goes to one reader (history, pins, search, the `poll` event); other broadcasts leave it out and the client keeps what it knew. An ended poll never opens again in the client: a vote's counts can come after the end.
+- Polls end in the server's minute loop (`EndDuePolls`, also after a restart; at most a minute late) or early by the author. The result is a no-ping reply by the author; `deliver` (shared with `post`) takes it to thread followers, direct chats and Mumble, where it comes from the server (`SendChannelText` from 0).
+- Counts show after one's own vote, on "Show results", or at the end; shares are of the voters (multiple choice adds up to more than 100%).
+

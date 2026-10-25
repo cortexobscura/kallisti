@@ -284,3 +284,7 @@
   - [x] [Mumble bridge: several images in one message](issues/multiple-attachments-mumble.md)
   - [x] [Edit: remove files from a message](issues/multiple-attachments-edit.md)
   - [x] [Files: spoiler and description](issues/multiple-attachments-spoiler-alt.md)
+- [x] [Polls](issues/polls.md)
+  - [x] [Polls: store and protocol](issues/polls-server.md)
+  - [x] [Polls: ending on time and the result](issues/polls-ending.md)
+  - [x] [Polls: the web client](issues/polls-web.md)
