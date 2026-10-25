@@ -2343,3 +2343,7 @@ From `meta/research/discord-comparison.md`.
 - pwm: with the keyboard open the channel header was gone. Edge to edge (Android 15+) the keyboard no longer shrinks the window, so the WebView panned the whole page up. `MainActivity` now pads the content view by the keyboard's height (IME insets), and passes no navigation bar inset while it is open (no gesture bar gap above the keyboard): the page gets shorter instead.
 - Then the chat jumped back into history when the keyboard opened: the resize fired a scroll event before the ResizeObserver, and the scroll handler decided the reader had left the bottom. A scroll right after the list's height changed now keeps a reader at the bottom there. Checked on the user's phone (guest login): header visible, newest message above the composer, normal again after closing.
 
+## Fediverse login: Sharkey works only once
+
+- Rain (melonbread.xyz, Sharkey): the first login went through, every later one ended on Sharkey's "An error has occurred". Misskey and Sharkey give a Mastodon app whose client_id is base64 of an auth session URL (`<base>/auth/<id>`); `/oauth/authorize` only decodes it and redirects there, and one login uses the session up. We kept the app per instance. `fedi.SingleUse` spots such a client_id, and `fediApp` then registers a new app for each login. The fake instance has `SingleUseApps` for the test.
+

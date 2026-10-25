@@ -276,3 +276,4 @@
 - [x] [Android app (prototype)](issues/android-app.md)
 - [x] [Mention pills for every name "@" suggests](issues/pills-match-suggestions.md)
 - [x] [Android app: the keyboard pushes the header away](issues/android-keyboard-header.md)
+- [x] [Fediverse login: Sharkey works only once](issues/fedi-sharkey-relogin.md)
