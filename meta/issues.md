@@ -17,6 +17,3 @@
 - [ ] [Mobile apps (Android and iOS) with background calls](issues/mobile-apps.md)
 - [ ] [Desktop app: links do nothing, videos don't play (Linux)](issues/desktop-links-and-video.md)
 - [ ] [WHIP streams: picture and sound out of sync](issues/whip-av-sync.md)
-- [ ] [Setting: 24-hour time](issues/time-format-setting.md)
-- [ ] [Stream view: drag to resize](issues/stream-stage-resize.md)
-- [ ] [Picture-in-picture: no picture in the page meanwhile](issues/pip-placeholder.md)

@@ -2320,3 +2320,11 @@ From `meta/research/discord-comparison.md`.
 - WKWebView inset its scroll view by the safe areas: a white band below the page and the composer too high. The scroll view's `contentInsetAdjustmentBehavior` is now `never` (`ios.rs`); the page keeps clear of the notch and home indicator itself.
 - Voice stopped in the background and with the screen locked. With `UIBackgroundModes` audio, WebKit does not mute the microphone (the track never got `mute`) and the page's JavaScript keeps running, but WebKit sets the audio context to "interrupted" when the app goes to the background (just before the page counts as hidden), and our capture and playback both run in that context. A `resume()` once the page is hidden works and voice goes on (`voice/background.ts`, only while in voice: a running context keeps the app awake). A short gap on each switch remains. Checked on an iPhone XS with iOS 27: background and several minutes locked, both directions. Found with a temporary init script that logged to a file in the app's container, and the device log (idevicesyslog).
 - The app has no WebCodecs `AudioDecoder` (Safari on the same iOS has it with Opus): stream sound was silent there. It now uses the voice decoder (WebCodecs with Opus, else libopus), which also spares the Linux app WebKitGTK's leak. Going live with sound still needs `AudioEncoder`.
+
+## 24-hour time, stream view height, picture-in-picture note
+
+- Message times followed the browser's language (12-hour for English). A setting "Time format" (as the language, 24-hour, 12-hour) sets `hourCycle`; 24-hour uses two-digit hours ("09:05").
+- The stream view had a fixed height (55 % of the window, 40 % on phones). Its lower edge is now a separator to drag (pointer capture) or move with the arrow keys, Home and End: 20 to 80 % of the window height, saved (`streamStage`, three digits).
+- In picture-in-picture the floating video is the tile canvas's `captureStream()`, so the canvas must go on drawing: the tile is covered with a note and a button to bring it back, as other players do.
+- Checked end to end with the server in podman, an ffmpeg WHIP test stream and headless Chrome (picture-in-picture works there).
+
