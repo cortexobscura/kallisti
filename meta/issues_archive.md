@@ -271,3 +271,4 @@
 - [x] [Setting: 24-hour time](issues/time-format-setting.md)
 - [x] [Stream view: drag to resize](issues/stream-stage-resize.md)
 - [x] [Picture-in-picture: no picture in the page meanwhile](issues/pip-placeholder.md)
+- [x] [Stream controls on phones](issues/stream-controls-touch.md)
