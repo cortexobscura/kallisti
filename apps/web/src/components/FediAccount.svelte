@@ -56,7 +56,7 @@
   <form class="account" onsubmit={link}>
     <span class="label">Fediverse account</span>
     <p class="hint">Log in with your Mastodon, Pleroma, GoToSocial or other fediverse account too.</p>
-    <input bind:value={instance} placeholder="mastodon.social" autocomplete="url" aria-label="Your fediverse server" required />
+    <input bind:value={instance} placeholder="mastodon.social or @you@mastodon.social" autocomplete="url" aria-label="Your fediverse server or address" required />
     {#if account.hasPassword && !account.temporary}
       <input type="password" bind:value={password} placeholder="Current password" autocomplete="current-password" required />
     {/if}
