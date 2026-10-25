@@ -259,7 +259,7 @@
     onSticker?: (sticker: number, reply?: number, noPing?: boolean) => Promise<void>;
     // Polls (see lib/polls): a new one (settles once stored), our vote,
     // the author's early end.
-    onPoll?: (poll: PollBody) => Promise<void>;
+    onPoll?: (poll: PollBody, nonce: string) => Promise<void>;
     onVote?: (message: number, answers: number[]) => void;
     onEndPoll?: (message: number) => void;
     // A send the server refused, back for the box (n: which refusal).
@@ -401,9 +401,13 @@
   const removePending = (i: number) => setPending(pending.filter((_, j) => j !== i));
   // The file whose description is open (see MAX_DESCRIPTION).
   let describing = $state<File | null>(null);
-  const describePending = (i: number, text: string) => {
+  // keep: also into pendingFiles (on change; each key only shows it, so
+  // a Send right after typing has it).
+  const describePending = (i: number, text: string, keep = true) => {
     const description = text.trim();
-    if ((pending[i]?.description ?? "") !== description) setPending(pending.map((p, j) => (j === i ? { ...p, description } : p)));
+    const next = pending.map((p, j) => (j === i ? { ...p, description } : p));
+    if (keep) setPending(next);
+    else showPending(next);
   };
   const focusOnMount = (el: HTMLElement) => el.focus();
   const togglePendingSpoiler = (i: number) => setPending(pending.map((p, j) => (j === i ? { ...p, spoiler: !p.spoiler } : p)));
@@ -416,7 +420,7 @@
     }
     const added = addFiles(pending, picked, maxUploads, uploadMax);
     if (added.note) notify(added.note);
-    if (added.files.length === pending.length) return;
+    if (!added.changed) return;
     setPending(added.files);
     messageInput?.focus(); // after the file picker or a drop: Enter sends
   };
@@ -1190,6 +1194,7 @@
                   maxlength={MAX_DESCRIPTION}
                   value={p.description ?? ""}
                   disabled={sendStatus?.sending}
+                  oninput={(e) => describePending(i, e.currentTarget.value, false)}
                   onchange={(e) => describePending(i, e.currentTarget.value)}
                   onkeydown={(e) => {
                     if (e.key === "Escape" || (e.key === "Enter" && !e.shiftKey)) {
@@ -1461,7 +1466,8 @@
           }
         }}
       ></textarea>
-      {#if editing.files.length}
+      <!-- Servers before several files cannot take files off. -->
+      {#if editing.files.length && maxUploads > 1}
         <ul class="edit-files" aria-label="Files">
           {#each editing.files as f (f.url)}
             {@const gone = editing.removed.includes(f.url)}
@@ -1478,8 +1484,8 @@
     {@const id = m.source.id}
     <PollView
       poll={m.poll}
-      onVote={canReply && onVote && myId !== null ? (answers) => onVote(id, answers) : undefined}
-      onEnd={canReply && onEndPoll && myId !== null && "authorId" in m && m.authorId === myId ? () => onEndPoll(id) : undefined}
+      onVote={canReply && !cannotWrite && onVote && myId !== null ? (answers) => onVote(id, answers) : undefined}
+      onEnd={canReply && !cannotWrite && onEndPoll && myId !== null && "authorId" in m && m.authorId === myId ? () => onEndPoll(id) : undefined}
     />
   {:else if "sticker" in m && m.sticker}
     <!-- A deleted sticker (not in the list) shows its name. -->

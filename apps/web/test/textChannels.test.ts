@@ -341,6 +341,9 @@ describe("several files", () => {
     expect(reduceText(initialTextState, ev!).maxUploads).toBe(10);
     expect(reduceText(initialTextState, parseServerEvent('{"type":"ready","channels":[]}')!).maxUploads).toBe(1);
     expect(reduceText(initialTextState, parseServerEvent('{"type":"ready","channels":[],"maxUploads":0}')!).maxUploads).toBe(1);
+    // Polls too, only where the server says so.
+    expect(reduceText(initialTextState, parseServerEvent('{"type":"ready","channels":[],"polls":true}')!).polls).toBe(true);
+    expect(reduceText(initialTextState, parseServerEvent('{"type":"ready","channels":[]}')!).polls).toBe(false);
   });
   it("asks for the tokens of several files in one request", () => {
     expect(JSON.parse(uploadTokenRequest(3))).toEqual({ type: "upload-token", count: 3 });

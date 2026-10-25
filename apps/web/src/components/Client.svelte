@@ -337,7 +337,7 @@
     stickers,
     onSticker:
       id === null ? undefined : (sticker: number, reply?: number, noPing?: boolean) => connection.sendConfirmed(id, "", crypto.randomUUID(), [], reply, noPing, sticker),
-    onPoll: id === null ? undefined : (poll: PollBody) => connection.sendConfirmed(id, "", crypto.randomUUID(), [], undefined, undefined, undefined, poll),
+    onPoll: id === null || !text.polls ? undefined : (poll: PollBody, nonce: string) => connection.sendConfirmed(id, "", nonce, [], undefined, undefined, undefined, poll),
   });
   const pane = $derived.by(() => {
     if (view.kind === "text")

@@ -84,6 +84,9 @@ describe("addFiles", () => {
     const added = addFiles([pending(f("a"))], [f("b"), f("c")], 1, undefined);
     expect(added.files.map((p) => p.file.name)).toEqual(["b"]);
     expect(added.note).toBeNull();
+    expect(added.changed).toBe(true);
+    const a = pending(f("a"));
+    expect(addFiles([a], [f("big", 9)], 1, 3).changed).toBe(false);
   });
 });
 

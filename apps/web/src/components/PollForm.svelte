@@ -7,7 +7,10 @@
   // A new poll (see lib/polls): question, answers with an emoji each,
   // duration, multiple choice, anonymous votes. onSubmit settles once the
   // server stored it (or fails with why: the form stays).
-  let { onSubmit, onClose }: { onSubmit: (poll: PollBody) => Promise<void>; onClose: () => void } = $props();
+  // nonce: the same for each try of this form (a retry after no answer
+  // cannot post the poll twice).
+  let { onSubmit, onClose }: { onSubmit: (poll: PollBody, nonce: string) => Promise<void>; onClose: () => void } = $props();
+  const nonce = crypto.randomUUID();
 
   let dialog: HTMLDialogElement | undefined = $state();
   let draft = $state(emptyPollDraft());
@@ -29,7 +32,7 @@
     sending = true;
     error = "";
     try {
-      await onSubmit(pollBody($state.snapshot(draft)));
+      await onSubmit(pollBody($state.snapshot(draft)), nonce);
       dialog?.close();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -53,7 +56,7 @@
   <form onsubmit={submit}>
     <header>
       <h2 id="poll-title">Create a poll</h2>
-      <button type="button" class="close" onclick={() => dialog?.close()} aria-label="Close">×</button>
+      <button type="button" class="close" disabled={sending} onclick={() => dialog?.close()} aria-label="Close">×</button>
     </header>
     <label>
       Question
@@ -105,7 +108,7 @@
       />
     {/if}
     <footer>
-      <button type="button" class="secondary" onclick={() => dialog?.close()}>Cancel</button>
+      <button type="button" class="secondary" disabled={sending} onclick={() => dialog?.close()}>Cancel</button>
       <button type="submit" class="primary" disabled={!!problem || sending}>{sending ? "Posting…" : "Post"}</button>
     </footer>
   </form>

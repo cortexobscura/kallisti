@@ -264,10 +264,13 @@ describe("several files", () => {
     expect(rows.size).toBe(0);
   });
 
-  it("stores the list only while all files together are within the upload limit", async () => {
+  it("stores the list while each file is within the upload limit", async () => {
     const { rows, store } = memoryStore();
     const files = createPendingFiles(store, "o", () => 0);
     files.set("c", [{ file: file("a.png", 3), spoiler: false }, { file: file("b.png", 3), spoiler: false }], 5);
+    await files.settled();
+    expect(rows.size).toBe(1);
+    files.set("c", [{ file: file("a.png", 3), spoiler: false }, { file: file("big.png", 6), spoiler: false }], 5);
     await files.settled();
     expect(rows.size).toBe(0);
     expect(files.current("c")).toHaveLength(2);

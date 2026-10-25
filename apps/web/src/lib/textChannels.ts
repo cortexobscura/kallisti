@@ -116,6 +116,7 @@ export type ServerEvent =
       voiceChats?: boolean;
       uploadMax?: number; // bytes per upload
       maxUploads?: number; // files per message
+      polls?: boolean; // the server knows polls
       // Online users' pictures are at /api/avatars/<name> too (see
       // lib/avatar onlinePicture).
       avatars?: boolean;
@@ -267,6 +268,7 @@ export type TextState = {
   voiceChats: boolean;
   uploadMax?: number; // the server's size limit per upload
   maxUploads: number; // files per message (older servers: 1)
+  polls: boolean; // the server knows polls (see lib/polls)
   avatars: boolean; // see ready
   // Voice channel id -> the channel that holds its chat.
   voiceChannels: Readonly<Record<number, number>>;
@@ -356,6 +358,7 @@ export const initialTextState: TextState = {
   categories: [],
   voiceChats: false,
   maxUploads: 1,
+  polls: false,
   avatars: false,
   roles: { admins: [], moderators: [] },
   listenOnly: {},
@@ -564,6 +567,7 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
         ...(v.voiceChats === true ? { voiceChats: true } : {}),
         ...(isNum(v.uploadMax) && v.uploadMax > 0 ? { uploadMax: v.uploadMax } : {}),
         ...(isNum(v.maxUploads) && v.maxUploads >= 1 ? { maxUploads: Math.floor(v.maxUploads) } : {}),
+        ...(v.polls === true ? { polls: true } : {}),
         ...(v.avatars === true ? { avatars: true } : {}),
         ...(roles ? { roles } : {}),
         ...(isListenOnly(v.listenOnly) ? { listenOnly: v.listenOnly } : {}),
@@ -786,6 +790,7 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
         voiceChats: event.voiceChats === true,
         uploadMax: event.uploadMax,
         maxUploads: event.maxUploads ?? 1,
+        polls: event.polls === true,
         avatars: event.avatars === true,
         roles: event.roles ?? initialTextState.roles,
         emoji: event.emoji ?? [],

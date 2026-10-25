@@ -78,8 +78,8 @@ export const createPendingFiles = (store: FileStore | null, origin: string, now 
 
   return {
     // Picked, removed or changed (spoiler, description); none: discarded.
-    // The nonce stays while the files do. max: the server's upload limit
-    // (all files together, for the store).
+    // The nonce stays while the files do. max: the server's limit per file
+    // (larger files are not stored).
     set(chat: string, files: readonly Pending[], max: number | undefined) {
       if (!files.length) {
         drop(chat);
@@ -89,9 +89,9 @@ export const createPendingFiles = (store: FileStore | null, origin: string, now 
       const kept = { files: [...files], nonce: before && sameFiles(filesOf(before.files), filesOf(files)) ? before.nonce : newNonce() };
       memory.set(chat, kept);
       const row = { key: key(chat), at: now(), ...kept };
-      const size = files.reduce((n, p) => n + p.file.size, 0);
+      const largest = Math.max(...files.map((p) => p.file.size));
       void later(async (s) => {
-        if (size > (max ?? FALLBACK_MAX)) return s.delete(row.key);
+        if (largest > (max ?? FALLBACK_MAX)) return s.delete(row.key);
         await s.put(row);
         await prune(s);
       });

@@ -64,7 +64,8 @@ export const addFiles = (waiting: readonly Pending[], picked: readonly File[], m
   });
   const files = [...(max === 1 && fits.length ? [] : waiting), ...fits.map((file) => ({ file, spoiler: false }))];
   if (files.length > max && max > 1) notes.push(max === 1 ? "One file per message on this server." : `At most ${max} files per message.`);
-  return { files: files.slice(0, max), note: notes.join(" ") || null };
+  const kept = files.slice(0, max);
+  return { files: kept, note: notes.join(" ") || null, changed: !sameFiles(kept.map((p) => p.file), waiting.map((p) => p.file)) };
 };
 // The upload button's tooltip, with the limit if known.
 export const uploadTitle = (max: number | undefined, count = 1) => {
