@@ -10,7 +10,7 @@ You need Node 24 with pnpm 11 and Go 1.26.2 or newer (the `Dockerfile`
 shows the exact versions it builds with). On the build machine:
 
 ```sh
-git clone https://github.com/lambadalambda/kallisti.git
+git clone https://github.com/kallisti-chat/kallisti.git
 cd kallisti
 pnpm install --frozen-lockfile --filter @kallisti/web...
 pnpm --filter @kallisti/web build                       # -> apps/web/dist

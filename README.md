@@ -155,7 +155,7 @@ web users only.
 ### Bots
 
 Bots are plain Mumble clients, so any Mumble bot works. For example,
-[kallisti-jukebox](https://github.com/lambadalambda/kallisti-jukebox) plays
+[kallisti-jukebox](https://github.com/kallisti-chat/kallisti-jukebox) plays
 music from Jellyfin in a voice channel, controlled with chat commands.
 
 ## Website
