@@ -19,11 +19,17 @@ class VoiceService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val notification = notification(this, intent?.getStringExtra(EXTRA_CHANNEL) ?: "")
-    running = true
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-    } else {
-      startForeground(NOTIFICATION_ID, notification)
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+      } else {
+        startForeground(NOTIFICATION_ID, notification)
+      }
+      running = true
+    } catch (e: Exception) {
+      // E.g. the microphone not allowed (14+): no service, no crash.
+      android.util.Log.w("Kallisti", "voice service not in the foreground", e)
+      stopSelf()
     }
     return START_NOT_STICKY
   }
@@ -57,6 +63,7 @@ class VoiceService : Service() {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
       )
       val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(context, CHANNEL_ID) else Notification.Builder(context)
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
       return builder
         .setSmallIcon(android.R.drawable.ic_btn_speak_now)
         .setContentTitle(if (channel.isEmpty()) "In voice" else "In voice: $channel")

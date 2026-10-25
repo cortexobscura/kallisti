@@ -21,9 +21,9 @@ pub fn plugin() -> TauriPlugin<tauri::Wry> {
 }
 
 /// The voice service on (with the channel's name for its notification) or
-/// off.
+/// off. Async: it waits for the Kotlin side, off the main thread.
 #[tauri::command]
-pub fn voice_service(app: tauri::AppHandle, on: bool, channel: Option<String>) -> Result<(), String> {
+pub async fn voice_service(app: tauri::AppHandle, on: bool, channel: Option<String>) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
         use tauri::Manager;
