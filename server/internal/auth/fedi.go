@@ -330,11 +330,12 @@ func (f *FediLogin) displayHandle(ctx context.Context, inst fedi.Instance, remot
 }
 
 // fediApp is our app on the instance, registered on first use (and again
-// while none of its logins went through, see unusedAppLifetime).
+// while none of its logins went through, see unusedAppLifetime; for each
+// login where one login uses it up, see fedi.SingleUse).
 func (a *Service) fediApp(ctx context.Context, inst fedi.Instance) (fedi.App, error) {
 	redirect := a.Fedi.redirectURI()
 	app, err := a.Store.FediApp(inst.Host, redirect)
-	if err == nil && (app.Used || a.Now().Sub(app.CreatedAt) < unusedAppLifetime) {
+	if err == nil && !fedi.SingleUse(inst, app.ClientID) && (app.Used || a.Now().Sub(app.CreatedAt) < unusedAppLifetime) {
 		return fedi.App{ClientID: app.ClientID, ClientSecret: app.ClientSecret, Scopes: app.Scopes}, nil
 	}
 	if err != nil && !errors.Is(err, store.ErrNotFound) {

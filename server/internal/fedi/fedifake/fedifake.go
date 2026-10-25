@@ -36,6 +36,9 @@ type Instance struct {
 	// IgnoresProfile: as Pleroma, apps and logins may ask for "profile",
 	// but a token without read:accounts cannot read the account.
 	IgnoresProfile bool
+	// SingleUseApps: as Misskey and Sharkey, an app's client id is base64
+	// of an auth session URL (<base>/auth/<id>), and one login uses it up.
+	SingleUseApps bool
 
 	mu       sync.Mutex
 	apps     map[string]app   // by client id
@@ -123,7 +126,11 @@ func (f *Instance) register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "Validation failed: Scopes are invalid"})
 		return
 	}
-	id, a := random(), app{secret: random(), redirect: r.PostForm.Get("redirect_uris"), scopes: strings.Join(scopes, " ")}
+	id := random()
+	if f.SingleUseApps {
+		id = base64.StdEncoding.EncodeToString([]byte("https://" + r.Host + "/auth/" + id))
+	}
+	a := app{secret: random(), redirect: r.PostForm.Get("redirect_uris"), scopes: strings.Join(scopes, " ")}
 	f.mu.Lock()
 	f.apps[id] = a
 	f.mu.Unlock()
@@ -213,6 +220,9 @@ func (f *Instance) token(w http.ResponseWriter, r *http.Request) {
 		p.Get("redirect_uri") != g.redirect || base64.RawURLEncoding.EncodeToString(sum[:]) != g.challenge {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
 		return
+	}
+	if f.SingleUseApps {
+		delete(f.apps, g.client)
 	}
 	token := random()
 	f.tokens[token] = g.user

@@ -3,6 +3,7 @@ package fedi_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"image"
 	"image/png"
@@ -287,6 +288,24 @@ func TestKnowsProfile(t *testing.T) {
 	} {
 		if fedi.KnowsProfile(v) != want {
 			t.Errorf("%q: %v", v, !want)
+		}
+	}
+}
+
+func TestSingleUse(t *testing.T) {
+	inst := fedi.Instance{Base: "https://melonbread.xyz", Host: "melonbread.xyz"}
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	for id, want := range map[string]bool{
+		b64("https://melonbread.xyz/auth/843a3372-0199-440c-83e3-e469666c3ceb"): true,
+		b64("https://other.example/auth/843a3372"):                              false,
+		b64("https://melonbread.xyz/auth/"):                                     false,
+		b64("https://melonbread.xyz/oauth/x"):                                   false,
+		"843a3372-0199-440c-83e3-e469666c3ceb":                                  false,
+		"Xc9wS3cL0gQz3G2hY1dS0fFkA3jKqP7m8rNtVbWxYz4":                           false,
+		"": false,
+	} {
+		if fedi.SingleUse(inst, id) != want {
+			t.Errorf("%q: %v", id, !want)
 		}
 	}
 }

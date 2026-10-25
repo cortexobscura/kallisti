@@ -300,6 +300,14 @@ func (c *Client) RegisterApp(ctx context.Context, inst Instance, name, redirectU
 	return App{}, fmt.Errorf("%w: %w", ErrUnreachable, err)
 }
 
+// SingleUse: a Misskey or Sharkey app, whose client id is base64 of an
+// auth session URL on the instance (<base>/auth/<id>); one login uses it up.
+func SingleUse(inst Instance, clientID string) bool {
+	session, err := base64.StdEncoding.DecodeString(clientID)
+	id, ok := strings.CutPrefix(string(session), inst.Base+"/auth/")
+	return err == nil && ok && id != ""
+}
+
 // Token trades the code from the callback for an access token.
 func (c *Client) Token(ctx context.Context, inst Instance, app App, redirectURI, code, verifier string) (string, error) {
 	var t struct {

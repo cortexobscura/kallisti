@@ -491,6 +491,15 @@ func TestFediAppsAreKeptOnceUsed(t *testing.T) {
 	}
 }
 
+// Misskey and Sharkey: one login uses an app up, so each login has its own.
+func TestFediSingleUseAppsAreNotReused(t *testing.T) {
+	f := &fedifake.Instance{SingleUseApps: true}
+	_, srv, inst := fediSetup(t, f)
+	b := newBrowser(t, srv)
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": inst}, "rain"), home+"?fedi=register")
+	wantRedirect(t, newBrowser(t, srv).fediFlow(f, map[string]any{"instance": inst}, "rain"), home+"?fedi=register")
+}
+
 // The first password of a fediverse-only account needs a fresh login with
 // the linked fediverse account, in the same session: a stolen session
 // cannot set one and lock the owner out.
