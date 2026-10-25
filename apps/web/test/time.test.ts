@@ -1,6 +1,6 @@
 import type { ChatMessage } from "@kallisti/protocol";
 import { describe, expect, it } from "vitest";
-import { chatItems, formatDay, formatTimestamp, groupMessages } from "../src/lib/chat";
+import { chatItems, formatDay, formatTime, formatTimestamp, groupMessages } from "../src/lib/chat";
 
 const at = (y: number, m: number, d: number, h = 12, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const now = at(2026, 10, 14, 16, 0);
@@ -14,6 +14,21 @@ describe("formatTimestamp", () => {
 
   it("uses the date for older messages", () => {
     expect(formatTimestamp(at(2026, 10, 1, 9, 5), now, L)).toBe("10/1/2026 9:05 AM");
+  });
+
+  it("writes 24-hour or 12-hour time when set, whatever the language", () => {
+    expect(formatTimestamp(at(2026, 10, 14, 15, 58), now, L, "24")).toBe("Today at 15:58");
+    expect(formatTimestamp(at(2026, 10, 13, 9, 5), now, L, "24")).toBe("Yesterday at 09:05");
+    expect(formatTimestamp(at(2026, 10, 14, 0, 30), now, L, "24")).toBe("Today at 00:30");
+    expect(formatTimestamp(at(2026, 10, 14, 15, 58), now, "de-DE", "12")).toBe("Today at 3:58 PM");
+    expect(formatTimestamp(at(2026, 10, 14, 15, 58), now, "de-DE", "auto")).toBe("Today at 15:58");
+  });
+});
+
+describe("formatTime", () => {
+  it("follows the time format", () => {
+    expect(formatTime(at(2026, 10, 14, 19, 5), L)).toBe("7:05 PM");
+    expect(formatTime(at(2026, 10, 14, 19, 5), L, "24")).toBe("19:05");
   });
 });
 

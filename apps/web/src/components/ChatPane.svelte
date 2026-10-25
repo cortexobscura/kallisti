@@ -18,7 +18,7 @@
   import { recentEmoji, skinTone, usedEmoji } from "../lib/emojiPrefs.svelte";
   import { customEmojiFor, customEntries, jumboEmoji, knownEmoji, refsAsNames } from "../lib/customEmoji";
   import { composerEmoji, emojiActions, fromRefs, personalEntries, sameEmoji, toRefs } from "../lib/personalEmoji";
-  import { blockedUsers } from "../lib/settings.svelte";
+  import { blockedUsers, settings } from "../lib/settings.svelte";
   import AudioPlayer from "./AudioPlayer.svelte";
   import VideoPlayer from "./VideoPlayer.svelte";
   import { opensLightbox } from "../lib/lightbox";
@@ -1256,13 +1256,13 @@
             {#if "verified" in m && m.verified}
               <span class="verified" title="Registered on the server">✓<span class="sr-only">registered</span></span>
             {/if}
-            <time datetime={new Date(m.at).toISOString()}>{formatTimestamp(m.at, now)}</time>
+            <time datetime={new Date(m.at).toISOString()}>{formatTimestamp(m.at, now, undefined, settings.value.timeFormat)}</time>
           </div>
           {@render body(m)}
         </div>
       {:else}
         <div class="gutter">
-          <time class="hover-time" datetime={new Date(m.at).toISOString()}>{formatTime(m.at)}</time>
+          <time class="hover-time" datetime={new Date(m.at).toISOString()}>{formatTime(m.at, undefined, settings.value.timeFormat)}</time>
         </div>
         <div class="body">
           {@render body(m)}

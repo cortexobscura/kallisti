@@ -20,6 +20,7 @@ describe("parseSettings", () => {
       noiseSuppression: "strong",
       streamPreviews: false,
       theme: "system",
+      timeFormat: "24",
       echoCancellation: false,
       musicMode: true,
       playbackBuffer: "high",
@@ -117,6 +118,15 @@ describe("sounds", () => {
     expect(parseSettings('{"soundVolume":0}').soundVolume).toBe(0);
     expect(parseSettings('{"soundVolume":3}').soundVolume).toBe(1);
     expect(parseSettings('{"soundVolume":"loud"}').soundVolume).toBe(DEFAULT_SETTINGS.soundVolume);
+  });
+});
+
+describe("time format", () => {
+  it("is automatic unless set to 12 or 24 hours", () => {
+    expect(DEFAULT_SETTINGS.timeFormat).toBe("auto");
+    expect(parseSettings('{"timeFormat":"24"}').timeFormat).toBe("24");
+    expect(parseSettings('{"timeFormat":"12"}').timeFormat).toBe("12");
+    expect(parseSettings('{"timeFormat":"36"}').timeFormat).toBe("auto");
   });
 });
 

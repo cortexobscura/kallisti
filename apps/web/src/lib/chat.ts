@@ -65,15 +65,22 @@ export const messageKey = (m: ChatMessage & { source?: { id: number } }) => {
 export const itemKey = (item: ChatItem) =>
   item.kind === "day" ? `day-${item.at}` : messageKey((item.kind === "group" ? item.group : item.groups[0]!).messages[0]!);
 
-export const formatTime = (at: number, locale?: string) =>
-  new Date(at).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+// "auto": as the language has it (12-hour for English).
+export type TimeFormat = "auto" | "12" | "24";
+
+export const formatTime = (at: number, locale?: string, clock: TimeFormat = "auto") =>
+  new Date(at).toLocaleTimeString(locale, {
+    hour: clock === "24" ? "2-digit" : "numeric",
+    minute: "2-digit",
+    ...(clock !== "auto" && { hourCycle: clock === "24" ? "h23" : "h12" }),
+  });
 
 export const formatDay = (at: number, locale?: string) =>
   new Date(at).toLocaleDateString(locale, { year: "numeric", month: "long", day: "numeric" });
 
 // "Today at 3:58 PM", "Yesterday at 9:05 AM", else "10/1/2026 9:05 AM".
-export const formatTimestamp = (at: number, now: number, locale?: string) => {
-  const time = formatTime(at, locale);
+export const formatTimestamp = (at: number, now: number, locale?: string, clock: TimeFormat = "auto") => {
+  const time = formatTime(at, locale, clock);
   if (sameDay(at, now)) return `Today at ${time}`;
   if (sameDay(at, now - 86_400_000)) return `Yesterday at ${time}`;
   return `${new Date(at).toLocaleDateString(locale)} ${time}`;

@@ -3,6 +3,7 @@
   import { previewText } from "../lib/markdown";
   import { spoilerUpload } from "../lib/media";
   import { formatTimestamp } from "../lib/chat";
+  import { settings } from "../lib/settings.svelte";
   import Avatar from "./Avatar.svelte";
 
   // Search results, in place of the member list. With a heading: another
@@ -59,7 +60,7 @@
           >
             <Avatar name={m.author} size={24} />
             <span class="body">
-              <span class="meta"><strong>{m.author}</strong> in {where(m)} · {formatTimestamp(m.at, now)}</span>
+              <span class="meta"><strong>{m.author}</strong> in {where(m)} · {formatTimestamp(m.at, now, undefined, settings.value.timeFormat)}</span>
               <span class="text">{previewText(m.text) || (m.upload ? spoilerUpload(m.upload).name : "")}</span>
             </span>
           </button>

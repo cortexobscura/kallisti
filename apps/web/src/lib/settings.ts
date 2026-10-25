@@ -1,4 +1,5 @@
 import { DEFAULT_QUALITY, parseQuality, type Kind, type Quality } from "./stream/quality";
+import type { TimeFormat } from "./chat";
 import type { PlaybackBuffer } from "./voice/buffer";
 import type { NoiseMode } from "./voice/noise";
 import type { TransmitMode } from "./voice/vad";
@@ -20,6 +21,8 @@ export type Settings = {
   noiseSuppression: NoiseMode;
   // Colours: "system" follows the system's light or dark setting.
   theme: ThemeSetting;
+  // Message times: 12 or 24 hours, or as the language has it.
+  timeFormat: TimeFormat;
   // The browser's echo cancellation. Off with a headset: in WebKit (the
   // desktop app, Safari) on macOS it puts Bluetooth headsets into their
   // call mode, also with another microphone chosen.
@@ -69,6 +72,7 @@ export const DEFAULT_SETTINGS: Settings = {
   streamPreviews: true,
   noiseSuppression: "browser",
   theme: "dark",
+  timeFormat: "auto",
   echoCancellation: true,
   musicMode: false,
   playbackBuffer: "low",
@@ -107,6 +111,7 @@ export const parseSettings = (raw: string | null): Settings => {
     streamPreviews: d.streamPreviews !== false,
     noiseSuppression: d.noiseSuppression === "strong" || d.noiseSuppression === "strongest" ? d.noiseSuppression : "browser",
     theme: d.theme === "light" || d.theme === "system" ? d.theme : "dark",
+    timeFormat: d.timeFormat === "12" || d.timeFormat === "24" ? d.timeFormat : "auto",
     echoCancellation: d.echoCancellation !== false,
     musicMode: d.musicMode === true,
     playbackBuffer: d.playbackBuffer === "medium" || d.playbackBuffer === "high" ? d.playbackBuffer : "low",

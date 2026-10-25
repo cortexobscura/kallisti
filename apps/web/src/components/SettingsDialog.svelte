@@ -8,6 +8,7 @@
   import { needsReauth, type AccountActions } from "../lib/accounts";
   import { handleHost } from "../lib/fedi";
   import { keyLabel, meterPercent, METER_MIN_DB, type Settings, type ThemeSetting } from "../lib/settings";
+  import type { TimeFormat } from "../lib/chat";
   import { isDesktop } from "../lib/desktop";
   import { outputDeviceSupported } from "../lib/voice/support";
   import { noiseLabel, type NoiseMode } from "../lib/voice/noise";
@@ -203,6 +204,15 @@
       <option value="dark">Dark</option>
       <option value="light">Light</option>
       <option value="system">As the system</option>
+    </select>
+  </label>
+
+  <label>
+    Time format
+    <select value={settings.timeFormat} onchange={(e) => onChange({ timeFormat: e.currentTarget.value as TimeFormat })}>
+      <option value="auto">As the language</option>
+      <option value="24">24-hour (19:05)</option>
+      <option value="12">12-hour (7:05 PM)</option>
     </select>
   </label>
 
