@@ -6,7 +6,7 @@ dist/
 *.db-wal
 *.db-shm
 target/
-apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/gen/schemas/
 packages/devtools/mumble-client/out/
 server/*.pem
 .env

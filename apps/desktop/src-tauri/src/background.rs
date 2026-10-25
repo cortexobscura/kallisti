@@ -22,6 +22,17 @@ mod tests {
         super::no_app_nap();
     }
 
+    // iOS: WebKit mutes a hidden page's microphone unless the app has the
+    // audio background mode.
+    #[test]
+    fn ios_microphone_not_muted_in_background() {
+        let plist = include_str!("../Info.ios.plist");
+        let modes = plist.split("<key>UIBackgroundModes</key>").nth(1).expect("UIBackgroundModes");
+        let modes = &modes[..modes.find("</array>").expect("an array")];
+        assert!(modes.contains("<string>audio</string>"));
+        assert!(plist.contains("<key>NSMicrophoneUsageDescription</key>"));
+    }
+
     #[test]
     fn web_view_not_suspended_in_background() {
         let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
