@@ -40,10 +40,23 @@ export const androidApp = () => isDesktop() && androidAgent(navigator.userAgent)
 
 // The Android app's voice service (a foreground service: voice goes on in
 // the background), on while in voice, its notification with the channel.
-export const setVoiceService = async (on: boolean, channel: string | null) => {
+// Off after a moment: a reconnect replaces the chat view (its cleanup
+// stops, the new one starts), and Android starts such a service again only
+// from the foreground.
+export const createVoiceService = (call: (on: boolean, channel: string | null) => Promise<void>, stopDelayMs: number) => {
+  let stopping: ReturnType<typeof setTimeout> | undefined;
+  return (on: boolean, channel: string | null): Promise<void> => {
+    clearTimeout(stopping);
+    if (on) return call(true, channel);
+    stopping = setTimeout(() => void call(false, null).catch(() => {}), stopDelayMs);
+    return Promise.resolve();
+  };
+};
+
+export const setVoiceService = createVoiceService(async (on, channel) => {
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("voice_service", { on, channel });
-};
+}, 2000);
 
 // Opens a URL (http or https) in the system browser.
 export const openInBrowser = async (url: string) => {

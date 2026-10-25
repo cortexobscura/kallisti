@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { androidAgent, bridgeUrl, certificateProblem, formatFingerprint, isKallisti, kallistiOrigin, kallistiSocket, linuxAgent, parseAddress, registerGlobalPtt } from "../src/lib/desktop";
+import { describe, expect, it, vi } from "vitest";
+import { androidAgent, bridgeUrl, createVoiceService, certificateProblem, formatFingerprint, isKallisti, kallistiOrigin, kallistiSocket, linuxAgent, parseAddress, registerGlobalPtt } from "../src/lib/desktop";
 
 describe("parseAddress", () => {
   it("reads host and optional port", () => {
@@ -115,5 +115,35 @@ describe("androidAgent", () => {
     expect(androidAgent("Mozilla/5.0 (Linux; Android 15; Seeker Build/AP3A; wv) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36")).toBe(true);
     expect(androidAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15")).toBe(false);
     expect(androidAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X)")).toBe(false);
+  });
+});
+
+describe("createVoiceService", () => {
+  const setup = () => {
+    const calls: [boolean, string | null][] = [];
+    const set = createVoiceService(async (on, channel) => void calls.push([on, channel]), 2000);
+    return { calls, set };
+  };
+
+  it("starts at once and stops after a moment", async () => {
+    vi.useFakeTimers();
+    const { calls, set } = setup();
+    void set(true, "General");
+    void set(false, null);
+    expect(calls).toEqual([[true, "General"]]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls).toEqual([[true, "General"], [false, null]]);
+    vi.useRealTimers();
+  });
+
+  it("keeps running when it starts again meanwhile (a reconnect replaces the chat view)", async () => {
+    vi.useFakeTimers();
+    const { calls, set } = setup();
+    void set(true, "General");
+    void set(false, null);
+    void set(true, "General");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(calls).toEqual([[true, "General"], [true, "General"]]);
+    vi.useRealTimers();
   });
 });
