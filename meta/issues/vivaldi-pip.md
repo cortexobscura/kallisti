@@ -24,8 +24,11 @@ Open: Vivaldi version, does Vivaldi's own PiP button show on the stream,
 does it happen with Vivaldi's "Picture-in-Picture button on videos"
 setting off, does PiP work for the same user in Chrome.
 
-Closed: it works in a private window, so it is something of the
-reporter's (an extension most likely), not Kallisti.
+Closed: KDE's Plasma Integration extension causes it (turning it off
+fixes it; likely its media controls, which watch media elements, also
+our detached video, and load it again). A bug in the extension; few
+use it, so no change for now. A possible change later: try play() once
+more after an AbortError, and a short message when PiP is refused.
 
 ## Acceptance Criteria
 
