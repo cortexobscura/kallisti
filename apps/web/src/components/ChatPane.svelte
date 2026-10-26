@@ -23,7 +23,7 @@
   import VideoPlayer from "./VideoPlayer.svelte";
   import { opensLightbox } from "../lib/lightbox";
   import { gridCells, splitFiles } from "../lib/fileGrid";
-  import { COMMON_EMOJI, reactedBy } from "../lib/reactions";
+  import { COMMON_EMOJI, reactedBy, type Reaction } from "../lib/reactions";
   import type { LinkPreview } from "../lib/linkPreview";
   import { highlightMentions, pingsMe, replyPing, suggestNames, SUGGESTIONS } from "../lib/mentions";
   import { quoted, typedFilter, typedWord } from "../lib/suggest";
@@ -33,6 +33,9 @@
   import Suggestions, { type Suggestion } from "./Suggestions.svelte";
   import Lightbox from "./Lightbox.svelte";
   import PollForm from "./PollForm.svelte";
+  import MessageInfo from "./MessageInfo.svelte";
+  import ReactionsSheet from "./ReactionsSheet.svelte";
+  import { infoRows } from "../lib/messageInfo";
   import PollView from "./PollView.svelte";
   import type { PollBody } from "../lib/polls";
   import Toast from "./Toast.svelte";
@@ -700,6 +703,32 @@
     emojiMenu = { x: e.clientX, y: e.clientY, emoji };
     return true;
   };
+  // Who reacted (ReactionsSheet), and a message's info (MessageInfo): by
+  // id, so they follow updates and close when it is deleted.
+  let reactionsFor = $state<{ id: number; start: string } | null>(null);
+  let infoFor = $state<number | null>(null);
+  const storedById = (id: number | null | undefined): DisplayMessage | undefined => {
+    const m = id == null ? undefined : messages.find((x) => idOf(x) === id);
+    return m && "source" in m && m.source ? (m as DisplayMessage) : undefined;
+  };
+  const reactionsMessage = $derived(storedById(reactionsFor?.id));
+  const infoMessage = $derived(storedById(infoFor));
+  const showInfo = (m: ChatMessage | DisplayMessage) => {
+    if ("source" in m && m.source) infoFor = m.source.id;
+  };
+  // After Info from the phone sheet, the focus goes back to the message.
+  const closeInfo = () => {
+    const line = document.querySelector<HTMLElement>(`li[data-message="${infoFor}"]`);
+    infoFor = null;
+    if (line && !line.contains(document.activeElement)) {
+      line.tabIndex = -1;
+      line.focus({ preventScroll: true });
+    }
+  };
+  // A message deleted, or its last reaction taken back: the sheet goes.
+  $effect(() => {
+    if (reactionsFor && !reactionsMessage?.reactions?.length) reactionsFor = null;
+  });
   const mineOf = (m: ChatMessage | DisplayMessage, emoji: string) =>
     !!("reactions" in m && m.reactions?.some((r) => sameEmoji(r.emoji, emoji) && reactedBy(r, myId)));
   const react = (m: ChatMessage | DisplayMessage, id: number, emoji: string) => {
@@ -771,6 +800,7 @@
       ...(may && canThread(may.id) ? [{ label: "Create thread", icon: "thread" as const, run: done(() => onCreateThread?.(may.id, refsAsNames(text))) }] : []),
       ...(text ? [{ label: "Copy text", icon: "copy" as const, run: done(() => copy(refsAsNames(text), "Text copied")) }] : []),
       ...(may && linkTo ? [{ label: "Copy link", icon: "copy" as const, run: done(() => copy(linkTo(may.id), "Link copied")) }] : []),
+      ...("source" in m && m.source ? [{ label: "Info", icon: "info" as const, run: done(() => showInfo(m)) }] : []),
       ...(may?.canPin
         ? [{ label: may.pinned ? "Unpin message" : "Pin message", icon: "pin" as const, run: done(() => onPin?.(may.id, !may.pinned)) }]
         : []),
@@ -1393,6 +1423,23 @@
 {#if notice.n}
   {#key notice.n}<Toast text={notice.text} />{/key}
 {/if}
+{#if reactionsFor && reactionsMessage?.reactions?.length}
+  <ReactionsSheet
+    reactions={reactionsMessage.reactions}
+    start={reactionsFor.start}
+    emojiMenu={(emoji) =>
+      hasEmojiMenu(emoji) ? () => ((reactionsFor = null), (emojiMenu = { x: innerWidth / 2, y: innerHeight / 2, emoji })) : null}
+    onClose={() => (reactionsFor = null)}
+  />
+{/if}
+{#if infoMessage}
+  <MessageInfo
+    author={infoMessage.actorName ?? "the server"}
+    rows={infoRows({ at: infoMessage.at, edited: infoMessage.edited, pinned: infoMessage.pinned }, undefined, settings.value.timeFormat)}
+    reactions={infoMessage.reactions ?? []}
+    onClose={closeInfo}
+  />
+{/if}
 {#if pollForm && onPoll}
   <PollForm onSubmit={onPoll} onClose={() => ((pollForm = false), messageInput?.focus())} />
 {/if}
@@ -1559,11 +1606,18 @@
           aria-pressed={mine}
           aria-label="{refsAsNames(r.emoji)} {r.users.length}, from {r.users.join(', ')}"
           title={r.users.join(", ")}
-          disabled={!canReact}
-          data-own-press={hasEmojiMenu(r.emoji) ? "" : undefined}
+          aria-disabled={!canReact}
+          data-own-press
           use:longPress
-          oncontextmenu={(e) => openEmojiMenu(r.emoji, e)}
-          onclick={() => onReact?.(id, r.emoji, !mine)}><span class="emoji"><Emoji text={r.emoji} /></span>{r.users.length}</button
+          oncontextmenu={(e) => {
+            // A long press (ours is not trusted; a touch screen's own): who
+            // reacted, as in Discord, also for who cannot react. A
+            // right-click: the emoji's menu.
+            if (e.isTrusted && !matchMedia("(hover: none)").matches) return openEmojiMenu(r.emoji, e);
+            e.preventDefault();
+            reactionsFor = { id, start: r.emoji };
+          }}
+          onclick={() => canReact && onReact?.(id, r.emoji, !mine)}><span class="emoji"><Emoji text={r.emoji} /></span>{r.users.length}</button
         >
       {/each}
     </div>
@@ -1582,7 +1636,8 @@
   {@const may = allowed(m)}
   {#if may}
     {@const { id, canEdit, canDelete, canPin, pinned } = may}
-    {#if canEdit || canDelete || canReply || canReact || canPin || linkTo}
+    <!-- Info is there for every stored message (read-only too). -->
+    {#if canEdit || canDelete || canReply || canReact || canPin || linkTo || id}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="actions"
@@ -1633,6 +1688,7 @@
           {#if linkTo}
             <button type="button" aria-label="Copy link to message" title="Copy link" onclick={() => copy(linkTo(id), "Link copied")}>Link</button>
           {/if}
+          <button type="button" aria-label="Message info" title="Sent, edited, reactions" onclick={() => showInfo(m)}>Info</button>
           {#if canEdit}
             <button type="button" aria-label="Edit message" title="Edit" onclick={() => startEdit(m)}>Edit</button>
           {/if}
@@ -2395,7 +2451,7 @@
     font-size: 14px;
     font-weight: 600;
   }
-  .reaction:not(:disabled):hover {
+  .reaction:not([aria-disabled="true"]):hover {
     border-color: var(--border-subtle);
   }
   .reaction.mine {
