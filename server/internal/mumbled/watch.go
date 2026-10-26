@@ -40,6 +40,11 @@ type Connection struct {
 	Dropped, TextOverflows       uint64 // in the window
 	Online                       int64  // seconds
 	Client, OS                   string
+	// Its voice lately (see Codec; VoiceBand "": none yet).
+	VoiceBand    string
+	VoiceStereo  bool
+	VoiceFrameMs float64
+	VoiceKbps    float64
 }
 
 type quality int
@@ -92,6 +97,7 @@ func connection(st ConnStats, old sample) Connection {
 		FromClient: badPercent(now.up, old.up), FromServer: badPercent(now.down, old.down),
 		Dropped: now.dropped - old.dropped, TextOverflows: now.overflows - old.overflows,
 		Online: int64(st.Online / time.Second), Client: st.Release, OS: strings.TrimSpace(st.OS + " " + st.OSVersion),
+		VoiceBand: st.Codec.Band, VoiceStereo: st.Codec.Stereo, VoiceFrameMs: st.Codec.FrameMs, VoiceKbps: st.Codec.Kbps,
 	}
 	if c.Client == "" && st.Version != 0 {
 		c.Client = fmt.Sprintf("%d.%d.%d", st.Version>>48, st.Version>>32&0xffff, st.Version>>16&0xffff)

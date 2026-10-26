@@ -50,6 +50,7 @@ type ConnStats struct {
 	Bandwidth     uint32
 	Dropped       uint64 // voice frames it did not get: its queue was full
 	TextOverflows uint64 // sidecar messages it lost (see Config.TextOverflows)
+	Codec         Codec  // its voice lately (see codecstats.go)
 }
 
 // ConnectionStats is the stats of every connection, by session.
@@ -100,6 +101,7 @@ func (c *client) connStats(name string, udpVoice bool, now time.Time) ConnStats 
 	st.TCP = VoiceStats{Good: m.tcp.good, Late: m.tcp.late, Lost: m.tcp.lost}
 	st.Reported = m.reported
 	st.Bandwidth = m.bandwidth(now)
+	st.Codec = m.recent.codec()
 	return st
 }
 
@@ -113,6 +115,7 @@ type connStats struct {
 	// Voice bytes in the current second and the one before.
 	second          int64
 	bytes, bytesAgo uint32
+	recent          codecRing // see codecstats.go
 }
 
 func newConnStats(now time.Time) connStats {
@@ -127,6 +130,7 @@ func (m *connStats) voice(p audioPacket, tcp bool, size int, now time.Time) {
 		m.tcp.add(p.frame, p.terminator)
 	}
 	m.active = now
+	m.recent.add(p.opus)
 	if sec := now.Unix(); sec != m.second {
 		m.bytesAgo = 0
 		if sec == m.second+1 {

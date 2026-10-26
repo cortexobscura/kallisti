@@ -14,6 +14,12 @@ type Connection struct {
 	Online        int64    `json:"online"` // seconds
 	Client        string   `json:"client"`
 	OS            string   `json:"os"`
+	// Its voice lately: the Opus band ("narrow" … "full"; none yet: left
+	// out), stereo, frame length and the bitrate of the Opus data.
+	VoiceBand    string  `json:"voiceBand,omitempty"`
+	VoiceStereo  bool    `json:"voiceStereo,omitempty"`
+	VoiceFrameMs float64 `json:"voiceFrameMs,omitempty"`
+	VoiceKbps    float64 `json:"voiceKbps,omitempty"`
 }
 
 // connections answers an admin's poll of the connections table.
