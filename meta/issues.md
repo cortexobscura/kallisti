@@ -20,3 +20,4 @@
 - [ ] [Desktop (Linux, Wayland): GPU use while minimised](issues/wayland-minimised-gpu.md)
 - [ ] [Watched streams come back after a reload and a lost connection](issues/rewatch-after-reload.md)
 - [ ] [Voice CI: Safari fails now and then](issues/voice-ci-flaky-safari.md)
+- [ ] [Stream sound drifts after lost packets (Chrome)](issues/stream-sound-drift-after-loss.md)
