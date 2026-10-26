@@ -156,8 +156,9 @@ func TestWordReplacements(t *testing.T) {
 			t.Fatalf("%q: %q, want %q", c.text, m.GetMessage(), c.want)
 		}
 	}
+	// The hook runs on each sender's connection after delivery: in any order.
 	eventually(t, func() bool { mu.Lock(); defer mu.Unlock(); return len(heard) == 2 })
-	if heard[0] != "Lovely posterior & more" {
+	if !slices.Contains(heard, "Lovely posterior & more") {
 		t.Fatalf("hook got %q", heard)
 	}
 	// Web messages: CheckMessage gives the text to post.
