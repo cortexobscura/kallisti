@@ -354,6 +354,9 @@
               <th title="In the same time: voice frames the server dropped for this user (their queue was full) · text messages they lost">
                 Dropped
               </th>
+              <th title="Since they connected: stream pictures · stream sound the server dropped for this viewer (their connection was full)">
+                Stream lost
+              </th>
               <th>Online</th>
               <th>Client</th>
             </tr>
@@ -372,6 +375,7 @@
                 <td>{formatPing(c.ping)}</td>
                 <td>{formatPercent(c.fromClient)} · {formatPercent(c.fromServer)}</td>
                 <td>{c.dropped} · {c.overflows}</td>
+                <td>{c.streamPictures ?? "–"} · {c.streamSound ?? "–"}</td>
                 <td>{formatOnline(c.online)}</td>
                 <td class="detail">{[c.client, c.os].filter(Boolean).join(" · ")}</td>
               </tr>

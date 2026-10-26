@@ -45,6 +45,9 @@ type Connection struct {
 	VoiceStereo  bool
 	VoiceFrameMs float64
 	VoiceKbps    float64
+	// Stream frames it missed as a viewer, its connection full (the stream
+	// server's, filled in by the caller; since it connected).
+	StreamPictures, StreamSound uint64
 }
 
 type quality int

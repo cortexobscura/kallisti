@@ -203,7 +203,7 @@ func startBuiltin(cfg *config.Builtin, db *store.Store, hub *sidecar.Hub, public
 	sv.srv = srv
 	recordingTokens := stream.NewTokens()
 	if hub != nil {
-		hub.SetVoice(voiceServer{srv}, publicBase) // before anyone connects
+		hub.SetVoice(voiceServer{srv, streams}, publicBase) // before anyone connects
 		hub.Recorder = recorder{srv, recordings, recordingTokens}
 	}
 	ln, err := tls.Listen("tcp", cfg.Listen, tlsConfig)
@@ -255,7 +255,11 @@ func sidecarImages(images []mumbled.Image) []sidecar.Image {
 }
 
 // voiceServer is the built-in server as the sidecar's Voice.
-type voiceServer struct{ *mumbled.Server }
+// voiceServer: streams for what their viewers missed (see Connections).
+type voiceServer struct {
+	*mumbled.Server
+	streams *stream.Hub
+}
 
 func (v voiceServer) SyncTextTree(cats []sidecar.MirrorCategory, want []sidecar.Mirror) ([]uint32, []uint32, error) {
 	categories := make([]mumbled.TextCategory, len(cats))
@@ -330,9 +334,12 @@ func (v voiceServer) ChannelModerators() []sidecar.ChannelModerators {
 
 func (v voiceServer) Connections(session uint32) ([]sidecar.Connection, error) {
 	conns, err := v.Server.Connections(session)
+	drops := v.streams.Drops()
 	out := make([]sidecar.Connection, len(conns))
 	for i, c := range conns {
 		out[i] = sidecar.Connection(c)
+		d := drops[c.Session]
+		out[i].StreamPictures, out[i].StreamSound = d.Pictures, d.Sound
 	}
 	return out, err
 }

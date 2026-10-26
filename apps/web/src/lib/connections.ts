@@ -23,6 +23,10 @@ export type Connection = {
   voiceStereo?: boolean;
   voiceFrameMs?: number;
   voiceKbps?: number;
+  // Stream frames it missed as a viewer, its connection full (since it
+  // connected; older servers: missing).
+  streamPictures?: number;
+  streamSound?: number;
 };
 
 // The admin view asks again this often while it is open.
@@ -37,7 +41,7 @@ const isConnection = (v: unknown): v is Connection => {
     ["name", "transport", "client", "os"].every((k) => typeof c[k] === "string") &&
     ["ping", "fromClient", "fromServer"].every((k) => isNumOrNull(c[k])) &&
     (c.voiceBand === undefined || typeof c.voiceBand === "string") &&
-    ["voiceFrameMs", "voiceKbps"].every((k) => c[k] === undefined || typeof c[k] === "number")
+    ["voiceFrameMs", "voiceKbps", "streamPictures", "streamSound"].every((k) => c[k] === undefined || typeof c[k] === "number")
   );
 };
 

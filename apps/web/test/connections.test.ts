@@ -85,6 +85,8 @@ describe("a speaker's sound", () => {
     const [c] = parseConnections([{ ...base, voiceBand: "full", voiceKbps: 38.4, voiceFrameMs: 20 }])!;
     expect(c).toMatchObject({ voiceBand: "full", voiceKbps: 38.4 });
     expect(parseConnections([base])![0]).not.toHaveProperty("voiceBand");
+    expect(parseConnections([{ ...base, streamPictures: 4, streamSound: 2 }])![0]).toMatchObject({ streamPictures: 4, streamSound: 2 });
+    expect(parseConnections([{ ...base, streamSound: "x" }])).toEqual([]);
   });
   it("says the band and bitrate, and warns for narrow sound", () => {
     expect(formatSound({ voiceBand: "full", voiceKbps: 38.4, voiceStereo: false })).toEqual({ text: "full band · 38 kbps", muffled: false });

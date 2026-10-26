@@ -133,10 +133,34 @@ type Hub struct {
 	mu      sync.Mutex
 	sinks   map[uint32]Sink
 	streams map[uint32]*stream // by id (see ID)
+	drops   map[uint32]Drops   // by viewer session, while connected
+}
+
+// Drops is what a viewer missed because its connection was full: pictures
+// (refused, or skipped until the next keyframe) and sound.
+type Drops struct{ Pictures, Sound uint64 }
+
+// Drops: the viewers that missed frames, by session.
+func (h *Hub) Drops() map[uint32]Drops {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make(map[uint32]Drops, len(h.drops))
+	maps.Copy(out, h.drops)
+	return out
+}
+
+func (h *Hub) missedLocked(viewer uint32, sound bool) {
+	d := h.drops[viewer]
+	if sound {
+		d.Sound++
+	} else {
+		d.Pictures++
+	}
+	h.drops[viewer] = d
 }
 
 func New(v Voice) *Hub {
-	return &Hub{voice: v, now: time.Now, sinks: map[uint32]Sink{}, streams: map[uint32]*stream{}}
+	return &Hub{voice: v, now: time.Now, sinks: map[uint32]Sink{}, streams: map[uint32]*stream{}, drops: map[uint32]Drops{}}
 }
 
 // Connect makes s the session's connection; an older one is closed.
@@ -159,6 +183,7 @@ func (h *Hub) Disconnect(session uint32, s Sink) {
 		return
 	}
 	delete(h.sinks, session)
+	delete(h.drops, session)
 	for s, st := range h.streams {
 		h.dropViewerLocked(s, st, session)
 	}
@@ -354,10 +379,13 @@ func (h *Hub) forward(session uint32, f []byte, from *Ingest) {
 			continue
 		}
 		if sound { // no keyframes: a full viewer loses this bit of sound
-			sink.SendFrame(out)
+			if !sink.SendFrame(out) {
+				h.missedLocked(v, true)
+			}
 			continue
 		}
 		if vw.needKey && !key {
+			h.missedLocked(v, false)
 			// Full a moment ago: the keyframe is asked for once there is
 			// room for it (at once, it would be dropped too).
 			if now := h.now(); !vw.asked && sink.Room() && now.Sub(vw.roomAsk) >= roomAskEvery {
@@ -370,6 +398,7 @@ func (h *Hub) forward(session uint32, f []byte, from *Ingest) {
 			vw.needKey = false
 		} else {
 			vw.needKey, vw.asked = true, false
+			h.missedLocked(v, false)
 		}
 	}
 }

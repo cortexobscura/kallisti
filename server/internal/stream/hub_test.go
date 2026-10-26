@@ -496,3 +496,28 @@ func TestPreviewsAreLimitedAndCanBeCleared(t *testing.T) {
 		t.Fatalf("previews %q, streams %v", got, h.Streams())
 	}
 }
+
+// What a full viewer missed is counted (the connections view shows it):
+// pictures refused and those skipped until the next keyframe, and sound.
+func TestDroppedFramesAreCountedPerViewer(t *testing.T) {
+	h, _, sinks := setup()
+	h.Start(1, Config{Codec: "vp8", Width: 640, Height: 360, Audio: "opus"})
+	h.Watch(2, 1)
+	h.Frame(1, frame(true, 1))
+	sinks[2].room = 0
+	h.Frame(1, frame(false, 2))                              // refused
+	h.Frame(1, []byte{audioFlag, 0, 0, 0, 0, 0, 0, 0, 1, 9}) // sound refused
+	sinks[2].room = -1
+	h.Frame(1, frame(false, 3)) // skipped: waits for a keyframe
+	h.Frame(1, frame(true, 4))
+	if d := h.Drops()[2]; d.Pictures != 2 || d.Sound != 1 {
+		t.Fatalf("drops %+v", d)
+	}
+	if _, ok := h.Drops()[3]; ok {
+		t.Fatal("a viewer without drops is listed")
+	}
+	h.Disconnect(2, sinks[2])
+	if _, ok := h.Drops()[2]; ok {
+		t.Fatal("counts outlive the connection")
+	}
+}

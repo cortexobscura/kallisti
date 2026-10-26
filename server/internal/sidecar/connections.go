@@ -20,6 +20,9 @@ type Connection struct {
 	VoiceStereo  bool    `json:"voiceStereo,omitempty"`
 	VoiceFrameMs float64 `json:"voiceFrameMs,omitempty"`
 	VoiceKbps    float64 `json:"voiceKbps,omitempty"`
+	// Stream frames it missed as a viewer, its connection full.
+	StreamPictures uint64 `json:"streamPictures"`
+	StreamSound    uint64 `json:"streamSound"`
 }
 
 // connections answers an admin's poll of the connections table.
