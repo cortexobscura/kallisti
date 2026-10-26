@@ -297,3 +297,4 @@
   - [x] [The speaker's microphone in the connections view](issues/diag-microphone.md)
   - [x] [Stream frames dropped per viewer](issues/diag-stream-drops.md)
   - [x] [Stats for a watched stream](issues/diag-stream-stats.md)
+- [x] [Docker: run as a chosen user and group id](issues/docker-user-and-group.md)

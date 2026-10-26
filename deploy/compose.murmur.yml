@@ -8,6 +8,9 @@ name: deploy
 services:
   kallisti:
     build: ..
+    # The user and group it runs as (PUID, PGID): for a host folder as /data,
+    # its owner's ids. A named volume belongs to 1000:1000.
+    user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     stop_grace_period: 20s
     read_only: true

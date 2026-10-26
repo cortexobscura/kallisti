@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /kallisti ./cmd/server
 
 FROM docker.io/library/alpine:3.21
 # ffmpeg: video thumbnails and picture previews (MEDIA_PREVIEWS=0: off).
-RUN apk add --no-cache ffmpeg && adduser -D -H kallisti && mkdir -p /data && chown kallisti /data
+RUN apk add --no-cache ffmpeg && addgroup -g 1000 kallisti && adduser -D -H -u 1000 -G kallisti kallisti && mkdir -p /data && chown kallisti:kallisti /data
 COPY --from=server /kallisti /app/kallisti
 COPY --from=web /src/apps/web/dist /app/web
 ENV WEB_DIR=/app/web DB_PATH=/data/kallisti.db UPLOAD_DIR=/data/uploads LISTEN_PORT=8080

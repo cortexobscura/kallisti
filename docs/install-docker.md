@@ -114,6 +114,18 @@ Everything lives in the `kallisti-data` volume (`/data` in the container):
 the database, uploads, database backups (`/data/backups`) and, with the
 built-in server, its certificate. See [backups](backups.md).
 
+Kallisti runs as user and group 1000. To use a host folder for `/data`
+(for example on a NAS), mount it in place of the volume and set its
+owner's ids in `deploy/.env`:
+
+```sh
+PUID=1001
+PGID=100
+```
+
+The folder must be writable by that user. A named volume belongs to 1000;
+after a change of the ids, `chown -R` its files to the new ones.
+
 The image includes ffmpeg for video thumbnails and picture previews (about
 110 MB of the image; `MEDIA_PREVIEWS=0` turns them off). It works with the
 read-only container: ffmpeg writes to the `/tmp` tmpfs, the previews go

@@ -8,10 +8,9 @@ PUID/PGID in linuxserver.io images): the image runs as `kallisti`, made
 by `adduser` without a fixed id, so its files on the host get whatever
 id that is. The Helm chart already assumes 1000:1000.
 
-Compose's `user: "UID:GID"` may already work when the mounted directory
-is writable by that id; not tried, and not documented.
-
-Open: what the user needs exactly (bind mount, NAS, rootless podman?).
+The user's feedback: Compose's `user:` works. Make it easy anyway:
+`PUID` and `PGID` in `deploy/.env` (default 1000:1000), and a note in
+the Docker install docs.
 
 ## Acceptance Criteria
 
