@@ -2,7 +2,7 @@
 
 ## Summary
 
-A report (Chromium-based Helium on Linux, 1347×627): after scrolling the
+A report (Chromium 156, viewport about 1347×627): after scrolling the
 messages or the member list, the whole app moves up. The channel header
 is gone at the top, an empty band shows at the bottom, and the page has
 its own scrollbar. The app is `height: 100%` on html, body and #app, so
