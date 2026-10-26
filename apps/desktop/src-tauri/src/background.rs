@@ -33,13 +33,14 @@ mod tests {
         assert!(plist.contains("<key>NSMicrophoneUsageDescription</key>"));
     }
 
-    // Export compliance, answered once: standard algorithms of our own
-    // (the Mumble bridge: TLS with rustls, AES-OCB2), not only Apple's.
+    // Export compliance is answered per build in App Store Connect: the app
+    // has standard algorithms of its own (the Mumble bridge: TLS with
+    // rustls, AES-OCB2), and a "true" here makes uploads need the code of
+    // encryption documentation, which there is none of yet.
     #[test]
-    fn ios_declares_its_encryption() {
+    fn ios_leaves_export_compliance_to_app_store_connect() {
         let plist = include_str!("../Info.ios.plist");
-        let key = plist.split("<key>ITSAppUsesNonExemptEncryption</key>").nth(1).expect("ITSAppUsesNonExemptEncryption");
-        assert!(key.trim_start().starts_with("<true/>"));
+        assert!(!plist.contains("ITSAppUsesNonExemptEncryption"));
     }
 
     #[test]
