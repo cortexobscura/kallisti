@@ -27,6 +27,11 @@ export type Connection = {
   // connected; older servers: missing).
   streamPictures?: number;
   streamSound?: number;
+  // Its microphone, as a web client's browser says (see lib/voice/micInfo).
+  micName?: string;
+  micRate?: number;
+  micChannels?: number;
+  micFilters?: string[];
 };
 
 // The admin view asks again this often while it is open.
@@ -41,7 +46,9 @@ const isConnection = (v: unknown): v is Connection => {
     ["name", "transport", "client", "os"].every((k) => typeof c[k] === "string") &&
     ["ping", "fromClient", "fromServer"].every((k) => isNumOrNull(c[k])) &&
     (c.voiceBand === undefined || typeof c.voiceBand === "string") &&
-    ["voiceFrameMs", "voiceKbps", "streamPictures", "streamSound"].every((k) => c[k] === undefined || typeof c[k] === "number")
+    ["voiceFrameMs", "voiceKbps", "streamPictures", "streamSound", "micRate", "micChannels"].every((k) => c[k] === undefined || typeof c[k] === "number") &&
+    (c.micName === undefined || typeof c.micName === "string") &&
+    (c.micFilters === undefined || (Array.isArray(c.micFilters) && c.micFilters.every((f) => typeof f === "string")))
   );
 };
 
@@ -83,3 +90,18 @@ export const formatSound = (c: Pick<Connection, "voiceBand" | "voiceKbps" | "voi
         muffled: c.voiceBand === "narrow" || c.voiceBand === "medium",
       }
     : { text: "–", muffled: false };
+
+// A web speaker's microphone for the admin view. 16 kHz or less: a
+// Bluetooth headset in its phone mode (or a phone-grade microphone).
+export const formatMic = (c: Pick<Connection, "micName" | "micRate" | "micChannels" | "micFilters">) =>
+  c.micName === undefined
+    ? { text: "–", filters: "", phoneMode: false }
+    : {
+        text: [
+          c.micName || "unnamed microphone",
+          ...(c.micRate ? [`${+(c.micRate / 1000).toFixed(1)} kHz`] : []),
+          ...(c.micChannels ? [c.micChannels === 1 ? "mono" : c.micChannels === 2 ? "stereo" : `${c.micChannels} channels`] : []),
+        ].join(" · "),
+        filters: c.micFilters?.length ? c.micFilters.join(", ") : "no filters",
+        phoneMode: !!c.micRate && c.micRate <= 16_000,
+      };

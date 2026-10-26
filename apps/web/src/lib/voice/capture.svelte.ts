@@ -8,6 +8,7 @@ import { micConstraints } from "../settings";
 import { encoderConfig, FRAME_MS, sendChannels } from "./opus";
 import { voiceEncoder, type VoiceEncoder } from "./codec";
 import { loadCaptureWorklet } from "./worklet";
+import { micInfo, type MicInfo } from "./micInfo";
 
 const FRAME_SIZE = 960; // 20 ms
 // Mumble counts frames in 10 ms steps.
@@ -82,8 +83,10 @@ export const createCapture = (ctx: AudioContext, send: (packet: OutgoingAudio) =
   let cancelEcho = true; // see Settings.echoCancellation
   // See Settings.musicMode: no filter at all. channels: what the frames
   // have (see the worklet), so what the encoder gets.
-  let music = false;
+  let music = $state(false);
   let channels = 1;
+  // What the browser says about the microphone in use (see micInfo).
+  let trackSettings = $state<MediaTrackSettings | null>(null);
   const filter = (): NoiseMode | null => (music ? null : noise);
   let running = $state<NoiseMode | null>(null);
   let noiseError = $state<string | null>(null);
@@ -255,6 +258,7 @@ export const createCapture = (ctx: AudioContext, send: (packet: OutgoingAudio) =
     return fits ? h.stream : null;
   };
   const stopStream = () => {
+    trackSettings = null;
     source?.disconnect();
     stopTracks(stream);
     source = stream = null;
@@ -293,6 +297,7 @@ export const createCapture = (ctx: AudioContext, send: (packet: OutgoingAudio) =
       route();
       micError = null;
       deviceLabel = track?.label ?? "";
+      trackSettings = track?.getSettings() ?? null;
       fellBack = false;
       // Unplugged while in use: go on with the default microphone.
       if (track) track.onended = () => {
@@ -331,6 +336,10 @@ export const createCapture = (ctx: AudioContext, send: (packet: OutgoingAudio) =
     },
     get running() {
       return running;
+    },
+    // For the admins' view of connections (null: no microphone open).
+    get micInfo(): MicInfo | null {
+      return trackSettings && micInfo({ label: deviceLabel, settings: trackSettings, running, music });
     },
     start,
     // Closes the microphone (the browser stops showing it as recording);

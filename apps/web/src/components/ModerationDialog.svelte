@@ -12,6 +12,7 @@
     formatOnline,
     formatPercent,
     formatPing,
+    formatMic,
     formatSound,
     POLL_MS,
     worstFirst,
@@ -345,6 +346,7 @@
               <th>User</th>
               <th>Voice</th>
               <th title="How their voice reaches the server lately: Opus band and bitrate">Sound</th>
+              <th title="What a web user's browser says about their microphone (filters on hover)">Microphone</th>
               <th>Ping</th>
               <th
                 title="Late or lost voice in the last 30 to 40 s. ↑ from the user, as the server counted it; ↓ to the user, as their client reported it (Mumble clients count UDP only). –: too little voice."
@@ -365,12 +367,17 @@
             {#each sorted as c (c.session)}
               {@const level = connectionLevel(c)}
               {@const sound = formatSound(c)}
+              {@const mic = formatMic(c)}
               <tr>
                 <td><span class="level {level ?? 'unknown'}" title={level ?? "not measured yet"}></span>{c.name}</td>
                 <td>{c.transport === "websocket" ? "WebSocket" : c.transport.toUpperCase()}</td>
                 <td class:muffled={sound.muffled}
                   title={sound.muffled ? "Narrow band sounds muffled: often a Bluetooth headset in its phone mode, or a low-quality microphone" : undefined}
                   >{sound.muffled ? "⚠ " : ""}{sound.text}</td
+                >
+                <td class="detail" class:muffled={mic.phoneMode}
+                  title={[mic.phoneMode ? "16 kHz or less: often a Bluetooth headset in its phone mode" : "", mic.filters].filter(Boolean).join(" · ") || undefined}
+                  >{mic.phoneMode ? "⚠ " : ""}{mic.text}</td
                 >
                 <td>{formatPing(c.ping)}</td>
                 <td>{formatPercent(c.fromClient)} · {formatPercent(c.fromServer)}</td>

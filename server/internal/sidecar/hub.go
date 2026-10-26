@@ -327,6 +327,7 @@ type Conn struct {
 	identity *mumble.Identity
 	ready    bool
 	closed   bool
+	mic      *wireMic // as the client's browser says (see connections.go)
 	// Messages were dropped (full outbox): the client must reload.
 	lagged  bool
 	dropped uint64 // messages lost so far (see Overflows)
@@ -574,6 +575,7 @@ type request struct {
 	Remove      []string         `json:"remove"`  // edit-message: the keys of files to take off
 	Poll        *wirePollRequest `json:"poll"`    // send: a poll message
 	Answers     []int            `json:"answers"` // vote: the answers (none: the vote taken back)
+	Mic         *wireMic         `json:"mic"`     // mic-info
 	poll        *store.Poll      // send: the checked Poll
 	Upload      string           `json:"upload"`      // send: one upload's key (older clients)
 	Message     int64            `json:"message"`     // edit-message, delete-message, create-thread
@@ -710,6 +712,9 @@ func (c *Conn) Handle(raw []byte) {
 		return
 	case "vote", "end-poll":
 		c.pollAction(*id, req)
+		return
+	case "mic-info":
+		c.setMic(req.Mic)
 		return
 	case "pin":
 		c.pin(*id, req)

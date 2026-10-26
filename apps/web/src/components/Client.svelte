@@ -178,6 +178,12 @@
   setAvatarPictures((name, registered) => lookup(name, registered));
 
   const capture = $derived(connection.capture);
+  // What our microphone is, for the admins' view of connections: again
+  // after each change (device, filters), and on each connection.
+  $effect(() => {
+    const mic = capture?.micInfo;
+    if (mic && connection.state.status === "synced") untrack(() => connection.sendMicInfo(mic));
+  });
   // Why there is no capture: the browser lacks something.
   const noVoice = unsupportedVoiceMessage(missingVoiceApis());
   // The server does not echo our own voice: add ourselves while sending.

@@ -1,3 +1,4 @@
+import { micInfoRequest, type MicInfo } from "./voice/micInfo";
 import { endPollRequest, voteRequest, type PollBody } from "./polls";
 import { threadRequest, type ThreadAction } from "./threads";
 import {
@@ -426,6 +427,10 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     },
     editMessage: (message: number, text: string, remove: readonly string[] = []) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(editMessageRequest(message, text, remove));
+    },
+    // Our microphone, for the admins' view of connections (see lib/voice/micInfo).
+    sendMicInfo: (mic: MicInfo) => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(micInfoRequest(mic));
     },
     // Polls (see lib/polls): our answers (none takes the vote back), and
     // the author's early end.

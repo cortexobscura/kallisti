@@ -6,7 +6,7 @@ import {
   formatPing,
   parseConnections,
   worstFirst,
-  type Connection, formatSound } from "../src/lib/connections";
+  type Connection, formatMic, formatSound } from "../src/lib/connections";
 import { initialTextState, manageRequest, parseServerEvent, reduceText } from "../src/lib/textChannels";
 
 const conn = (c: Partial<Connection>): Connection => ({
@@ -94,5 +94,22 @@ describe("a speaker's sound", () => {
     expect(formatSound({ voiceBand: "medium", voiceKbps: 16, voiceStereo: true }).muffled).toBe(true);
     expect(formatSound({ voiceBand: "wide", voiceKbps: 24, voiceStereo: true }).text).toBe("wide band · stereo · 24 kbps");
     expect(formatSound({})).toEqual({ text: "–", muffled: false });
+  });
+});
+
+describe("a speaker's microphone", () => {
+  it("says the name, rate and channels; warns for phone-mode rates", () => {
+    expect(formatMic({ micName: "Headset (Bluetooth)", micRate: 16000, micChannels: 1, micFilters: ["echo cancellation"] })).toEqual({
+      text: "Headset (Bluetooth) · 16 kHz · mono",
+      filters: "echo cancellation",
+      phoneMode: true,
+    });
+    expect(formatMic({ micName: "USB mic", micRate: 48000, micChannels: 2, micFilters: [] })).toEqual({ text: "USB mic · 48 kHz · stereo", filters: "no filters", phoneMode: false });
+    expect(formatMic({})).toEqual({ text: "–", filters: "", phoneMode: false });
+  });
+  it("reads the fields, and drops broken ones", () => {
+    const base = { session: 1, name: "a", transport: "websocket", ping: 20, fromClient: 0, fromServer: 0, dropped: 0, overflows: 0, online: 5, client: "", os: "" };
+    expect(parseConnections([{ ...base, micName: "m", micRate: 48000, micChannels: 1, micFilters: ["x"] }])![0]).toMatchObject({ micName: "m" });
+    expect(parseConnections([{ ...base, micFilters: "x" }])).toEqual([]);
   });
 });

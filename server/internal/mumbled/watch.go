@@ -48,6 +48,10 @@ type Connection struct {
 	// Stream frames it missed as a viewer, its connection full (the stream
 	// server's, filled in by the caller; since it connected).
 	StreamPictures, StreamSound uint64
+	// Its microphone, as a web client says (filled in by the sidecar).
+	MicName              string
+	MicRate, MicChannels int
+	MicFilters           []string
 }
 
 type quality int
