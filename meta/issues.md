@@ -22,3 +22,4 @@
 - [ ] [Voice CI: Safari fails now and then](issues/voice-ci-flaky-safari.md)
 - [ ] [Stream sound drifts after lost packets (Chrome)](issues/stream-sound-drift-after-loss.md)
 - [ ] [Firefox: no stream controls on hover](issues/firefox-stream-controls.md)
+- [ ] [Vivaldi: the picture-in-picture button does nothing](issues/vivaldi-pip.md)
