@@ -17,6 +17,12 @@ export type Connection = {
   online: number; // seconds
   client: string;
   os: string;
+  // Its voice lately, as the server got it (missing: none yet, or an older
+  // server): the Opus band, stereo, frame length, bitrate of the Opus data.
+  voiceBand?: string;
+  voiceStereo?: boolean;
+  voiceFrameMs?: number;
+  voiceKbps?: number;
 };
 
 // The admin view asks again this often while it is open.
@@ -29,7 +35,9 @@ const isConnection = (v: unknown): v is Connection => {
   return (
     ["session", "dropped", "overflows", "online"].every((k) => typeof c[k] === "number") &&
     ["name", "transport", "client", "os"].every((k) => typeof c[k] === "string") &&
-    ["ping", "fromClient", "fromServer"].every((k) => isNumOrNull(c[k]))
+    ["ping", "fromClient", "fromServer"].every((k) => isNumOrNull(c[k])) &&
+    (c.voiceBand === undefined || typeof c.voiceBand === "string") &&
+    ["voiceFrameMs", "voiceKbps"].every((k) => c[k] === undefined || typeof c[k] === "number")
   );
 };
 
@@ -61,3 +69,13 @@ export const formatOnline = (s: number) => {
   if (h) return `${h} h ${m} min`;
   return m ? `${m} min` : `${s} s`;
 };
+
+// A speaker's sound for the admin view. Narrow and medium band sound
+// muffled: often a Bluetooth headset whose microphone is in its phone mode.
+export const formatSound = (c: Pick<Connection, "voiceBand" | "voiceKbps" | "voiceStereo">) =>
+  c.voiceBand
+    ? {
+        text: [`${c.voiceBand} band`, ...(c.voiceStereo ? ["stereo"] : []), `${Math.round(c.voiceKbps ?? 0)} kbps`].join(" · "),
+        muffled: c.voiceBand === "narrow" || c.voiceBand === "medium",
+      }
+    : { text: "–", muffled: false };

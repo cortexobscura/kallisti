@@ -6,8 +6,7 @@ import {
   formatPing,
   parseConnections,
   worstFirst,
-  type Connection,
-} from "../src/lib/connections";
+  type Connection, formatSound } from "../src/lib/connections";
 import { initialTextState, manageRequest, parseServerEvent, reduceText } from "../src/lib/textChannels";
 
 const conn = (c: Partial<Connection>): Connection => ({
@@ -77,5 +76,21 @@ describe("parseConnections", () => {
     expect(s.connections).toEqual([conn({})]);
     expect(parseServerEvent('{"type":"connections"}')).toBeNull();
     expect(JSON.parse(manageRequest({ connections: true }))).toEqual({ type: "connections" });
+  });
+});
+
+describe("a speaker's sound", () => {
+  const base = { session: 1, name: "a", transport: "websocket", ping: 20, fromClient: 0, fromServer: 0, dropped: 0, overflows: 0, online: 5, client: "", os: "" };
+  it("reads the server's codec fields, which older servers leave out", () => {
+    const [c] = parseConnections([{ ...base, voiceBand: "full", voiceKbps: 38.4, voiceFrameMs: 20 }])!;
+    expect(c).toMatchObject({ voiceBand: "full", voiceKbps: 38.4 });
+    expect(parseConnections([base])![0]).not.toHaveProperty("voiceBand");
+  });
+  it("says the band and bitrate, and warns for narrow sound", () => {
+    expect(formatSound({ voiceBand: "full", voiceKbps: 38.4, voiceStereo: false })).toEqual({ text: "full band · 38 kbps", muffled: false });
+    expect(formatSound({ voiceBand: "narrow", voiceKbps: 12.2, voiceStereo: false })).toEqual({ text: "narrow band · 12 kbps", muffled: true });
+    expect(formatSound({ voiceBand: "medium", voiceKbps: 16, voiceStereo: true }).muffled).toBe(true);
+    expect(formatSound({ voiceBand: "wide", voiceKbps: 24, voiceStereo: true }).text).toBe("wide band · stereo · 24 kbps");
+    expect(formatSound({})).toEqual({ text: "–", muffled: false });
   });
 });

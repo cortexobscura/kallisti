@@ -12,6 +12,7 @@
     formatOnline,
     formatPercent,
     formatPing,
+    formatSound,
     POLL_MS,
     worstFirst,
     type Connection,
@@ -343,6 +344,7 @@
             <tr>
               <th>User</th>
               <th>Voice</th>
+              <th title="How their voice reaches the server lately: Opus band and bitrate">Sound</th>
               <th>Ping</th>
               <th
                 title="Late or lost voice in the last 30 to 40 s. ↑ from the user, as the server counted it; ↓ to the user, as their client reported it (Mumble clients count UDP only). –: too little voice."
@@ -359,9 +361,14 @@
           <tbody>
             {#each sorted as c (c.session)}
               {@const level = connectionLevel(c)}
+              {@const sound = formatSound(c)}
               <tr>
                 <td><span class="level {level ?? 'unknown'}" title={level ?? "not measured yet"}></span>{c.name}</td>
                 <td>{c.transport === "websocket" ? "WebSocket" : c.transport.toUpperCase()}</td>
+                <td class:muffled={sound.muffled}
+                  title={sound.muffled ? "Narrow band sounds muffled: often a Bluetooth headset in its phone mode, or a low-quality microphone" : undefined}
+                  >{sound.muffled ? "⚠ " : ""}{sound.text}</td
+                >
                 <td>{formatPing(c.ping)}</td>
                 <td>{formatPercent(c.fromClient)} · {formatPercent(c.fromServer)}</td>
                 <td>{c.dropped} · {c.overflows}</td>
@@ -646,5 +653,8 @@
     width: 32px;
     height: 32px;
     object-fit: contain;
+  }
+  td.muffled {
+    color: var(--warning, #e0a030);
   }
 </style>
