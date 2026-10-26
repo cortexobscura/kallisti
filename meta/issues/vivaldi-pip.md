@@ -1,4 +1,4 @@
-# Vivaldi: the picture-in-picture button does nothing
+# Vivaldi and ungoogled Chromium: the picture-in-picture button does nothing
 
 ## Summary
 
@@ -14,6 +14,11 @@ Both play() calls on that bundle line catch their errors, so the
 uncaught one likely comes from a play() we do not call ourselves:
 Vivaldi's own video features (its PiP button on videos) may wrap or
 call play() on our video and reload it. Not checked: no Vivaldi here.
+
+The reporter sees the same in ungoogled Chromium. PiP works in headless
+Chromium 156 (Playwright, the real image: a camera stream and a shared
+tab with sound) and in Helium. So likely something of the reporter's
+in both browsers: an extension, or a setting.
 
 Open: Vivaldi version, does Vivaldi's own PiP button show on the stream,
 does it happen with Vivaldi's "Picture-in-Picture button on videos"
