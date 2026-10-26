@@ -292,3 +292,4 @@
 - [x] [Fixes from the Astra review of files and polls](issues/astra-review-files-polls.md)
 - [x] [A lost connection: quiet for the first 10 seconds](issues/quiet-reconnect.md)
 - [x] [Who reacted, and message info (also on phones)](issues/reaction-names-and-message-info.md)
+- [x] [Voice diagnostics: how a speaker reaches the server](issues/voice-diagnostics.md)
