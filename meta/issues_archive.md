@@ -293,3 +293,7 @@
 - [x] [A lost connection: quiet for the first 10 seconds](issues/quiet-reconnect.md)
 - [x] [Who reacted, and message info (also on phones)](issues/reaction-names-and-message-info.md)
 - [x] [Voice diagnostics: how a speaker reaches the server](issues/voice-diagnostics.md)
+- [x] [More diagnostics](issues/more-diagnostics.md)
+  - [x] [The speaker's microphone in the connections view](issues/diag-microphone.md)
+  - [x] [Stream frames dropped per viewer](issues/diag-stream-drops.md)
+  - [x] [Stats for a watched stream](issues/diag-stream-stats.md)

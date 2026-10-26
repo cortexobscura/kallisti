@@ -21,7 +21,3 @@
 - [ ] [Watched streams come back after a reload and a lost connection](issues/rewatch-after-reload.md)
 - [ ] [Voice CI: Safari fails now and then](issues/voice-ci-flaky-safari.md)
 - [ ] [Stream sound drifts after lost packets (Chrome)](issues/stream-sound-drift-after-loss.md)
-- [ ] [More diagnostics](issues/more-diagnostics.md)
-  - [ ] [The speaker's microphone in the connections view](issues/diag-microphone.md)
-  - [ ] [Stream frames dropped per viewer](issues/diag-stream-drops.md)
-  - [ ] [Stats for a watched stream](issues/diag-stream-stats.md)
