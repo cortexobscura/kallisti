@@ -16,6 +16,14 @@ Possible causes, not checked yet:
 
 Unknown: the reporter's Firefox version and system.
 
+Tried (headless Firefox and Chromium on Linux, the real image, a camera
+stream from Chromium's fake camera): with a mouse, Firefox shows the
+controls on hover and they work. With a touch screen (`hasTouch`,
+`(hover: none)` matches), hover still shows them, but the first click on
+a control does nothing (it only shows them); the second works. Firefox
+also lays out the sidebar's live badge and stream preview differently
+(the badge below the name, the preview at the left edge).
+
 ## Acceptance Criteria
 
 - Reproduced in Firefox (headless), cause found.
