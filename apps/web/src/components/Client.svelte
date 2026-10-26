@@ -180,9 +180,12 @@
   const capture = $derived(connection.capture);
   // What our microphone is, for the admins' view of connections: again
   // after each change (device, filters), and on each connection.
+  // The state object changes with each server message: derived values,
+  // and the info as text, send it only when one of them really changes.
+  const synced = $derived(connection.state.status === "synced");
+  const micJson = $derived(capture?.micInfo ? JSON.stringify(capture.micInfo) : null);
   $effect(() => {
-    const mic = capture?.micInfo;
-    if (mic && connection.state.status === "synced") untrack(() => connection.sendMicInfo(mic));
+    if (micJson && synced) untrack(() => connection.sendMicInfo(JSON.parse(micJson)));
   });
   // Why there is no capture: the browser lacks something.
   const noVoice = unsupportedVoiceMessage(missingVoiceApis());
