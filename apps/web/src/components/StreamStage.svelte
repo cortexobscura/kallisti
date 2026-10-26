@@ -1,6 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Icon from "./Icon.svelte";
+  import StreamStats from "./StreamStats.svelte";
+  import type { StreamTotals } from "../lib/stream/stats";
   import { fullScreenStep, gridColumns, nextFocus, stripOf, tapAction, type StageView } from "../lib/stream/layout";
   import { createPip } from "../lib/stream/pip";
   import { isCamera } from "../lib/stream/protocol";
@@ -19,6 +21,7 @@
     onClose,
     volumeOf,
     onVolume,
+    statsOf,
     phone = false,
   }: {
     sessions: number[];
@@ -28,10 +31,16 @@
     // A stream's sound volume, 0 to 1 (undefined: no sound).
     volumeOf: (session: number) => number | undefined;
     onVolume: (session: number, volume: number) => void;
+    // A watched stream's numbers (see StreamStats; missing: no "Stats").
+    statsOf?: (session: number) => { totals: StreamTotals; delay: number } | null;
     phone?: boolean;
   } = $props();
 
   // Phones start in focus view (a grid of small tiles helps nobody there).
+  // The streams that show their numbers (see StreamStats).
+  let withStats = $state<ReadonlySet<number>>(new Set());
+  const toggleStats = (session: number) =>
+    (withStats = withStats.has(session) ? new Set([...withStats].filter((s) => s !== session)) : new Set([...withStats, session]));
   let view = $state<StageView>(untrack(() => (phone ? "focus" : "grid")));
   let stripHidden = $state(false);
   let focused = $state<number | null>(null);
@@ -187,6 +196,9 @@
         <button class="screen" onclick={() => tap(session)} tabindex={sessions.length > 1 ? 0 : -1} aria-label={focusing && session === focused ? "Grid view" : `Focus ${label}`}>
           <canvas use:canvasOf={session} aria-label={label}></canvas>
         </button>
+        {#if statsOf && withStats.has(session)}
+          <StreamStats read={() => statsOf(session)} />
+        {/if}
         {#if pip === session}
           <!-- The canvas draws on below: the floating window shows it. -->
           <div class="pip-note">
@@ -209,6 +221,11 @@
                 aria-label="Volume of {nameOf(session)}'s stream"
                 oninput={(e) => onVolume(session, Number(e.currentTarget.value))}
               />
+            {/if}
+            {#if statsOf}
+              <button onclick={() => toggleStats(session)} aria-pressed={withStats.has(session)} title="Stats" aria-label="Stats of {label}">
+                <Icon name="info" size={16} />
+              </button>
             {/if}
             {#if pipSupported}
               <button onclick={() => pips.toggle(session)} aria-pressed={pip === session} title="Picture in picture" aria-label="Picture in picture">

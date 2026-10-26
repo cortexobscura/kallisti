@@ -1,3 +1,4 @@
+import { createStreamStats, type StreamStats } from "./stats";
 import { voiceDecoder, type VoiceDecoder } from "../voice/codec";
 import { shouldFallBack } from "../voice/fallback";
 import { createPlayout, lastDue, type Playout } from "./playout";
@@ -46,6 +47,7 @@ type Viewer = {
   decoding: Map<number, number | null>;
   queue: { frame: VideoFrame; when: number }[];
   failures: ReturnType<typeof decodeWatch>;
+  stats: StreamStats; // see lib/stream/stats
 };
 // One of our own streams (a screen share or the camera) while it runs.
 type Outgoing = {
@@ -404,6 +406,7 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
       decoding: new Map(),
       queue: [],
       failures: decodeWatch(MAX_DECODE_ERRORS),
+      stats: createStreamStats(),
     };
     watched.set(session, v);
     startLoop();
@@ -451,7 +454,9 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
     // AudioDecoder; the Linux app's leaks). Mono: one channel of two.
     v.sound = voiceDecoder({
       output: ([plane], timestamp) => {
-        const at = soundRuns() ? v.playout.at(timestamp, ctx.currentTime) : null;
+        const runs = soundRuns();
+        const at = runs ? v.playout.at(timestamp, ctx.currentTime) : null;
+        if (runs && at === null) v.stats.late("sound");
         if (at === null || !v.gain || !plane) return;
         const buffer = ctx.createBuffer(1, plane.length, SOUND.sampleRate);
         buffer.copyToChannel(plane, 0);
@@ -513,6 +518,7 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
     if (i < 0) return;
     const shown = v.queue.splice(0, i + 1);
     draw(v, shown[i]!.frame);
+    v.stats.drawn();
     shown.forEach((q) => q.frame.close());
   };
 
@@ -526,6 +532,7 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
   };
 
   const skipToKey = (session: number, v: Viewer) => {
+    if (!v.needKey) v.stats.skipped();
     if (!v.needKey) send({ type: "keyframe", session });
     v.needKey = true;
     v.pending = [];
@@ -568,9 +575,11 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
     const v = f && watched.get(f.session);
     if (!f || !v?.decoder || v.decoder.state !== "configured") return;
     if (f.sound) {
+      v.stats.sound(f.data.byteLength, f.timestamp);
       if (v.sound && soundRuns()) v.sound.decode(f.data, f.timestamp);
       return;
     }
+    v.stats.picture(f.data.byteLength);
     if (!f.key && v.needKey) return;
     if (v.pending.length >= MAX_PENDING) {
       skipToKey(f.session, v);
@@ -578,7 +587,9 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
     }
     v.needKey = false;
     const chunk = new EncodedVideoChunk({ type: f.key ? "key" : "delta", timestamp: f.timestamp, data: f.data });
-    v.pending.push({ chunk, when: v.playout.at(f.timestamp, clockOf(v)) });
+    const when = v.playout.at(f.timestamp, clockOf(v));
+    if (when === null) v.stats.late("picture");
+    v.pending.push({ chunk, when });
   };
 
   const unwatch = (session: number, tell = true) => {
@@ -618,6 +629,12 @@ export const createStreamClient = (url: string, token: () => Promise<string>, au
     },
     get watching() {
       return watching;
+    },
+    // A watched stream's counts and its delay behind the stream in seconds
+    // (see lib/stream/stats), for the tile's "Stats"; null: not watched.
+    statsOf: (session: number) => {
+      const v = watched.get(session);
+      return v ? { totals: v.stats.totals(), delay: v.playout.lead() } : null;
     },
     get gone() {
       return gone;

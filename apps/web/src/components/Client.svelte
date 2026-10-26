@@ -1931,6 +1931,7 @@
         onClose={closeStream}
         volumeOf={streamClient.volumeOf}
         onVolume={streamClient.setVolume}
+        statsOf={streamClient.statsOf}
         {phone}
       />
     {/if}
