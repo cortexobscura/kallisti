@@ -299,3 +299,4 @@
   - [x] [Stats for a watched stream](issues/diag-stream-stats.md)
 - [x] [Docker: run as a chosen user and group id](issues/docker-user-and-group.md)
 - [x] [The whole page scrolls away](issues/page-scrolls-away.md)
+- [x] [Vivaldi and ungoogled Chromium: the picture-in-picture button does nothing](issues/vivaldi-pip.md)

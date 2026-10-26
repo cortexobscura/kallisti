@@ -24,6 +24,9 @@ Open: Vivaldi version, does Vivaldi's own PiP button show on the stream,
 does it happen with Vivaldi's "Picture-in-Picture button on videos"
 setting off, does PiP work for the same user in Chrome.
 
+Closed: it works in a private window, so it is something of the
+reporter's (an extension most likely), not Kallisti.
+
 ## Acceptance Criteria
 
 - Cause found with the reporter's answers or a Vivaldi test.
