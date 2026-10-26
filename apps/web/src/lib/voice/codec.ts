@@ -155,7 +155,26 @@ const webCodecsEncoder = (config: EncoderConfig, sink: EncoderSink): VoiceEncode
   };
 };
 
+// The decoded sound's timestamps: those of its packets, in order. Chrome's
+// AudioDecoder ignores them and counts decoded samples from the first one,
+// so after lost packets its timestamps fall behind, 20 ms for each, and a
+// stream's sound drifts from its picture until the decoder is new. One
+// output per Opus packet; at most MAX_WAITING wait (a decoder that gives
+// none for some loses the oldest).
+const MAX_WAITING = 64;
+export const inputTimestamps = () => {
+  const waiting: number[] = [];
+  return {
+    push: (timestamp: number) => {
+      waiting.push(timestamp);
+      if (waiting.length > MAX_WAITING) waiting.shift();
+    },
+    take: (counted: number) => waiting.shift() ?? counted,
+  };
+};
+
 const webCodecsDecoder = (sink: DecoderSink): VoiceDecoder => {
+  const timestamps = inputTimestamps();
   const d = new AudioDecoder({
     output: (data) => {
       const planes = Array.from({ length: data.numberOfChannels }, (_, ch) => {
@@ -163,7 +182,7 @@ const webCodecsDecoder = (sink: DecoderSink): VoiceDecoder => {
         data.copyTo(plane, { planeIndex: ch, format: "f32-planar" });
         return plane;
       });
-      const at = data.timestamp;
+      const at = timestamps.take(data.timestamp);
       data.close();
       sink.output(planes, at);
     },
@@ -171,7 +190,10 @@ const webCodecsDecoder = (sink: DecoderSink): VoiceDecoder => {
   });
   d.configure(DECODER_CONFIG);
   return {
-    decode: (opus, timestamp) => d.decode(new EncodedAudioChunk({ type: "key", timestamp, data: opus })),
+    decode: (opus, timestamp) => {
+      timestamps.push(timestamp);
+      d.decode(new EncodedAudioChunk({ type: "key", timestamp, data: opus }));
+    },
     close: () => d.state !== "closed" && d.close(),
   };
 };

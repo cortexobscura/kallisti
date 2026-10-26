@@ -8,6 +8,7 @@ import {
   voiceDecoder,
   voiceEncoder,
   whenReady,
+  inputTimestamps,
 } from "../src/lib/voice/codec";
 import { encoderConfig } from "../src/lib/voice/opus";
 
@@ -222,5 +223,17 @@ describe("the WebAssembly codec", () => {
     });
     expect(planes.map((p) => p.length)).toEqual([960, 960]);
     expect(at).toBe(20_000);
+  });
+});
+
+describe("decoded timestamps", () => {
+  it("gives each output its packet's timestamp, in order (Chrome counts samples instead)", () => {
+    const q = inputTimestamps();
+    [0, 20_000, 400_000, 420_000].forEach(q.push); // two lost before 400 ms
+    // Chrome's own: 0, 20, 40, 60 ms.
+    expect([0, 20_000, 40_000, 60_000].map((counted) => q.take(counted))).toEqual([0, 20_000, 400_000, 420_000]);
+  });
+  it("falls back to the decoder's timestamp when no packet is left", () => {
+    expect(inputTimestamps().take(5)).toBe(5);
   });
 });
