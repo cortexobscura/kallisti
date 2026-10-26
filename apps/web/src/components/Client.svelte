@@ -2099,12 +2099,18 @@
     background: var(--bg-input);
     text-align: center;
   }
+  /* The page itself never scrolls: hidden text for screen readers
+     (.sr-only) in a scrolled list could reach below the window and make
+     it scrollable, and a list at its end would scroll the page. */
   .layout {
     --rail: calc(72px + var(--safe-left));
+    position: relative;
     display: grid;
     grid-template-columns: var(--rail) 240px 1fr;
     height: 100%;
     padding-right: var(--safe-right);
+    overflow: hidden;
+    overflow: clip; /* not scrollable at all (see the drawer focus) */
   }
   .layout.members {
     grid-template-columns: var(--rail) 240px 1fr 240px;
@@ -2192,9 +2198,6 @@
       grid-template-columns: var(--rail) 240px 1fr;
     }
     /* Members do not fit; search and pins slide over the chat. */
-    .layout {
-      position: relative;
-    }
     .layout:not(.side) > :global(aside) {
       display: none;
     }
@@ -2212,10 +2215,7 @@
   @media (max-width: 700px) {
     .layout,
     .layout.members {
-      position: relative;
       display: block;
-      overflow: hidden;
-      overflow: clip; /* not scrollable at all (see the drawer focus) */
     }
     .main {
       display: block;
