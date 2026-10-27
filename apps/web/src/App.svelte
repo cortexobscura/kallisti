@@ -1,12 +1,11 @@
 <script lang="ts">
-  import { leaving, loadLost, saveLost, type StreamMemory } from "./lib/stream/rewatch";
   import Client from "./components/Client.svelte";
   import Login from "./components/Login.svelte";
   import { createAccountsApi, type Account, type AccountActions } from "./lib/accounts";
   import { connect, type Connection, type Credentials } from "./lib/connection.svelte";
+  import { createServerSession, type Target } from "./lib/serverSession.svelte";
   import {
     bridgeUrl,
-    certificateProblem,
     getBridge,
     isDesktop,
     isKallisti,
@@ -15,15 +14,11 @@
     linuxApp,
     parseAddress,
     trustServer,
-    type CertificateProblem,
   } from "./lib/desktop";
   import { httpBase } from "./lib/textChannels";
   import { safeGet, safeSet } from "./lib/storage";
-  import { connectionError, proxyUrl } from "./lib/status";
-  import { loadPlace, placeKey, savePlace, type Place } from "./lib/place";
-  import type { Drafts } from "./lib/composer";
-  import { createPendingFiles, indexedDbStore } from "./lib/pendingFiles";
-  import { busyName, loggedOut, lossNotice, refusedForGood, nextDelay, QUIET_MS, shouldReconnect } from "./lib/reconnect";
+  import { proxyUrl } from "./lib/status";
+  import { loggedOut } from "./lib/reconnect";
   import { untrack } from "svelte";
   import { checkForUpdate } from "./lib/update";
   import { browserPushSupport, turnOffPush } from "./lib/push";
@@ -53,8 +48,6 @@
 
   const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? proxyUrl(location);
 
-  // Raw: the object itself (its getters are reactive), so viaBridge finds it.
-  let connection = $state.raw<Connection | null>(null);
   // The account API lives on the Kallisti server (same host as the bridge).
   // The desktop app's server is chosen on the login screen (see below).
   let api = $state.raw(createAccountsApi(httpBase(PROXY_URL)));
@@ -74,35 +67,9 @@
   // An account connection failed (for example an expired session): ask the
   // server again, so the login form comes back instead of a dead end.
   $effect(() => {
-    if (error && connection?.account) void api.me().then((acc) => (account = acc));
+    if (session.error && connection?.account) void api.me().then((acc) => (account = acc));
   });
 
-  // A lost connection comes back by itself (see shouldReconnect): until
-  // then the old one stays on screen, with a note.
-  const lost = $derived(
-    !!connection &&
-      shouldReconnect({
-        status: connection.state.status,
-        closed: connection.closed,
-        closeReason: connection.closeReason,
-        wasSynced: connection.wasSynced,
-      }),
-  );
-  // Since when it is lost, and a clock while it is (see lossNotice).
-  let lostAt = $state<number | null>(null);
-  let now = $state(Date.now());
-  $effect(() => {
-    if (!lost) return void (lostAt = null);
-    untrack(() => (lostAt = now = Date.now()));
-    const tick = setInterval(() => (now = Date.now()), 500);
-    return () => clearInterval(tick);
-  });
-  const notice = $derived(lostAt === null ? "none" : lossNotice(now - lostAt));
-
-  // Rejected or kicked: do not wait for the server to close the socket.
-  $effect(() => {
-    if (error) connection?.close();
-  });
 
   // Shown on the login screen after leaving (for example a failed logout).
   let loginNote = $state<string | null>(null);
@@ -129,13 +96,7 @@
       });
   const leave = (note: string | null) => {
     loginNote = note;
-    stopReconnecting();
-    connection?.close();
-    connection = null;
-    keepPlace(null);
-    // Nothing to watch again after a logout.
-    streams = { watching: [], lost: [] };
-    if (lastCredentials) saveLost(tabStorage(), streamsKeyOf(lastCredentials), []);
+    session.leave();
     closeAudio(audio);
     audio = null;
   };
@@ -247,25 +208,32 @@
   };
   // A server from last time: looked at again at once.
   untrack(() => desktop && (desktopServer ? void chooseServer(desktopServer) : (checking = false)));
+
   // local: through the desktop app's own bridge (a Mumble server).
-  const urlFor = async (credentials: Credentials): Promise<{ url: string; protocols?: string[]; local?: boolean }> => {
+  const urlFor = async (credentials: Credentials): Promise<Target> => {
     if (!desktop) return { url: PROXY_URL };
     if (kallisti) return kallistiSocket(kallisti, sessionStore(kallisti).get());
     const server = parseAddress(credentials.server ?? "");
     if (!server) throw new Error("Enter a server address, for example voice.example.org or voice.example.org:64738");
     return { url: bridgeUrl(await getBridge(), server), local: true };
   };
-  // Connections through the desktop app's own bridge: only its reasons
-  // are shown as they are (see connectionError).
-  const viaBridge = new WeakSet<Connection>();
-  const connectTo = (target: Awaited<ReturnType<typeof urlFor>>, credentials: Credentials) => {
-    const c = connect(target.url, credentials, audio, target.protocols);
-    if (target.local) viaBridge.add(c);
-    return c;
-  };
-  // Why the connection failed, for the login screen (null: it is fine, or
-  // it comes back by itself).
-  const error = $derived(connection && !lost ? connectionError(connection.state, connection.closed, connection.closeReason, viaBridge.has(connection)) : null);
+  // This server's connection, its reconnects and what goes with it (see
+  // lib/serverSession).
+  const session = createServerSession<Connection>({
+    site: () => kallisti ?? location.origin,
+    urlFor,
+    connect: (target, c) => connect(target.url, c, audio, target.protocols),
+    tabStorage: () => {
+      // Reading sessionStorage can throw (blocked storage).
+      try {
+        return sessionStorage;
+      } catch {
+        return undefined;
+      }
+    },
+  });
+  $effect(() => session.dispose);
+  const connection = $derived(session.connection);
 
   // A new version on the server (web app only: the desktop app carries its
   // own): checked now, every 15 minutes, when the tab shows again, and
@@ -290,22 +258,16 @@
     if (connection?.state.status === "synced") untrack(() => void checkUpdate());
   });
 
-  // Each start gets a number: a slower earlier start must not win.
-  let starts = 0;
   // Desktop: the server's certificate is new or changed. The user decides.
-  let lastCredentials: Credentials | null = null;
-  const certificate = $derived.by((): (CertificateProblem & { server: string }) | null => {
-    const problem = connection?.closed ? certificateProblem(connection.closeReason) : null;
-    return problem && lastCredentials ? { ...problem, server: lastCredentials.server ?? "" } : null;
-  });
   const trustAndConnect = async () => {
+    const certificate = session.certificate;
     const server = parseAddress(certificate?.server ?? "");
-    if (!certificate || !server || !lastCredentials) return;
-    const credentials = lastCredentials;
+    const credentials = session.credentials;
+    if (!certificate || !server || !credentials) return;
     try {
       await trustServer(server, certificate.fingerprint);
     } catch (err) {
-      connection = null;
+      session.drop();
       loginNote = `Could not trust the certificate: ${err instanceof Error ? err.message : String(err)}`;
       return;
     }
@@ -340,148 +302,34 @@
   // context (see lib/voice/restart). Not on reconnects. keepMic: the
   // microphone stays open (a new output device).
   const restartAudio = (keepMic = false) => {
-    const move = (ctx: AudioContext) => [connection, attempt].forEach((c) => c?.setAudio(ctx, keepMic));
+    const move = (ctx: AudioContext) => session.setAudio(ctx, keepMic);
     audio = swapContext(audio, makeAudio, move, closeAudio);
   };
   const start = async (credentials: Credentials) => {
-    lastCredentials = credentials;
-    const mine = ++starts;
     loginNote = null;
-    stopReconnecting();
-    // After a refresh: back where this tab was (see lib/place).
-    place = loadPlace(tabStorage(), placeKeyOf(credentials));
-    drafts = { value: new Map() };
-    streams = { watching: [], lost: loadLost(tabStorage(), streamsKeyOf(credentials), Date.now()) };
-    // Per server and user: another account here does not get the files.
-    pendingFiles = createPendingFiles(indexedDbStore(), [kallisti ?? location.origin, credentials.server ?? "", credentials.username].join(" "));
-    connection?.close();
+    // The old connection closes at once (before the address is known).
+    const started = session.start(credentials);
     closeAudio(audio);
     // Created here: a login is a user gesture.
     audio = voiceSupported() ? makeAudio() : null;
     if (!audio) audioState = null;
     try {
-      const target = await urlFor(credentials);
-      if (mine !== starts) return;
-      connection = connectTo(target, credentials);
+      await started;
     } catch (err) {
       loginNote = err instanceof Error ? err.message : String(err);
     }
   };
-
-  // Reconnecting: one attempt at a time, with growing waits; at once when
-  // the tab shows again or the network comes back. A generation number
-  // stops attempts that started before a logout or a new login.
-  const ATTEMPT_TIMEOUT_MS = 15_000;
-  const BUSY_NAME_TRIES = 5;
-  let place = $state<Place | null>(null);
-  // Per tab: a refresh comes back, a new tab starts fresh (two tabs must
-  // not fight over voice). Reading sessionStorage can throw (blocked storage).
-  const tabStorage = () => {
-    try {
-      return sessionStorage;
-    } catch {
-      return undefined;
-    }
-  };
-  const placeKeyOf = (c: Credentials) => placeKey(kallisti ?? location.origin, c.server ?? "", c.username);
-  const keepPlace = (p: Place | null, left = false) => {
-    place = p;
-    if (lastCredentials) savePlace(tabStorage(), placeKeyOf(lastCredentials), p, left);
-  };
-  // The streams watched, kept over reconnects and reloads, per tab (see
-  // lib/stream/rewatch): they are watched again when they come back soon.
-  let streams = $state.raw<StreamMemory>({ watching: [], lost: [] });
-  const streamsKeyOf = (c: Credentials) => `streams:${placeKeyOf(c)}`;
-  const keepStreams = () => {
-    if (lastCredentials) saveLost(tabStorage(), streamsKeyOf(lastCredentials), leaving(streams.watching, streams.lost, Date.now()));
-  };
-  // Unsent texts, kept over reconnects (the Client is new each time); a
-  // login starts without.
-  let drafts = $state.raw<Drafts>({ value: new Map() });
-  // Files picked but not sent, by chat: also over reloads (see lib/pendingFiles).
-  let pendingFiles = $state.raw(createPendingFiles(null, ""));
-  let attempt: Connection | null = $state.raw(null);
-  let attempts = 0;
-  let busyTries = 0;
-  let starting = false;
-  let generation = 0;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const stopReconnecting = () => {
-    generation++;
-    clearTimeout(timer);
-    timer = undefined;
-    attempt?.close();
-    attempt = null;
-    attempts = busyTries = 0;
-  };
-  const tryNow = async () => {
-    clearTimeout(timer);
-    timer = undefined;
-    if (attempt || starting || !lastCredentials || !lost) return;
-    starting = true;
-    const mine = generation;
-    try {
-      const target = await urlFor(lastCredentials);
-      if (mine !== generation || !lost) return;
-      const next = connectTo(target, lastCredentials);
-      attempt = next;
-      // A connection that never gets anywhere: give up on it, try again.
-      setTimeout(() => {
-        if (attempt === next && next.state.status !== "synced") next.close();
-      }, ATTEMPT_TIMEOUT_MS);
-    } catch {
-      schedule();
-    } finally {
-      starting = false;
-    }
-  };
-  // Each second while quiet; the growing waits count only after it.
-  const schedule = () => {
-    if (timer !== undefined) return;
-    const lostFor = Date.now() - (lostAt ?? Date.now());
-    timer = setTimeout(tryNow, nextDelay(lostFor, attempts));
-    if (lostFor >= QUIET_MS) attempts++;
-  };
-  $effect(() => {
-    if (lost && !attempt) untrack(schedule);
-  });
-  $effect(() => {
-    const next = attempt;
-    if (!next) return;
-    if (next.state.status === "synced") {
-      untrack(() => {
-        connection = next; // the client comes back where it was (place)
-        attempt = null;
-        attempts = busyTries = 0;
-      });
-    } else if (next.closed || next.state.status === "rejected" || next.state.status === "kicked") {
-      untrack(() => {
-        attempt = null;
-        next.close();
-        // Our old session may still hold the name: try a few more times.
-        if (busyName(next.state) && ++busyTries < BUSY_NAME_TRIES) return schedule();
-        // Refused now (for example banned meanwhile), logged out, or a
-        // certificate question: show it; else try again.
-        const refused = next.state.status === "rejected" || next.state.status === "kicked";
-        if (refused || loggedOut(next.closeReason) || refusedForGood(next.closeReason) || certificateProblem(next.closeReason)) connection = next;
-        else schedule();
-      });
-    }
-  });
-  const wake = () => {
-    if (lost && document.visibilityState === "visible") void tryNow();
-  };
 </script>
 
-<svelte:window ononline={wake} onpagehide={() => (place && keepPlace(place, true), keepStreams())} onpointerdowncapture={wakeSound} onkeydowncapture={wakeSound} />
-<svelte:document onvisibilitychange={wake} />
+<svelte:window ononline={session.wake} onpagehide={() => (session.place && session.keepPlace(session.place, true), session.keepStreams())} onpointerdowncapture={wakeSound} onkeydowncapture={wakeSound} />
+<svelte:document onvisibilitychange={session.wake} />
 
 {#if checking}
   <div class="connecting" aria-busy="true"></div>
-{:else if !connection || error}
+{:else if !connection || session.error}
   <Login
-    error={certificate ? null : (error ?? loginNote)}
-    {certificate}
+    error={session.certificate ? null : (session.error ?? loginNote)}
+    certificate={session.certificate}
     onTrust={trustAndConnect}
     onCancelTrust={() => leave(null)}
     {api}
@@ -495,18 +343,18 @@
 {:else if connection.state.status === "synced"}
   <!-- Quiet first (the server is usually back within seconds): a small
        sign, then the banner (see lossNotice). -->
-  {#if lost && notice === "banner"}
+  {#if session.lost && session.notice === "banner"}
     <div class="reconnecting" role="status">
       Connection lost. Reconnecting…
-      <button type="button" onclick={() => void tryNow()}>Retry now</button>
+      <button type="button" onclick={() => void session.tryNow()}>Retry now</button>
     </div>
-  {:else if lost && notice === "sign"}
+  {:else if session.lost && session.notice === "sign"}
     <div class="reconnecting quiet" role="status">Reconnecting…</div>
   {/if}
   <!-- While lost, the old view stays readable but takes no input (it would be lost). -->
-  <div class="client" inert={lost}>
+  <div class="client" inert={session.lost}>
     {#key connection}
-      <Client {connection} account={account ? accountActions : undefined} resume={place} onPlace={(p) => keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} {drafts} {pendingFiles} {streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
+      <Client {connection} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
     {/key}
   </div>
 {:else}
