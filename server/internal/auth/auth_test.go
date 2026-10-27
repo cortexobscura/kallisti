@@ -287,7 +287,7 @@ func TestEndedSessionsAreRevoked(t *testing.T) {
 			t.Fatalf("%s: nothing revoked", what)
 		}
 		for c, revoked := range want {
-			if match(acc.ID, SessionKey(requestWith(c))) != revoked {
+			if match(acc.ID, (&Service{}).SessionKey(requestWith(c))) != revoked {
 				t.Errorf("%s: session revoked %v, want %v", what, !revoked, revoked)
 			}
 		}
@@ -311,17 +311,59 @@ func TestExpiredSessionsAreRevoked(t *testing.T) {
 	var match func(int64, string) bool
 	a.Revoke = func(m func(int64, string) bool) { match = m }
 	resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "hank", "password": "longpassword"}, nil)
-	old := SessionKey(requestWith(sessionCookie(resp)))
+	old := (&Service{}).SessionKey(requestWith(sessionCookie(resp)))
 	acc, _ := a.Store.AccountBySession(old, now)
 	now = now.Add(sessionLifetime / 2)
 	resp, _ = post(t, srv, "/api/login", map[string]string{"name": "hank", "password": "longpassword"}, nil)
-	current := SessionKey(requestWith(sessionCookie(resp)))
+	current := (&Service{}).SessionKey(requestWith(sessionCookie(resp)))
 	now = now.Add(sessionLifetime / 2)
 	if err := a.DeleteExpiredSessions(); err != nil {
 		t.Fatal(err)
 	}
 	if match == nil || !match(acc.ID, old) || match(acc.ID, current) {
 		t.Fatal("want only the expired session revoked")
+	}
+}
+
+// Other sites (another Kallisti's page, the apps) log in with a token: CORS
+// without credentials, and a cross-site request's cookie does not count.
+func TestOtherSitesUseTokens(t *testing.T) {
+	a, srv := setup(t)
+	a.AllowedOrigins = []string{"https://chat.example"}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("OPTIONS", "/api/login", nil)
+	r.Header.Set("Origin", "https://other-kallisti.example")
+	a.cors(w, r)
+	if w.Header().Get("Access-Control-Allow-Origin") != "https://other-kallisti.example" || w.Header().Get("Access-Control-Allow-Credentials") != "" {
+		t.Fatalf("cors %v", w.Header())
+	}
+	req, _ := http.NewRequest("POST", srv.URL+"/api/guest", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://other-kallisti.example")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		t.Fatal("a token request from another site was refused")
+	}
+	// The cookie counts only without an origin or from our own: not from a
+	// sibling subdomain (same site: the browser sends the cookie), nor from
+	// another site.
+	for origin, counts := range map[string]bool{
+		"":                               true, // a navigation (the fedi callback is cross-site, without an origin)
+		"https://chat.example":           true,
+		"https://test.chat.example":      false,
+		"https://other-kallisti.example": false,
+	} {
+		r := httptest.NewRequest("GET", "/api/me", nil)
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		r.Header.Set("Sec-Fetch-Site", "cross-site")
+		r.AddCookie(&http.Cookie{Name: CookieName, Value: "x"})
+		if got := a.SessionKey(r) != ""; got != counts {
+			t.Errorf("%q: cookie counted %v, want %v", origin, got, counts)
+		}
 	}
 }
 
@@ -374,7 +416,7 @@ func TestLoginWithAMumbleRegistration(t *testing.T) {
 	if _, ok := a.AccountFor(requestWith(bob)); ok {
 		t.Fatal("web session kept")
 	}
-	if match == nil || !match(0, SessionKey(requestWith(bob))) {
+	if match == nil || !match(0, (&Service{}).SessionKey(requestWith(bob))) {
 		t.Fatal("the web session's connections were not revoked")
 	}
 	a.MumbleLogin = func(netip.Addr, string, string) (string, bool) { return "bob", true }
@@ -428,7 +470,7 @@ func TestDesktopAppTokens(t *testing.T) {
 	}
 	ws := httptest.NewRequest("GET", "/", nil)
 	ws.Header.Set("Sec-WebSocket-Protocol", "kallisti, kallisti.session."+token)
-	if SessionKey(ws) != tokenHash(token) {
+	if (&Service{}).SessionKey(ws) != tokenHash(token) {
 		t.Fatal("the WebSocket subprotocol carries no session")
 	}
 }
@@ -466,7 +508,7 @@ func TestTheTokenComesBeforeACookie(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.AddCookie(&http.Cookie{Name: CookieName, Value: "old"})
 	r.Header.Set("Authorization", "Bearer new")
-	if SessionKey(r) != tokenHash("new") {
+	if (&Service{}).SessionKey(r) != tokenHash("new") {
 		t.Fatal("the cookie won")
 	}
 }

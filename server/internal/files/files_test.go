@@ -203,11 +203,12 @@ func TestPreflight(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent || !strings.Contains(resp.Header.Get("Access-Control-Allow-Headers"), "X-Upload-Token") {
 		t.Fatalf("preflight: %d %v", resp.StatusCode, resp.Header)
 	}
-	req.Header.Set("Origin", "https://evil.example")
+	// Other sites (another Kallisti's page) upload with their token too.
+	req.Header.Set("Origin", "https://other-kallisti.example")
 	resp, _ = http.DefaultClient.Do(req)
 	resp.Body.Close()
-	if resp.Header.Get("Access-Control-Allow-Origin") != "" {
-		t.Error("CORS allowed for an unknown origin")
+	if resp.Header.Get("Access-Control-Allow-Origin") != "https://other-kallisti.example" {
+		t.Error("no CORS for another site")
 	}
 }
 

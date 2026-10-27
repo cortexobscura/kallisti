@@ -218,7 +218,7 @@ func run() error {
 				slog.Error("load account certificate", "account", acc.Name, "err", err)
 				return bridge.Account{}, false
 			}
-			return bridge.Account{Name: acc.Name, Cert: &cert, ID: acc.ID, Session: auth.SessionKey(r)}, true
+			return bridge.Account{Name: acc.Name, Cert: &cert, ID: acc.ID, Session: accounts.SessionKey(r)}, true
 		},
 		IsAccountName: accountExists(db),
 	})
@@ -331,7 +331,7 @@ func startPush(cfg config.Config, db *store.Store, accounts *auth.Service, hub *
 		Sender: push.NewWebPush(public, private, cfg.Push.Subject, publicBase(cfg.AllowedOrigins)),
 		Account: func(r *http.Request) (store.Account, string, bool) {
 			acc, ok := accounts.AccountFor(r)
-			return acc, auth.SessionKey(r), ok
+			return acc, accounts.SessionKey(r), ok
 		},
 	}
 	svc.Start(pushWorkers, pushQueue)

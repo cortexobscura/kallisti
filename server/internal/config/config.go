@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -244,19 +245,31 @@ func Parse(getenv func(string) string) (Config, error) {
 	return c, nil
 }
 
-// OriginAllowed reports whether a browser origin may connect. An empty
-// origin (non-browser client) only passes with "*".
+// OriginAllowed reports whether a browser origin may connect: every one.
+// Pages of other sites (another Kallisti's web app with several servers,
+// the desktop and mobile apps) log in with a token, never this server's
+// cookie (see CookieOrigin). An empty origin (non-browser client) only
+// passes with "*".
 func OriginAllowed(allowed []string, origin string) bool {
-	return slices.Contains(allowed, "*") || IsAppOrigin(origin) || (origin != "" && slices.Contains(allowed, origin))
+	return origin != "" || slices.Contains(allowed, "*")
 }
 
-// appOrigins are the Kallisti desktop app's pages (Tauri: macOS and Linux,
-// Windows). Every server allows them; the app logs in with a token, never a
-// cookie (see auth). Not proof of the app: other Tauri apps share them, and
-// a local web server can pose as http://tauri.localhost.
-var appOrigins = []string{"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
+// CookieOrigin: the session cookie counts for this origin: this server's
+// own pages (ALLOWED_ORIGINS), localhost with "*" (development), or none
+// (a page's own GET, a script).
+func CookieOrigin(allowed []string, origin string) bool {
+	return origin == "" || slices.Contains(allowed, origin) || slices.Contains(allowed, "*") && IsLocalhost(origin)
+}
 
-func IsAppOrigin(origin string) bool { return slices.Contains(appOrigins, origin) }
+// IsLocalhost: a development page on this computer.
+func IsLocalhost(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+}
 
 // BodyTimeout is how long a small request body (JSON) may take: the HTTP
 // server has only a header timeout, and a proxy may pass a slow body on

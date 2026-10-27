@@ -262,7 +262,7 @@ func (a *Service) fediStart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		inst, err = a.Fedi.reauthInstance(id.Host, c.Instance)
-		flow.link, flow.session, flow.reauth = acc.ID, SessionKey(r), true
+		flow.link, flow.session, flow.reauth = acc.ID, a.SessionKey(r), true
 	} else if c.Link {
 		acc, ok := a.AccountFor(r)
 		if !ok {
@@ -278,7 +278,7 @@ func (a *Service) fediStart(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "the password is wrong"})
 			return
 		}
-		flow.link, flow.session = acc.ID, SessionKey(r)
+		flow.link, flow.session = acc.ID, a.SessionKey(r)
 	}
 	if !flow.reauth {
 		inst, err = a.Fedi.Client.ResolveInstance(r.Context(), c.Instance, a.Fedi.Dev)
@@ -393,7 +393,7 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	// A link: still the same session in this browser.
 	linkTo, ok := a.AccountFor(r)
-	if flow.link != 0 && (!ok || linkTo.ID != flow.link || SessionKey(r) != flow.session) {
+	if flow.link != 0 && (!ok || linkTo.ID != flow.link || a.SessionKey(r) != flow.session) {
 		back("error", "expired")
 		return
 	}

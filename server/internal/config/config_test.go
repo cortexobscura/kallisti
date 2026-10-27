@@ -124,27 +124,31 @@ func TestErrors(t *testing.T) {
 	}
 }
 
-func TestOriginAllowed(t *testing.T) {
+// Every browser origin may connect (other Kallisti sites, the apps); the
+// cookie counts only on this server's own pages.
+func TestOrigins(t *testing.T) {
 	cases := []struct {
-		allowed []string
-		origin  string
-		want    bool
+		allowed    []string
+		origin     string
+		ok, cookie bool
 	}{
-		{[]string{"*"}, "https://any.example", true},
-		{[]string{"*"}, "", true},
-		{[]string{}, "https://a.example", false},
-		{[]string{"https://a.example"}, "https://a.example", true},
-		{[]string{"https://a.example"}, "https://b.example", false},
-		{[]string{"https://a.example"}, "", false},
-		// The desktop app (Tauri), on every server.
-		{[]string{"https://a.example"}, "tauri://localhost", true},
-		{[]string{"https://a.example"}, "http://tauri.localhost", true},
-		{[]string{"https://a.example"}, "https://tauri.localhost", true},
-		{[]string{"https://a.example"}, "tauri://evil.example", false},
+		{[]string{"*"}, "https://any.example", true, false},
+		{[]string{"*"}, "http://localhost:5173", true, true},
+		{[]string{"*"}, "", true, true},
+		{[]string{"https://a.example"}, "https://a.example", true, true},
+		{[]string{"https://a.example"}, "https://b.example", true, false},
+		{[]string{"https://a.example"}, "tauri://localhost", true, false},
+		{[]string{"https://a.example"}, "http://localhost:5173", true, false},
+		// No origin: no browser across sites (a page's own GET, a script):
+		// only with "*" for connections.
+		{[]string{"https://a.example"}, "", false, true},
 	}
 	for _, c := range cases {
-		if got := OriginAllowed(c.allowed, c.origin); got != c.want {
-			t.Errorf("OriginAllowed(%v, %q) = %v, want %v", c.allowed, c.origin, got, c.want)
+		if got := OriginAllowed(c.allowed, c.origin); got != c.ok {
+			t.Errorf("OriginAllowed(%v, %q) = %v", c.allowed, c.origin, got)
+		}
+		if got := CookieOrigin(c.allowed, c.origin); got != c.cookie {
+			t.Errorf("CookieOrigin(%v, %q) = %v", c.allowed, c.origin, got)
 		}
 	}
 }

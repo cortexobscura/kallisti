@@ -66,6 +66,10 @@ func (b *browser) do(method, path string, body any) (*http.Response, map[string]
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// Back from the instance: a navigation from another site.
+	if strings.Contains(u, "/api/fedi/callback") {
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+	}
 	resp, err := b.c.Do(req)
 	if err != nil {
 		b.t.Fatal(err)

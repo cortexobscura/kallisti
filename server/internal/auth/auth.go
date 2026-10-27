@@ -14,8 +14,6 @@ import (
 	"mime"
 	"net/http"
 	"net/netip"
-	"net/url"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -147,11 +145,11 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "send JSON"})
 			return
 		}
-		// The desktop app is cross-site by nature, and never sends the
-		// cookie (a local page can pose as http://tauri.localhost).
+		// Other sites (another Kallisti's page, the apps) are cross-site by
+		// nature and log in with a token: never with the cookie.
 		_, noCookie := r.Cookie(CookieName)
-		app := config.IsAppOrigin(r.Header.Get("Origin")) && noCookie != nil
-		if r.Header.Get("Sec-Fetch-Site") == "cross-site" && !app {
+		tokens := !config.CookieOrigin(a.AllowedOrigins, r.Header.Get("Origin")) && noCookie != nil
+		if r.Header.Get("Sec-Fetch-Site") == "cross-site" && !tokens {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "cross-site requests are not allowed"})
 			return
 		}
@@ -204,7 +202,7 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // token the desktop app got at login, in a header or (WebSockets cannot
 // have headers in browsers) as a subprotocol. "": none.
 // A token comes first: a leftover cookie must not win over it.
-func sessionToken(r *http.Request) string {
+func (a *Service) sessionToken(r *http.Request) string {
 	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		return token
 	}
@@ -212,6 +210,12 @@ func sessionToken(r *http.Request) string {
 		if token, ok := strings.CutPrefix(strings.TrimSpace(p), SessionProtocol); ok {
 			return token
 		}
+	}
+	// Other pages use tokens: the cookie counts only without an origin (a
+	// navigation, a page's own GET) or from our own origins, not from a
+	// sibling subdomain (the same site: its requests carry the cookie).
+	if !config.CookieOrigin(a.AllowedOrigins, r.Header.Get("Origin")) {
+		return ""
 	}
 	if c, err := r.Cookie(CookieName); err == nil {
 		return c.Value
@@ -224,7 +228,7 @@ const SessionProtocol = "kallisti.session."
 
 // AccountFor returns the account of a request's session.
 func (a *Service) AccountFor(r *http.Request) (store.Account, bool) {
-	token := sessionToken(r)
+	token := a.sessionToken(r)
 	if token == "" {
 		return store.Account{}, false
 	}
@@ -233,8 +237,8 @@ func (a *Service) AccountFor(r *http.Request) (store.Account, bool) {
 }
 
 // SessionKey is the stored key of a request's session, or "".
-func SessionKey(r *http.Request) string {
-	if token := sessionToken(r); token != "" {
+func (a *Service) SessionKey(r *http.Request) string {
+	if token := a.sessionToken(r); token != "" {
 		return tokenHash(token)
 	}
 	return ""
@@ -436,7 +440,7 @@ func (a *Service) logout(w http.ResponseWriter, r *http.Request) {
 
 // clearSession ends this session and its connections.
 func (a *Service) clearSession(w http.ResponseWriter, r *http.Request) {
-	if key := SessionKey(r); key != "" {
+	if key := a.SessionKey(r); key != "" {
 		a.Store.DeleteSession(key)
 		a.revoke(func(_ int64, session string) bool { return session == key })
 	}
@@ -490,7 +494,7 @@ func (a *Service) changePassword(w http.ResponseWriter, r *http.Request) {
 	// fediverse account in this session: a stolen session cannot set one and
 	// lock the owner out (the change ends the other sessions). With
 	// fediverse logins off there is no other way back in: no check then.
-	if acc.PasswordHash == "" && !acc.Temporary && a.Fedi != nil && !a.Fedi.takeProof(SessionKey(r), acc.ID, a.Now()) {
+	if acc.PasswordHash == "" && !acc.Temporary && a.Fedi != nil && !a.Fedi.takeProof(a.SessionKey(r), acc.ID, a.Now()) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "confirm with your fediverse account first", "code": "reauth"})
 		return
 	}
@@ -508,7 +512,7 @@ func (a *Service) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	// acc is from before the body was read: the store checks again that
 	// the session and the old password are still current.
-	keep := SessionKey(r)
+	keep := a.SessionKey(r)
 	if err == nil {
 		err = a.Store.ChangePassword(acc.ID, keep, acc.PasswordHash, hash, a.Now())
 	}
@@ -558,39 +562,27 @@ func (a *Service) secure(r *http.Request) bool {
 	return r.TLS != nil || (a.TrustForwardedFor && r.Header.Get("X-Forwarded-Proto") == "https")
 }
 
-// cors allows the web app's origin to call the API with its cookie. With
-// ALLOWED_ORIGINS=* (development) only localhost origins get credentials:
-// a production server set to * by mistake is not open to every site.
+// cors allows every site to call the API with a token, and the web app's
+// own origin with its cookie. With ALLOWED_ORIGINS=* (development) only
+// localhost origins get credentials: a production server set to * by
+// mistake is not open to every site's cookie requests.
 func (a *Service) cors(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Vary", "Origin")
 	origin := r.Header.Get("Origin")
-	if origin == "" || !config.OriginAllowed(a.AllowedOrigins, origin) {
-		return
-	}
-	if !slices.Contains(a.AllowedOrigins, origin) && !isLocalhost(origin) && !config.IsAppOrigin(origin) {
+	if origin == "" {
 		return
 	}
 	h := w.Header()
 	h.Set("Access-Control-Allow-Origin", origin)
 	h.Set("Access-Control-Allow-Methods", "GET, POST, DELETE")
 	h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Kallisti-Session")
-	// The desktop app sends its token, never cookies.
-	if !config.IsAppOrigin(origin) {
+	if config.CookieOrigin(a.AllowedOrigins, origin) {
 		h.Set("Access-Control-Allow-Credentials", "true")
 	}
 }
 
 func (a *Service) allow(r *http.Request) bool {
 	return a.logins.allow(clientip.Of(r, a.TrustForwardedFor), rate.Limit(perMinute)/60, burst)
-}
-
-func isLocalhost(origin string) bool {
-	u, err := url.Parse(origin)
-	if err != nil {
-		return false
-	}
-	host := u.Hostname()
-	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func tokenHash(token string) string {

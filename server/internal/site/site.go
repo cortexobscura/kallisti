@@ -10,13 +10,14 @@ import (
 	"strings"
 )
 
-// The web app needs only its own origin. Inline styles: Svelte sets style
+// Scripts only from its own origin. Inline styles: Svelte sets style
 // attributes. blob: images: upload previews; data: images: avatars (images
 // cannot run scripts). wasm-unsafe-eval: compiling WebAssembly (RNNoise),
-// not eval of JavaScript. connect-src 'self' also allows ws(s) to the same
-// host.
-const csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; " +
-	"object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+// not eval of JavaScript. https:/wss: connections, pictures and media:
+// other Kallisti servers in the same page (several servers in one client);
+// 'self' also allows ws(s) to the same host.
+const csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' blob: data: https:; media-src 'self' blob: https:; " +
+	"connect-src 'self' https: wss:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 
 // New returns the site handler. Without webDir, everything goes to the
 // bridge (development: the web app runs on Vite). brand: the server's

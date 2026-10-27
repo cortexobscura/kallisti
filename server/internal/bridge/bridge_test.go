@@ -174,15 +174,19 @@ func TestUpstreamDialErrorCloses1011(t *testing.T) {
 	}
 }
 
-func TestRejectsOriginsThatAreNotAllowed(t *testing.T) {
+// Other sites connect (with a token for an account); requests without an
+// origin only with "*".
+func TestOrigins(t *testing.T) {
 	echo := startEcho(t)
 	url := startBridge(t, Options{Dial: dialer(echo.addr), AllowedOrigins: []string{"https://good.example"}})
-	_, resp, err := connect(t, url, "https://evil.example")
-	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("got %v %v, want 403", resp, err)
+	if c, _, err := connect(t, url, "https://other-kallisti.example"); err != nil {
+		t.Fatalf("another site: %v", err)
+	} else {
+		c.CloseNow()
 	}
-	if echo.open.Load() != 0 {
-		t.Error("upstream was dialed")
+	_, resp, err := connect(t, url, "")
+	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("no origin: got %v %v, want 403", resp, err)
 	}
 }
 
