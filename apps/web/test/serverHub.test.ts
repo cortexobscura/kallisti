@@ -11,9 +11,8 @@ const HOME = "https://chat.example";
 const A = "https://a.example";
 const B = "https://b.example";
 
-const setup = (storage = memory()) => {
+const setup = (storage = memory(), tokens = new Map<string, string | null>()) => {
   let owner: string | null = "home alice";
-  const tokens = new Map<string, string | null>();
   const revoked: [string, string][] = [];
   const sessions: { origin: string; name: string; leave: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }[] = [];
   const hub = createServerHub({
@@ -152,6 +151,27 @@ describe("the added servers", () => {
     hub.restore();
     expect(hub.servers).toEqual([]);
     expect(revoked).toEqual([[A, "ta"]]);
+  });
+
+  it("a stale tab ending its login does not touch a newer login's list or tokens", () => {
+    const storage = memory();
+    const tokens = new Map<string, string | null>();
+    const stale = setup(storage, tokens);
+    stale.hub.follow("home alice");
+    stale.hub.add(A, "alice", "ta");
+    // Another tab: alice out, bob in, bob adds A too.
+    const fresh = setup(storage, tokens);
+    fresh.login("home bob");
+    fresh.hub.follow("home bob");
+    fresh.hub.add(A, "bob", "tb");
+    // The stale tab learns that alice is out.
+    stale.login(null);
+    stale.hub.follow(null);
+    expect(stale.hub.servers).toEqual([]);
+    expect(stale.sessions[0]!.leave).toHaveBeenCalled();
+    expect(tokens.get(A)).toBe("tb");
+    expect(stale.revoked).toEqual([]);
+    expect(loadServers(storage, "home bob")).toEqual([{ origin: A, name: "bob" }]);
   });
 
   it("close (the app goes away) closes the sessions and keeps list and tokens", () => {

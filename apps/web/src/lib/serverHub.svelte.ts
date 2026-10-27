@@ -19,7 +19,8 @@ export type HubDeps<S extends Closable> = {
   revoke: (origin: string, token: string) => Promise<void>;
 };
 
-export type HubServer<S> = { origin: string; name: string; session: S };
+// token: the one it was opened with (another tab may have replaced it).
+export type HubServer<S> = { origin: string; name: string; session: S; token: string | null };
 
 // The servers added to the rail (several servers in one client): all
 // connected, one shown (null: the home server). The list and tokens are
@@ -29,8 +30,9 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
   let servers = $state.raw<HubServer<S>[]>([]);
   let shown = $state<string | null>(null);
   let restored = false;
-  // Whose the open ones are (see follow).
+  // Whose the open ones are (see follow); first: no follow yet.
   let live: string | null = null;
+  let first = true;
 
   const save = (owner: string, list: ReturnType<typeof loadServers>) => saveServers(deps.storage(), owner, list);
   // Forgets the token at once; logs out there with it afterwards, so a
@@ -45,19 +47,31 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     s.session.leave();
     s.session.dispose();
   };
-  // keepRestored: the current login stays (restore found another's list).
-  const endAll = (keepRestored: boolean) => {
+  // A login ends: its open servers close; their tokens and the saved list
+  // go only if still this login's (a stale tab must not end a newer
+  // login's, which another tab may have made meanwhile).
+  const endLogin = (owner: string | null) => {
     const all = servers;
     servers = [];
     shown = null;
-    restored = keepRestored;
-    for (const { origin } of loadServers(deps.storage())) forget(origin);
+    restored = false;
     for (const s of all) {
-      forget(s.origin);
       end(s);
+      if (deps.tokens(s.origin).get() === s.token) forget(s.origin);
     }
+    if (owner !== null && storedOwner(deps.storage()) === owner) {
+      for (const { origin } of loadServers(deps.storage())) forget(origin);
+      saveServers(deps.storage(), "", []);
+    }
+  };
+  // A saved list of another login, or of none (an older format, or a login
+  // that ended while no tab was open): logged out there, tokens and list
+  // gone, before anything opens.
+  const endForeign = () => {
+    for (const { origin } of loadServers(deps.storage())) forget(origin);
     saveServers(deps.storage(), "", []);
   };
+  const opened = (origin: string, name: string): HubServer<S> => ({ origin, name, session: deps.open(origin, name), token: deps.tokens(origin).get() });
 
   return {
     get servers(): readonly HubServer<S>[] {
@@ -75,7 +89,8 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
       const owner = deps.owner();
       if (owner === null || origin === deps.home() || servers.some((s) => s.origin === origin)) return false;
       deps.tokens(origin).set(token);
-      servers = [...servers, { origin, name, session: deps.open(origin, name) }];
+      live = owner;
+      servers = [...servers, opened(origin, name)];
       save(owner, addServer(loadServers(deps.storage(), owner), { origin, name }, deps.home()));
       shown = origin;
       return true;
@@ -99,22 +114,28 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
       const owner = deps.owner();
       if (restored || owner === null) return;
       restored = true;
-      if (storedOwner(deps.storage()) !== owner) return endAll(true);
-      const opened = new Set(servers.map((s) => s.origin));
-      const fresh = loadServers(deps.storage(), owner).filter((s) => s.origin !== deps.home() && !opened.has(s.origin));
-      servers = [...servers, ...fresh.map(({ origin, name }) => ({ origin, name, session: deps.open(origin, name) }))];
+      if (storedOwner(deps.storage()) !== owner) return endForeign();
+      live = owner;
+      const open = new Set(servers.map((s) => s.origin));
+      const fresh = loadServers(deps.storage(), owner).filter((s) => s.origin !== deps.home() && !open.has(s.origin));
+      servers = [...servers, ...fresh.map(({ origin, name }) => opened(origin, name))];
     },
     // The home login ended: all of them end, logged out there, list and
     // tokens gone from the device.
-    endAll: () => endAll(false),
+    endAll: () => endLogin(live ?? deps.owner()),
     // The home login now, on every change once it is known (also null: no
     // account, or a guest): another than the open ones' owner ends them at
-    // once (a cookie that expired in an open tab runs no logout), and
-    // another login's saved ones end before anything opens.
+    // once (a cookie that expired in an open tab runs no logout); at the
+    // first, another login's saved ones end before anything opens.
     follow: (owner: string | null) => {
-      if (live !== null && live !== owner) endAll(false);
+      if (first) {
+        first = false;
+        live = owner;
+        if (storedOwner(deps.storage()) !== owner && loadServers(deps.storage()).length > 0) endForeign();
+        return;
+      }
+      if (live !== null && live !== owner) endLogin(live);
       live = owner;
-      if (storedOwner(deps.storage()) !== owner && loadServers(deps.storage()).length > 0) endAll(restored);
     },
     // The app goes away: connections close; list and tokens stay.
     close: () => {
