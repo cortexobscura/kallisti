@@ -1,18 +1,28 @@
 <script lang="ts">
   import { initials } from "../lib/avatar";
 
-  // logo: the server's logo (null: its initials).
-  let { serverName, logo = null }: { serverName: string; logo?: string | null } = $props();
+  // A server in the rail: logo null shows its initials.
+  export type RailServer = { id: string; name: string; logo: string | null; active: boolean };
+
+  // Several servers in one client (see lib/serverList): a click shows one,
+  // (+) adds one; without onAdd, no (+).
+  let { servers, onSelect, onAdd }: { servers: readonly RailServer[]; onSelect?: (id: string) => void; onAdd?: () => void } = $props();
 </script>
 
 <nav class="rail" aria-label="Servers">
-  <div class="item">
-    <span class="pill active" aria-hidden="true"></span>
-    <button class="server active" title={serverName} aria-current="true">
-      {#if logo}<img src={logo} alt="" />{:else}{initials(serverName)}{/if}
-    </button>
-  </div>
-  <!-- Adding other servers comes later (meta/issues/multiple-servers.md). -->
+  {#each servers as s (s.id)}
+    <div class="item">
+      <span class="pill" class:active={s.active} aria-hidden="true"></span>
+      <button class="server" class:active={s.active} title={s.name} aria-label={s.name} aria-current={s.active ? "true" : undefined} onclick={() => onSelect?.(s.id)}>
+        {#if s.logo}<img src={s.logo} alt="" />{:else}{initials(s.name)}{/if}
+      </button>
+    </div>
+  {/each}
+  {#if onAdd}
+    <div class="item">
+      <button class="server add" title="Add a server" aria-label="Add a server" onclick={onAdd}>+</button>
+    </div>
+  {/if}
 </nav>
 
 <style>
@@ -71,6 +81,11 @@
     height: 100%;
     border-radius: inherit;
     object-fit: cover;
+  }
+  .add {
+    color: var(--accent);
+    font-size: 22px;
+    font-weight: 400;
   }
   .server.active,
   .server:hover:not(:disabled) {

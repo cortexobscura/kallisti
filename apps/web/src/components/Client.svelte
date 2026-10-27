@@ -101,7 +101,7 @@
   import ModerationDialog from "./ModerationDialog.svelte";
   import MembersDialog from "./MembersDialog.svelte";
   import Icon from "./Icon.svelte";
-  import ServerRail from "./ServerRail.svelte";
+  import ServerRail, { type RailServer } from "./ServerRail.svelte";
   import SettingsDialog from "./SettingsDialog.svelte";
   import Toast from "./Toast.svelte";
   import UserMenu from "./UserMenu.svelte";
@@ -133,6 +133,9 @@
     streams = { watching: [], lost: [] },
     openSettings = false,
     onSettingsOpened,
+    servers,
+    onSelectServer,
+    onAddServer,
   }: {
     connection: Connection;
     account?: AccountActions;
@@ -157,6 +160,11 @@
     // Open the settings at once (back from a fediverse login for them).
     openSettings?: boolean;
     onSettingsOpened?: () => void;
+    // The rail's servers (several servers in one client): without them,
+    // this one only.
+    servers?: readonly RailServer[];
+    onSelectServer?: (id: string) => void;
+    onAddServer?: () => void;
   } = $props();
 
   const server = $derived(connection.state);
@@ -1826,7 +1834,11 @@
   data-panel={phone ? panel : undefined}
 >
   <div class="left" bind:this={leftEl} inert={phone && panel !== "channels"}>
-  <ServerRail {serverName} logo={text.logo ? iconHref(connection.httpBase, 192, text.logo) : null} />
+  <ServerRail
+    servers={servers ?? [{ id: "", name: serverName, logo: text.logo ? iconHref(connection.httpBase, 192, text.logo) : null, active: true }]}
+    onSelect={onSelectServer}
+    onAdd={onAddServer}
+  />
   <div class="sidebar">
     <header>
       <span class="ellipsis">{serverName}</span>
