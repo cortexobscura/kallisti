@@ -87,7 +87,7 @@
         wasSynced: connection.wasSynced,
       }),
   );
-  const error = $derived(connection && !lost ? connectionError(connection.state, connection.closed) : null);
+  const error = $derived(connection && !lost ? connectionError(connection.state, connection.closed, connection.closeReason) : null);
   // Since when it is lost, and a clock while it is (see lossNotice).
   let lostAt = $state<number | null>(null);
   let now = $state(Date.now());

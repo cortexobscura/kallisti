@@ -21,6 +21,10 @@ describe("connectionError", () => {
     );
   });
 
+  it("gives the server's reason for a closed socket (a guest refused on another site)", () => {
+    expect(connectionError(initialState, true, "join as a guest on the server's own site")).toBe("join as a guest on the server's own site");
+  });
+
   it("reports a closed socket", () => {
     expect(connectionError({ ...initialState, status: "synced" }, true)).toMatch(/Lost/);
   });
