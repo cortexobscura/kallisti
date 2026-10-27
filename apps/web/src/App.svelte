@@ -98,10 +98,12 @@
         }
         autoLogin(acc);
       });
-  const leave = (note: string | null) => {
+  // endAdded: the home login ends, and the added servers with it (see
+  // lib/serverHub); not for a refused certificate (no login ended).
+  const leave = (note: string | null, endAdded = true) => {
     loginNote = note;
-    // The home login ends: the added servers end with it (see lib/serverHub).
-    hub.endAll();
+    addingServer = false;
+    if (endAdded) hub.endAll();
     session.leave();
     closeAudio(audio);
     audio = null;
@@ -262,6 +264,9 @@
       }
     },
     home: homeOrigin,
+    // An account at home (not a guest, not a Mumble server in the desktop
+    // app): nothing of a guest's survives on a shared device.
+    owner: () => (account && !account.temporary ? `${homeOrigin()} ${account.name}` : null),
     tokens: addedStore,
     open: (origin, name) => {
       const s = createServerSession<Connection>({
@@ -300,6 +305,7 @@
     ...hub.servers.map((a) => railEntry(a.origin, a.session.connection, new URL(a.origin).host)),
   ]);
   const selectServer = (id: string) => hub.show(id || null);
+  const canAdd = $derived(!!account && !account.temporary);
   // An added server's account in its settings: logging out takes it out
   // of the rail; no fediverse link from here (that is its own site's).
   const addedActions = (origin: string): AccountActions => {
@@ -405,6 +411,7 @@
     // Created here: a login is a user gesture.
     audio = voiceSupported() ? makeAudio() : null;
     if (!audio) audioState = null;
+    else for (const a of hub.servers) a.session.setAudio(audio, false);
     try {
       await started;
     } catch (err) {
@@ -423,11 +430,16 @@
     error={session.certificate ? null : (session.error ?? loginNote)}
     certificate={session.certificate}
     onTrust={trustAndConnect}
-    onCancelTrust={() => leave(null)}
+    onCancelTrust={() => leave(null, false)}
     {api}
     {account}
     desktop={desktop ? { server: desktopServer, kind: desktopKind, onServer: chooseServer, onChangeServer: changeServer } : null}
-    onAccountChange={(acc) => (account = acc)}
+    onAccountChange={(acc) => {
+      // A logout from the login screen (after a kick or refusal) ends the
+      // home login too.
+      if (!acc) hub.endAll();
+      account = acc;
+    }}
     onConnect={start}
     {fediSignup}
     onFediSignupDone={() => (fediSignup = false)}
@@ -438,7 +450,7 @@
     {#if a.session.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
     <div class="client" inert={a.session.lost}>
       {#key a.session.connection}
-        <Client connection={a.session.connection} account={addedActions(a.origin)} push={false} resume={a.session.place} onPlace={(p) => a.session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={a.session.drafts} pendingFiles={a.session.pendingFiles} streams={a.session.streams} servers={rail} onSelectServer={selectServer} onAddServer={() => (addingServer = true)} />
+        <Client connection={a.session.connection} account={addedActions(a.origin)} push={false} resume={a.session.place} onPlace={(p) => a.session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={a.session.drafts} pendingFiles={a.session.pendingFiles} streams={a.session.streams} servers={rail} onSelectServer={selectServer} onAddServer={canAdd ? () => (addingServer = true) : undefined} />
       {/key}
     </div>
   {:else}
@@ -446,6 +458,10 @@
       <p>{a.session.error ? `${new URL(a.origin).host}: ${a.session.error}` : `Connecting to ${new URL(a.origin).host}…`}</p>
       <p class="actions">
         <button type="button" onclick={() => hub.show(null)}>Back</button>
+        {#if a.session.credentials}
+          {@const c = a.session.credentials}
+          <button type="button" onclick={() => void a.session.start(c).catch(() => {})}>Try again</button>
+        {/if}
         <button type="button" onclick={() => hub.remove(a.origin)}>Remove this server</button>
       </p>
     </div>
@@ -464,7 +480,7 @@
   <!-- While lost, the old view stays readable but takes no input (it would be lost). -->
   <div class="client" inert={session.lost}>
     {#key connection}
-      <Client {connection} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} servers={rail} onSelectServer={selectServer} onAddServer={() => (addingServer = true)} />
+      <Client {connection} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} servers={rail} onSelectServer={selectServer} onAddServer={canAdd ? () => (addingServer = true) : undefined} />
     {/key}
   </div>
 {:else}
@@ -476,7 +492,14 @@
 {#if fediNotice}<Toast text={fediNotice} />{/if}
 
 {#if addingServer}
-  <AddServerDialog home={homeOrigin()} taken={hub.servers.map((a) => a.origin)} apiFor={dialogApi} onAdded={(origin, account, token) => hub.add(origin, account.name, token)} onClose={() => (addingServer = false)} />
+  <AddServerDialog
+    home={homeOrigin()}
+    homeCookie={!desktop}
+    taken={hub.servers.map((a) => a.origin)}
+    apiFor={dialogApi}
+    onAdded={(origin, acc, token) => hub.add(origin, acc.name, token)}
+    onClose={() => (addingServer = false)}
+  />
 {/if}
 
 {#if updateReady && !updateClosed}
