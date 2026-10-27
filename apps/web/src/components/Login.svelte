@@ -346,11 +346,11 @@
     {#if fediOn && !desktop}
       <form class="card fedi" onsubmit={fediLogin}>
         <label>
-          Or use your fediverse account
-          <input bind:value={instance} placeholder="mastodon.social or @you@mastodon.social" autocomplete="url" aria-describedby="fedi-hint" />
+          Or use your account on another server
+          <input bind:value={instance} placeholder="chat.example.org or @you@mastodon.social" autocomplete="url" aria-describedby="fedi-hint" />
         </label>
-        <p class="hint" id="fedi-hint">Mastodon, Pleroma, Akkoma, GoToSocial and others. New here? You choose a name next.</p>
-        <button class="secondary" type="submit" disabled={busy || !instance.trim()}>Log in with the fediverse</button>
+        <p class="hint" id="fedi-hint">Another Kallisti server, or the fediverse: Mastodon, Pleroma, Akkoma, GoToSocial and others. New here? You choose a name next.</p>
+        <button class="secondary" type="submit" disabled={busy || !instance.trim()}>Continue with that account</button>
       </form>
     {/if}
   {/if}

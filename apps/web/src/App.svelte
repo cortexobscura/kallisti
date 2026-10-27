@@ -1,6 +1,7 @@
 <script lang="ts">
   import Client from "./components/Client.svelte";
   import Login from "./components/Login.svelte";
+  import Authorize from "./components/Authorize.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
   import ServerRail, { type RailServer } from "./components/ServerRail.svelte";
   import type { RemoteVoice } from "./components/Client.svelte";
@@ -77,6 +78,9 @@
   const autoLogin = (acc: Account | null) => {
     if (!acc || connection || account !== null) return void (checking = false);
     account = acc;
+    // Another server asks who you are: only the question, no chat (a Mumble
+    // connection would take over this user's voice elsewhere).
+    if (authorizeQuery) return void (checking = false);
     // Still "checking" until the connection exists (start is async).
     void start({ username: acc.name, account: true, ...(desktop && { server: desktopServer }) }).finally(() => (checking = false));
   };
@@ -99,6 +103,8 @@
   // Back from a fediverse login (see lib/fedi): its result, once (a reload
   // must not show it again).
   const fediBack = isDesktop() ? null : fediResult(location.search);
+  // Another server asks who you are (see Authorize): after the login here.
+  const authorizeQuery = isDesktop() ? null : new URLSearchParams(location.search).get("authorize");
   if (fediBack) history.replaceState(history.state, "", withoutFediResult(location.pathname + location.search + location.hash));
   let fediSignup = $state(fediBack?.kind === "register");
   let fediNotice = $state<string | null>(null);
@@ -570,7 +576,9 @@
   {/if}
 {/snippet}
 
-{#if checking}
+{#if authorizeQuery && account && !checking}
+  <Authorize {api} query={authorizeQuery} serverName={location.host} />
+{:else if checking}
   <div class="connecting" aria-busy="true"></div>
 {:else}
   <!-- Every connected server's client, the one on screen visible. -->

@@ -124,6 +124,11 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       savedServers(((await call(`/api/servers?account=${encodeURIComponent(account)}`)) as { servers?: unknown }).servers),
     addServer: async (server: SavedServer, account: string) => void (await call("/api/servers", { ...server, account })),
     removeServer: async (origin: string, account: string) => void (await call("/api/servers", { origin, account }, "DELETE")),
+    // Another server asks who you are (Kallisti as a login provider): the
+    // question for this authorize query, and the answer (where to go).
+    oauthRequest: async (query: string) =>
+      (await call(`/api/oauth/request?${query}`)) as { site: string; account: string; deny: string },
+    oauthApprove: async (query: string) => ((await call("/api/oauth/approve", { query })) as { redirect: string }).redirect,
     // A new key (the old one stops working): shown this once.
     newStreamKey: async () => (await call("/api/stream-key", {})).key ?? "",
     removeStreamKey: async () => {
