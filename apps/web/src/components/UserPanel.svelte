@@ -1,7 +1,7 @@
 <script lang="ts" module>
-  // The mute when deafening: undeafening brings it back. One for all
-  // panels: voice is on one server, its panel or another's toggles it.
-  let mutedBeforeDeaf = false;
+  // The mute when deafening, per server: undeafening brings it back. For
+  // all panels: one server's voice is toggled from its panel or another's.
+  const mutedBeforeDeaf = new Map<string, boolean>();
 </script>
 
 <script lang="ts">
@@ -30,6 +30,7 @@
     now = Date.now(),
     onStatus,
     info,
+    voiceKey = "",
   }: {
     me: User;
     // "Voice connected", "Not in voice", ...
@@ -47,6 +48,8 @@
     now?: number;
     // Sets our status (none: the server has no statuses).
     onStatus?: (v: PresenceView) => void;
+    // The server whose voice the buttons act on (see mutedBeforeDeaf).
+    voiceKey?: string;
     // The connection's quality, while in voice without a voice bar (plain
     // Mumble servers; see VoiceBar).
     info?: Info;
@@ -93,8 +96,8 @@
     title={me.selfDeaf ? "Undeafen" : "Deafen"}
     aria-pressed={me.selfDeaf}
     onclick={() => {
-      if (!me.selfDeaf) mutedBeforeDeaf = me.selfMute;
-      onSelfState(toggleDeaf(me, mutedBeforeDeaf));
+      if (!me.selfDeaf) mutedBeforeDeaf.set(voiceKey, me.selfMute);
+      onSelfState(toggleDeaf(me, mutedBeforeDeaf.get(voiceKey) ?? false));
     }}
   >
     <Icon name="headphones" off={me.selfDeaf} size={20} />

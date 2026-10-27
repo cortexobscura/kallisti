@@ -11,6 +11,8 @@
   // Voice on another server (several servers in one client): its bar here,
   // and mute and deafen act on it.
   export type RemoteVoice = {
+    // Which server (its site).
+    key: string;
     server: string;
     channel: string;
     selfMute: boolean;
@@ -1188,7 +1190,7 @@
     };
   });
   $effect(() => {
-    if (dm === null) return;
+    if (dm === null || !active || !pageVisible) return;
     const [name, count] = [dm.name, server.privateCounts[dm.name] ?? 0];
     untrack(() => {
       if (readCounts[name] !== count) readCounts = { ...readCounts, [name]: count };
@@ -2023,6 +2025,7 @@
         micError={micOn ? (capture ? capture.micError : noVoice) : null}
         noVoice={!capture && !!noVoice}
         onSelfState={away ? away.setSelf : updateSelf}
+        voiceKey={away ? away.key : site}
         onSettings={() => (showSettings = true)}
         presence={statusOf(me.session).presence}
         own={text.ownStatus}

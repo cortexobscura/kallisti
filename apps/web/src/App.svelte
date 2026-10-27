@@ -381,8 +381,9 @@
   // mounted (one shown), so voice goes on while another is on screen. One
   // voice channel at a time: joining one elsewhere leaves the other.
   const views = $derived([{ id: "", session }, ...hub.servers.flatMap((a) => (a.session ? [{ id: a.origin, session: a.session }] : []))]);
-  // A lost connection's voice is not one (nothing goes through it).
-  const inVoiceOn = (s: ServerSession<Connection>) => !s.lost && s.connection?.state.status === "synced" && inVoice(s.connection.state);
+  // A lost or closed connection's voice is not one (nothing goes through it).
+  const inVoiceOn = (s: ServerSession<Connection>) =>
+    !s.lost && !s.error && !s.connection?.closed && s.connection?.state.status === "synced" && inVoice(s.connection.state);
   const voiceId = $derived(views.find((v) => inVoiceOn(v.session))?.id ?? null);
   const leaveVoiceOn = (id: string) => {
     const c = views.find((v) => v.id === id)?.session.connection;
@@ -412,6 +413,7 @@
     if (!v || !c || !me) return null;
     const target = v.id;
     return {
+      key: target || (kallisti ?? location.origin),
       server: railServers.find((r) => r.id === target)?.name ?? "",
       channel: c.state.channels[me.channelId]?.name ?? "",
       selfMute: me.selfMute,
@@ -566,7 +568,7 @@
   <!-- Every connected server's client, the one on screen visible. -->
   {#if connection?.state.status === "synced" && !session.error}
     {@const shown = hub.shown === null}
-    <div class="view" hidden={!shown}>
+    <div class="view" hidden={!shown} inert={!shown}>
       <!-- Quiet first (the server is usually back within seconds): a small
            sign, then the banner (see lossNotice). -->
       {#if shown && session.lost && session.notice === "banner"}
@@ -758,9 +760,19 @@
     background: var(--bg-active);
     color: var(--text);
   }
-  /* The clients of servers not on screen stay mounted, hidden. */
+  /* The clients of servers not on screen stay mounted, out of sight but
+     with their size (display: none would lose the lists' scroll position,
+     and nothing could measure itself). */
   .view:not([hidden]) {
     display: contents;
+  }
+  .view[hidden] {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    visibility: hidden;
+    pointer-events: none;
   }
   /* A screen without the client, beside the rail. */
   .shell {

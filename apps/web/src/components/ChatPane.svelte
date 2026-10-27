@@ -647,8 +647,8 @@
   const canReply = $derived((stored || kind === "text") && !!onSend);
   const canReact = $derived(canReply && !!onReact && myId !== null);
   let picking = $state<number | null>(null);
-  const inLine = (id: number | null, selector: string) =>
-    document.querySelector<HTMLElement>(`[data-message="${id}"] ${selector}`);
+  // In this pane (another server's hidden client may have the same ids).
+  const inLine = (id: number | null, selector: string) => list?.querySelector<HTMLElement>(`[data-message="${id}"] ${selector}`);
   const openPicker = async (id: number) => {
     picking = id;
     await tick();
@@ -722,7 +722,7 @@
   };
   // After Info from the phone sheet, the focus goes back to the message.
   const closeInfo = () => {
-    const line = document.querySelector<HTMLElement>(`li[data-message="${infoFor}"]`);
+    const line = list?.querySelector<HTMLElement>(`li[data-message="${infoFor}"]`);
     infoFor = null;
     if (line && !line.contains(document.activeElement)) {
       line.tabIndex = -1;
