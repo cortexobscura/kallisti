@@ -267,6 +267,13 @@ func (a *Service) authorize(w http.ResponseWriter, r *http.Request) {
 // oauthApprove (POST, {ticket}): allowed, the redirect. (The approval
 // never parses a query again: two parsers could read it differently.)
 func (a *Service) oauthRequest(w http.ResponseWriter, r *http.Request) {
+	if !a.consentSite(w, r) {
+		return
+	}
+	if !a.allow(r) { // each request keeps a ticket
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
+		return
+	}
 	q, err := a.parseAuthorize(r.URL.Query())
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this login request is not valid"})
@@ -289,6 +296,9 @@ func (a *Service) oauthRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Service) oauthApprove(w http.ResponseWriter, r *http.Request) {
+	if !a.consentSite(w, r) {
+		return
+	}
 	var body struct {
 		Ticket string `json:"ticket"`
 	}
@@ -320,6 +330,17 @@ func (a *Service) oauthApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"redirect": to})
+}
+
+// consentSite: only this server's own page asks and answers (not another
+// site with a token for an account here: it must not vouch for it to a
+// third server).
+func (a *Service) consentSite(w http.ResponseWriter, r *http.Request) bool {
+	if config.CookieOrigin(a.AllowedOrigins, r.Header.Get("Origin")) {
+		return true
+	}
+	writeJSON(w, http.StatusForbidden, map[string]string{"error": "only this server's own page asks this"})
+	return false
 }
 
 // providerAccount is the logged-in account that may log in elsewhere (not

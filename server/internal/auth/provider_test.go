@@ -245,3 +245,27 @@ func TestProviderRefusals(t *testing.T) {
 		t.Errorf("a provider token as a session: %d, want 401", resp.StatusCode)
 	}
 }
+
+// Only the server's own page asks and answers: another site with a token
+// for an account here cannot make it vouch for that account.
+func TestConsentOnlyOnTheOwnSite(t *testing.T) {
+	p, pSrv, _, _ := providerSetup(t)
+	acc, _ := p.Store.CreateAccount(store.Account{Name: "lain", PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, time.Now())
+	p.Store.CreateSession(tokenHash("tok"), acc.ID, time.Now().Add(time.Hour))
+	query := url.Values{"client_id": {clientIDFor("https://b.example/api/fedi/callback")}, "redirect_uri": {"https://b.example/api/fedi/callback"}, "response_type": {"code"}, "state": {"s"}, "code_challenge": {fedi.Challenge(fedi.NewVerifier())}, "code_challenge_method": {"S256"}}.Encode()
+	for _, origin := range []string{"https://home.example", ""} {
+		req, _ := http.NewRequest("GET", pSrv.URL+"/api/oauth/request?"+query, nil)
+		req.Header.Set("Authorization", "Bearer tok")
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		resp, err := pSrv.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if want := map[string]int{"": http.StatusOK, "https://home.example": http.StatusForbidden}[origin]; resp.StatusCode != want {
+			t.Errorf("from %q: %d, want %d", origin, resp.StatusCode, want)
+		}
+	}
+}
