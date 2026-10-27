@@ -32,12 +32,15 @@ rest. test.kallisti.chat runs this branch.
   connected servers stay mounted (one shown); the others show the voice
   server's bar; mute, deafen and push-to-talk act on it; joining voice
   elsewhere leaves it (and its rejoin after a reconnect).
+- Servers in the background: their unread marks and mentions in the rail,
+  their notifications while the page is open.
 
 ## Still to do (decided)
 
-- Unread marks, mentions and notifications of servers in the background.
 - Steps 3 to 5 (login provider, joined servers updating the list at
   home, tokens without typing).
+- [Push from added servers](push-from-added-servers.md) while the page is
+  closed.
 
 ## Accepted (2026-10-27)
 

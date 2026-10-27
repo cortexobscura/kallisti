@@ -30,6 +30,7 @@
   import { checkForUpdate } from "./lib/update";
   import { browserPushSupport, turnOffPush } from "./lib/push";
   import { voiceJoined } from "./lib/voice";
+  import type { RailBadge } from "./lib/title";
   import { voiceSupported } from "./lib/voice/support";
   import { loadCaptureWorklet, startAfter } from "./lib/voice/worklet";
   import { closeVoiceOutput } from "./lib/voice/output";
@@ -360,7 +361,14 @@
   $effect(() => () => hub.close());
   const allSessions = () => [session, ...hub.servers.flatMap((a) => (a.session ? [a.session] : []))];
   const shownAdded = $derived(hub.shown === null ? null : (hub.servers.find((a) => a.origin === hub.shown) ?? null));
+  // Each server's mark (see Client onBadge).
+  let badges = $state<Record<string, RailBadge>>({});
+  const setBadge = (id: string, b: RailBadge) => {
+    const old = untrack(() => badges[id]);
+    if (old?.mentions !== b.mentions || old.unread !== b.unread) badges = { ...untrack(() => badges), [id]: b };
+  };
   const railEntry = (id: string, c: Connection | null, fallback: string): RailServer => ({
+    ...badges[id],
     id,
     name: c?.state.channels[0]?.name ?? fallback,
     logo: c?.text.logo ? iconHref(c.httpBase, 192, c.text.logo) : null,
@@ -581,7 +589,7 @@
       {/if}
       <!-- While lost, the old view stays readable but takes no input (it would be lost); the rail does. -->
       {#key connection}
-        <Client {connection} active={shown} pttHere={pttOn("")} remoteVoice={remoteVoiceFor("")} onShow={() => selectServer("")} lost={session.lost} {rail} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
+        <Client {connection} onBadge={(b) => setBadge("", b)} active={shown} pttHere={pttOn("")} remoteVoice={remoteVoiceFor("")} onShow={() => selectServer("")} lost={session.lost} {rail} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
       {/key}
     </div>
   {/if}
@@ -589,10 +597,10 @@
     {@const s = a.session}
     {#if s?.connection?.state.status === "synced" && !s.error}
       {@const shown = hub.shown === a.origin}
-      <div class="view" hidden={!shown}>
+      <div class="view" hidden={!shown} inert={!shown}>
         {#if shown && s.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
         {#key s.connection}
-          <Client connection={s.connection} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} push={false} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
+          <Client connection={s.connection} onBadge={(b) => setBadge(a.origin, b)} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} push={false} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
         {/key}
       </div>
     {/if}

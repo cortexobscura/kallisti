@@ -139,7 +139,7 @@
   import Shortcuts from "./Shortcuts.svelte";
   import { IS_MAC, navAction, stepPlace } from "../lib/switcher";
   import { mirrorIds } from "../lib/mirrors";
-  import { tabTitle } from "../lib/title";
+  import { railBadge, tabTitle, type RailBadge } from "../lib/title";
   import { channelLink, messageLink, parseMessageLink } from "../lib/messageLink";
   import { inviteLink, invitePlace, parseInviteLink } from "../lib/invites";
   import UserPanel from "./UserPanel.svelte";
@@ -169,6 +169,7 @@
     pttHere = true,
     remoteVoice = null,
     onShow,
+    onBadge,
   }: {
     connection: Connection;
     account?: AccountActions;
@@ -212,6 +213,8 @@
     remoteVoice?: RemoteVoice | null;
     // Puts this server on screen (a click on one of its notifications).
     onShow?: () => void;
+    // Its mark in the rail, on each change.
+    onBadge?: (badge: RailBadge) => void;
   } = $props();
 
   const server = $derived(connection.state);
@@ -1166,14 +1169,21 @@
   // Unread direct messages per sender name, marked read while open.
   let readCounts = $state<Record<string, number>>({});
   const unread = $derived(Object.fromEntries(Object.entries(unreadCounts(server.privateCounts, readCounts)).filter(([name]) => !blockedUsers.has(name))));
-  // The tab title: mentions and direct messages not read (see lib/title).
+  // The tab title and the rail's mark: mentions and direct messages not
+  // read (see lib/title).
+  const badge = $derived(railBadge(mentions, unread, unreadText));
   $effect(() => {
-    const sum = (r: Record<string | number, number>) => Object.values(r).reduce((a, n) => a + n, 0);
+    const b = badge;
+    untrack(() => onBadge?.(b));
+  });
+  // Gone (a lost login, a removed server): no mark of it stays.
+  $effect(() => () => untrack(() => onBadge)?.({ mentions: 0, unread: false }));
+  $effect(() => {
     const name = serverName;
     if (!active) return;
     const mine = {};
     page.title = mine;
-    document.title = tabTitle(name, sum(mentions) + sum(unread));
+    document.title = tabTitle(name, badge.mentions);
     return () => {
       if (page.title === mine) document.title = name;
     };
