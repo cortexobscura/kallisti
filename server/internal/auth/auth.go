@@ -241,8 +241,7 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		// Other sites (another Kallisti's page, the apps) are cross-site by
 		// nature and log in with a token: never with the cookie.
-		_, noCookie := r.Cookie(CookieName)
-		tokens := !config.CookieOrigin(a.AllowedOrigins, r.Header.Get("Origin")) && noCookie != nil
+		tokens := !config.CookieOrigin(a.AllowedOrigins, r.Header.Get("Origin")) && a.cookie(r, CookieName) == ""
 		if r.Header.Get("Sec-Fetch-Site") == "cross-site" && !tokens {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "cross-site requests are not allowed"})
 			return
@@ -311,10 +310,7 @@ func (a *Service) sessionToken(r *http.Request) string {
 	if !config.CookieOrigin(a.AllowedOrigins, r.Header.Get("Origin")) {
 		return ""
 	}
-	if c, err := r.Cookie(CookieName); err == nil {
-		return c.Value
-	}
-	return ""
+	return a.cookie(r, CookieName)
 }
 
 // SessionProtocol: the desktop app's WebSocket subprotocol with its token.
@@ -569,7 +565,7 @@ func (a *Service) clearSession(w http.ResponseWriter, r *http.Request) {
 		a.Store.DeleteSession(key)
 		a.revoke(func(_ int64, session string) bool { return session == key })
 	}
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	a.clearCookie(w, r, CookieName)
 }
 
 // logoutAll ends every session of the account, this one too.
@@ -586,7 +582,7 @@ func (a *Service) logoutAll(w http.ResponseWriter, r *http.Request) {
 	a.revoke(func(id int64, _ string) bool { return id == acc.ID })
 	a.endStreamKey(acc)
 	a.endPasswordLogins(acc)
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	a.clearCookie(w, r, CookieName)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -669,7 +665,7 @@ func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store
 		return "", false
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
+		Name:     a.cookieName(r, CookieName),
 		Value:    token,
 		Path:     "/",
 		MaxAge:   int(sessionLifetime.Seconds()),
@@ -681,6 +677,31 @@ func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store
 		token = ""
 	}
 	return token, true
+}
+
+// cookieName: with HTTPS the __Host- prefix: browsers take such a cookie
+// only from this host itself (Secure, Path=/, no Domain), so a sibling
+// subdomain cannot plant one (a session or a fediverse flow of its own).
+func (a *Service) cookieName(r *http.Request, base string) string {
+	if a.secure(r) {
+		return "__Host-" + base
+	}
+	return base
+}
+
+// cookie is the value of our cookie of this name ("": none).
+func (a *Service) cookie(r *http.Request, base string) string {
+	if c, err := r.Cookie(a.cookieName(r, base)); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// clearCookie removes it, and one of the plain name from before.
+func (a *Service) clearCookie(w http.ResponseWriter, r *http.Request, base string) {
+	for _, name := range []string{a.cookieName(r, base), base} {
+		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: a.secure(r), SameSite: http.SameSiteLaxMode})
+	}
 }
 
 func (a *Service) secure(r *http.Request) bool {

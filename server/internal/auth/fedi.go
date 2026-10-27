@@ -175,18 +175,13 @@ func (f *FediLogin) home(result, reason string) string {
 }
 
 func (a *Service) setFediCookie(w http.ResponseWriter, r *http.Request, name, value string, life time.Duration) {
-	maxAge := int(life.Seconds())
 	if value == "" {
-		maxAge = -1
+		a.clearCookie(w, r, name)
+		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: name, Value: value, Path: fediPath, MaxAge: maxAge, HttpOnly: true, Secure: a.secure(r), SameSite: http.SameSiteLaxMode})
-}
-
-func cookieValue(r *http.Request, name string) string {
-	if c, err := r.Cookie(name); err == nil {
-		return c.Value
-	}
-	return ""
+	maxAge := int(life.Seconds())
+	// Path "/": __Host- cookies need it (see cookieName).
+	http.SetCookie(w, &http.Cookie{Name: a.cookieName(r, name), Value: value, Path: "/", MaxAge: maxAge, HttpOnly: true, Secure: a.secure(r), SameSite: http.SameSiteLaxMode})
 }
 
 // serveFedi answers /api/fedi and below (POSTs are checked as JSON and
@@ -204,7 +199,7 @@ func (a *Service) serveFedi(w http.ResponseWriter, r *http.Request) bool {
 	case p == fediPath+"/callback" && get:
 		a.fediCallback(w, r)
 	case p == fediPath+"/signup" && get:
-		if s, ok := a.Fedi.signups.get(cookieValue(r, signupCookie), a.Now(), false); ok {
+		if s, ok := a.Fedi.signups.get(a.cookie(r, signupCookie), a.Now(), false); ok {
 			writeJSON(w, http.StatusOK, map[string]string{"name": s.name, "handle": s.id.Handle})
 		} else {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "the fediverse login expired, please try again"})
@@ -372,7 +367,7 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 	back := func(result, reason string) { http.Redirect(w, r, a.Fedi.home(result, reason), http.StatusFound) }
 	// It counts if the state in the callback is the cookie's; only then
 	// the flow ends (once), so a link from anywhere cannot cancel it.
-	state := cookieValue(r, stateCookie)
+	state := a.cookie(r, stateCookie)
 	q := r.URL.Query()
 	if state == "" || subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(state)) != 1 {
 		back("error", "expired")
@@ -517,7 +512,7 @@ func (a *Service) fediSignup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	key := cookieValue(r, signupCookie)
+	key := a.cookie(r, signupCookie)
 	s, ok := a.Fedi.signups.get(key, a.Now(), false) // kept for another name after a clash
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "the fediverse login expired, please try again"})

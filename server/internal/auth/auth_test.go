@@ -714,3 +714,40 @@ func TestMumbleRegistrationAnswerFromOtherSitesDoesNotDependOnThePassword(t *tes
 		t.Fatalf("right %d, wrong %d", right, wrong)
 	}
 }
+
+// With HTTPS the cookie is __Host- (only this host can set it: a sibling
+// subdomain cannot plant one), and a plain-named one does not count.
+func TestHostOnlyCookiesOverHTTPS(t *testing.T) {
+	a, srv := setup(t)
+	a.TrustForwardedFor = true
+	req, _ := http.NewRequest("POST", srv.URL+"/api/accounts", strings.NewReader(`{"name":"alice","password":"longpassword"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	var c *http.Cookie
+	for _, x := range resp.Cookies() {
+		if x.Name == "__Host-"+CookieName {
+			c = x
+		}
+	}
+	if c == nil || !c.Secure || c.Path != "/" || c.Domain != "" {
+		t.Fatalf("cookies %v", resp.Cookies())
+	}
+	me := func(name string) bool {
+		r := httptest.NewRequest("GET", "/api/me", nil)
+		r.Header.Set("X-Forwarded-Proto", "https")
+		r.AddCookie(&http.Cookie{Name: name, Value: c.Value})
+		_, ok := a.AccountFor(r)
+		return ok
+	}
+	if !me("__Host-" + CookieName) {
+		t.Fatal("the __Host- cookie did not count")
+	}
+	if me(CookieName) {
+		t.Fatal("a plain-named cookie counted over HTTPS")
+	}
+}
