@@ -10,7 +10,7 @@
   import { createAccountsApi, type Account, type AccountActions } from "./lib/accounts";
   import { connect, type Connection, type Credentials } from "./lib/connection.svelte";
   import { createServerSession, type ServerSession, type Target } from "./lib/serverSession.svelte";
-  import { createServerHub } from "./lib/serverHub.svelte";
+  import { createServerHub, type HubServer } from "./lib/serverHub.svelte";
   import { iconHref } from "./lib/serverLogo";
   import {
     bridgeUrl,
@@ -30,7 +30,7 @@
   import { loggedOut } from "./lib/reconnect";
   import { untrack, type Snippet } from "svelte";
   import { checkForUpdate } from "./lib/update";
-  import { browserPushSupport, turnOffPush } from "./lib/push";
+  import { browserPushSupport, dropServerPushes, pushIsOn, syncServerPush, turnOffPush, type PushPrefs } from "./lib/push";
   import { voiceJoined } from "./lib/voice";
   import { inviteOf, inviteRoute } from "./lib/invites";
   import type { RailBadge } from "./lib/title";
@@ -147,10 +147,13 @@
   });
   // Back from a login through another server with an invite (see Login):
   // its address again, so the client redeems it.
-  const keptInvite = fediBack ? safeGet(popupLogin.tab, "kallisti-invite") : null;
+  // Kept just before the page went to that login (a known account comes
+  // back without a result in the address): used by the next page, once.
+  const keptInvite = safeGet(popupLogin.tab, "kallisti-invite");
   if (keptInvite) safeSet(popupLogin.tab, "kallisti-invite", "");
   const restore = keptInvite?.startsWith("/invite/") || keptInvite?.startsWith("/?join=") ? keptInvite : null;
-  if (fediBack) history.replaceState(history.state, "", restore ?? withoutFediResult(location.pathname + location.search + location.hash));
+  if (restore) history.replaceState(history.state, "", restore);
+  else if (fediBack) history.replaceState(history.state, "", withoutFediResult(location.pathname + location.search + location.hash));
   let fediSignup = $state(fediBack?.kind === "register" || popupLogin.resumed);
   let fediNotice = $state<string | null>(null);
   // Back from a fresh login for the first password: to the settings again.
@@ -431,10 +434,40 @@
     hub.show(id || null);
   };
 
+  // Push from added servers (see lib/push syncServerPush): while the home
+  // server's is on (in this browser, for this login).
+  let homePushOn = $state(false);
+  $effect(() => {
+    const name = owner !== null ? account?.name : undefined;
+    const check = () => {
+      if (name && browserPushSupport() === "ok") void pushIsOn(httpBase(PROXY_URL), name).then((on) => (homePushOn = on));
+      else homePushOn = false;
+    };
+    check();
+    addEventListener("kallisti-push", check);
+    return () => removeEventListener("kallisti-push", check);
+  });
+  const pushSyncFor = (a: HubServer<ServerSession<Connection>>) => (prefs: PushPrefs) => {
+    if (a.token) void syncServerPush({ origin: a.origin, token: a.token, name: a.name }, homePushOn, prefs);
+  };
+  // Servers that went (removed, logged out): their registrations too.
+  $effect(() => {
+    const keep = hub.servers.filter((s) => s.token).map((s) => s.origin);
+    if (browserPushSupport() === "ok") untrack(() => void dropServerPushes(keep));
+  });
+
   // Invites (see lib/invites): a link to a server, clicked in a client or
   // opened here with ?join=<link>: that server on screen (added first, with
-  // the home account or a password) and the invite redeemed there.
-  let pendingInvites = $state<Record<string, string>>({});
+  // the home account or a password) and the invite redeemed there (its
+  // client takes the link, see Client link).
+  let pendingLinks = $state<Record<string, string>>({});
+  // Another home login: none of the last one's.
+  let linksOf = untrack(() => owner);
+  $effect(() => {
+    if (owner === linksOf) return;
+    linksOf = owner;
+    untrack(() => (pendingLinks = {}));
+  });
   const openInvite = (url: string): boolean => {
     const inv = inviteOf(url);
     if (!inv) return false;
@@ -442,23 +475,44 @@
     const route = inviteRoute(inv.origin, new URL(homeOrigin()).origin, known && { session: !!known.session }, owner === null);
     if (route === null) return false;
     const id = route === "home" ? "" : inv.origin;
-    pendingInvites[id] = inv.token;
+    pendingLinks[id] = url;
     if (route !== "add") selectServer(id);
     if (route === "login") addingFor = { owner: owner!, server: { origin: known!.origin, name: known!.name } };
     if (route === "add") addingFor = { owner: owner!, address: inv.origin };
     return true;
   };
-  const inviteUsed = (id: string) => () => delete pendingInvites[id];
+  const linkUsed = (id: string) => () => delete pendingLinks[id];
+  // A message link of a server here (a push notice's click, ?open=).
+  const openMessageLink = (url: string) => {
+    let origin: string;
+    try {
+      origin = new URL(url).origin;
+    } catch {
+      return;
+    }
+    const id = origin === new URL(homeOrigin()).origin ? "" : hub.servers.find((s) => s.origin === origin && s.session)?.origin;
+    if (id === undefined) return;
+    pendingLinks[id] = url;
+    selectServer(id);
+  };
+  let openUrl = new URLSearchParams(location.search).get("open");
+  if (openUrl) history.replaceState(history.state, "", location.pathname);
+  // Once the added servers are there (restored after the home connects).
+  $effect(() => {
+    if (openUrl && hub.servers.some((s) => openUrl!.startsWith(`${s.origin}/`) && s.session?.connection))
+      untrack(() => {
+        openMessageLink(openUrl!);
+        openUrl = null;
+      });
+  });
   // ?join=<an invite link> (another server's invite page sends people to
   // their home): once the home login is known and connected.
   let joinUrl = new URLSearchParams(location.search).get("join");
   if (joinUrl) history.replaceState(history.state, "", location.pathname);
-  // Kept over a login through another server (see keptInvite); a new page
-  // without one forgets an old one.
+  // Kept over a login through another server (see keptInvite).
   if (joinUrl) safeSet(tabStorage(), "kallisti-invite", `/?join=${encodeURIComponent(joinUrl)}`);
-  else if (!fediBack) safeSet(tabStorage(), "kallisti-invite", "");
   $effect(() => {
-    if (joinUrl && connection?.state.status === "synced" && ownerKnown)
+    if (joinUrl && connection?.state.status === "synced" && ownerKnown && (hub.listed || owner === null))
       untrack(() => {
         safeSet(tabStorage(), "kallisti-invite", "");
         if (!openInvite(joinUrl!)) fediNotice = inviteOf(joinUrl!) ? "Log in with an account (not as a guest) to join other servers." : "This is not an invite link.";
@@ -674,7 +728,7 @@
       {/if}
       <!-- While lost, the old view stays readable but takes no input (it would be lost); the rail does. -->
       {#key connection}
-        <Client {connection} invite={pendingInvites[""] ?? null} onInviteUsed={inviteUsed("")} onInvite={openInvite} onBadge={(b) => setBadge("", b)} active={shown} pttHere={pttOn("")} remoteVoice={remoteVoiceFor("")} onShow={() => selectServer("")} lost={session.lost} {rail} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
+        <Client {connection} link={pendingLinks[""] ?? null} onLinkUsed={linkUsed("")} onInvite={openInvite} onBadge={(b) => setBadge("", b)} active={shown} pttHere={pttOn("")} remoteVoice={remoteVoiceFor("")} onShow={() => selectServer("")} lost={session.lost} {rail} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
       {/key}
     </div>
   {/if}
@@ -685,7 +739,7 @@
       <div class="view" hidden={!shown} inert={!shown}>
         {#if shown && s.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
         {#key s.connection}
-          <Client connection={s.connection} invite={pendingInvites[a.origin] ?? null} onInviteUsed={inviteUsed(a.origin)} onInvite={openInvite} onBadge={(b) => setBadge(a.origin, b)} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} push={false} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
+          <Client connection={s.connection} pushSync={pushSyncFor(a)} link={pendingLinks[a.origin] ?? null} onLinkUsed={linkUsed(a.origin)} onInvite={openInvite} onBadge={(b) => setBadge(a.origin, b)} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} push={false} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
         {/key}
       </div>
     {/if}
@@ -760,7 +814,7 @@
     onClose={() => {
       // An invite for a server that did not come: forgotten.
       const origin = addingFor?.server?.origin ?? addingFor?.address;
-      if (origin && !hub.servers.some((s) => s.origin === origin && s.session)) delete pendingInvites[origin];
+      if (origin && !hub.servers.some((s) => s.origin === origin && s.session)) delete pendingLinks[origin];
       addingFor = null;
     }}
   />

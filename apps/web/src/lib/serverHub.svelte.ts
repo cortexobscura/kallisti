@@ -39,6 +39,8 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
   let shown = $state<string | null>(null);
   // The last list change the home server did not take.
   let error = $state<string | null>(null);
+  // The home account's list was asked for (loaded, or failed) this login.
+  let listed = $state(false);
   // The home login the open ones and the tokens belong to.
   let live: string | null = null;
   let first = true;
@@ -100,6 +102,7 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
   // not tokens a newer login in another tab has now. Then owner's.
   const endLogin = (owner: string | null) => {
     const wasMine = mine();
+    listed = false;
     closeAll(end);
     if (wasMine) endTokens(owner);
     live = owner;
@@ -131,6 +134,9 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     get error() {
       return error;
     },
+    get listed() {
+      return listed;
+    },
     show: (origin: string | null) => {
       shown = origin !== null && servers.some((s) => s.origin === origin) ? origin : null;
     },
@@ -145,6 +151,7 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
       // Tokens another tab adds meanwhile are not in this list yet.
       const before = tokens();
       const list = await api.load().catch(() => null);
+      if (live === owner) listed = true;
       if (list === null || live !== owner || changes !== at) return;
       const want = list.filter((x) => deps.allowed(x.origin));
       const kept = (origin: string) => tokens()[origin]?.unsaved === true || want.some((x) => x.origin === origin);

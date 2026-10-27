@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applicationServerKey, keyMatches, pushOwner, pushSupport, subscriptionBody, syncPush, turnOffPush } from "../src/lib/push";
+import { applicationServerKey, keyMatches, pushOwner, pushSupport, serverPushScope, subscriptionBody, syncPush, turnOffPush } from "../src/lib/push";
 import { clickTarget, noticeOf, windowFor } from "../src/lib/pushNotice";
 
 const env = { desktop: false, dev: false, serviceWorker: true, pushManager: true, notification: true, ios: false, standalone: false };
@@ -181,5 +181,71 @@ describe("push lifecycle", () => {
     await sync;
     expect(b.state()).toEqual({ registered: false, subscribed: false });
     expect(b.storage.get("pushOwner")).toBe("");
+  });
+});
+
+describe("push from added servers", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("subscribes at the server's own scope with its token, follows the home's switch, and goes with the server", async () => {
+    const HOME = "https://chat.example";
+    const B = "https://b.example";
+    const KEY = "AQL_-w";
+    type Reg = { scope: string; active: object; pushManager: { getSubscription(): Promise<unknown>; subscribe(): Promise<unknown> }; unregister(): Promise<boolean> };
+    const regs = new Map<string, Reg>();
+    const requests: string[] = [];
+    const storage = new Map<string, string>();
+    const makeReg = (scope: string): Reg => {
+      let sub: { endpoint: string; options: { applicationServerKey: ArrayBuffer }; toJSON(): PushSubscriptionJSON; unsubscribe(): Promise<boolean> } | null = null;
+      return {
+        scope,
+        active: {},
+        pushManager: {
+          getSubscription: async () => sub,
+          subscribe: async () =>
+            (sub = {
+              endpoint: `https://fcm.googleapis.com/${encodeURIComponent(scope)}`,
+              options: { applicationServerKey: applicationServerKey(KEY).buffer },
+              toJSON: () => ({ endpoint: "e", keys: {} }),
+              unsubscribe: async () => ((sub = null), true),
+            }),
+        },
+        unregister: async () => regs.delete(scope),
+      };
+    };
+    vi.stubGlobal("location", { origin: HOME });
+    vi.stubGlobal("localStorage", { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v) });
+    vi.stubGlobal("Notification", { permission: "granted" });
+    vi.stubGlobal("navigator", {
+      serviceWorker: {
+        register: async (_script: string, o: { scope: string }) => {
+          const scope = new URL(o.scope, HOME).href;
+          if (!regs.has(scope)) regs.set(scope, makeReg(scope));
+          return regs.get(scope)!;
+        },
+        getRegistration: async (s: string) => regs.get(new URL(s, HOME).href) ?? regs.get(`${HOME}/`),
+        getRegistrations: async () => [...regs.values()],
+      },
+    });
+    vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+      const auth = (init?.headers as Record<string, string> | undefined)?.Authorization ?? "-";
+      requests.push(`${init?.method ?? "GET"} ${url} ${auth} ${init?.credentials}`);
+      return url.endsWith("/api/push") ? new Response(JSON.stringify({ publicKey: KEY })) : new Response(null, { status: 204 });
+    });
+    const { dropServerPushes, syncServerPush } = await import("../src/lib/push");
+    const prefs = { quiet: [], loud: [], blocked: [] };
+    const scope = serverPushScope(B, HOME);
+    await syncServerPush({ origin: B, token: "tb", name: "lain" }, true, prefs);
+    expect([...regs.keys()]).toEqual([scope]);
+    expect(requests).toContain(`POST ${B}/api/push/subscriptions Bearer tb omit`);
+    expect(await regs.get(scope)!.pushManager.getSubscription()).not.toBeNull();
+    // The home's push off: this one goes too.
+    await syncServerPush({ origin: B, token: "tb", name: "lain" }, false, prefs);
+    expect(requests).toContain(`DELETE ${B}/api/push/subscriptions Bearer tb omit`);
+    expect(regs.has(scope)).toBe(false);
+    // On again; then the server is removed.
+    await syncServerPush({ origin: B, token: "tb", name: "lain" }, true, prefs);
+    await dropServerPushes([]);
+    expect(regs.size).toBe(0);
   });
 });

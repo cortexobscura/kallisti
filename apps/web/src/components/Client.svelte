@@ -170,9 +170,10 @@
     remoteVoice = null,
     onShow,
     onBadge,
-    invite = null,
-    onInviteUsed,
+    link = null,
+    onLinkUsed,
     onInvite,
+    pushSync,
   }: {
     connection: Connection;
     account?: AccountActions;
@@ -218,12 +219,15 @@
     onShow?: () => void;
     // Its mark in the rail, on each change.
     onBadge?: (badge: RailBadge) => void;
-    // An invite to redeem here, from elsewhere (a link clicked on another
-    // server, ?join=); onInviteUsed once asked for.
-    invite?: string | null;
-    onInviteUsed?: () => void;
+    // A link of this server from elsewhere (an invite clicked on another
+    // server, ?join=, a push notice's ?open=): an invite is redeemed, a
+    // message opens; onLinkUsed once done.
+    link?: string | null;
+    onLinkUsed?: () => void;
     // An invite link clicked here (any server's): true, the caller takes it.
     onInvite?: (url: string) => boolean;
+    // An added server's push (push false), with its quiet chats and blocks.
+    pushSync?: (prefs: PushPrefs) => void;
   } = $props();
 
   const server = $derived(connection.state);
@@ -753,6 +757,8 @@
   const pushPrefs = $derived(JSON.parse(pushPrefsKey) as PushPrefs);
   $effect(() => {
     if (pushName && browserPushSupport() === "ok") void syncPush(connection.httpBase, pushName, pushPrefs);
+    // An added server's push (see lib/push syncServerPush): the caller's.
+    else if (pushSync && browserPushSupport() === "ok") pushSync(pushPrefs);
   });
   $effect(() => {
     const sw = navigator.serviceWorker;
@@ -783,11 +789,14 @@
     invited = null;
   });
   $effect(() => {
-    const token = invite;
-    if (!token || !text.available) return;
+    const url = link;
+    // Not while lost: it would go nowhere (a new connection takes it).
+    if (!url || !text.available || lost) return;
     untrack(() => {
-      connection.manage({ redeemInvite: token });
-      onInviteUsed?.();
+      const token = parseInviteLink(url, site);
+      if (token) connection.manage({ redeemInvite: token });
+      else openMessage(parseMessageLink(url, site));
+      onLinkUsed?.();
     });
   });
   // A link made in the members dialog: shown there once. A redeemed link
