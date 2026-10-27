@@ -300,3 +300,4 @@
 - [x] [Docker: run as a chosen user and group id](issues/docker-user-and-group.md)
 - [x] [The whole page scrolls away](issues/page-scrolls-away.md)
 - [x] [Vivaldi and ungoogled Chromium: the picture-in-picture button does nothing](issues/vivaldi-pip.md)
+- [x] [Server name in the settings](issues/server-name-setting.md)
