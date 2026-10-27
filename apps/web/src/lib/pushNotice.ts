@@ -51,8 +51,7 @@ export const windowFor = <W extends { url: string; focused: boolean }>(windows: 
 
 // Push for added servers (several servers in one client): one service
 // worker registration each (a subscription is per registration, and each
-// server has its own key), at a scope under the home page that names it.
-export const pushScope = (server: string, home: string) => (server === home ? `${home}/` : `${home}/push/${encodeURIComponent(server)}/`);
+// server has its own key), at <home>/push/<origin>/ (see lib/push).
 
 // The server a registration is for (its scope; anything else: home).
 export const serverOfScope = (scope: string, home: string): string => {

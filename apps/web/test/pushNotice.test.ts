@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { serverPushScope } from "../src/lib/push";
-import { clickTarget, noticeOf, pushScope, serverOfScope } from "../src/lib/pushNotice";
+import { clickTarget, noticeOf, serverOfScope } from "../src/lib/pushNotice";
 
 const HOME = "https://chat.example";
 const B = "https://b.example";
 
 describe("push for added servers", () => {
   it("has a service worker scope per server, and reads the server back", () => {
-    expect(pushScope(HOME, HOME)).toBe(`${HOME}/`);
-    expect(pushScope(B, HOME)).toBe(`${HOME}/push/${encodeURIComponent(B)}/`);
-    expect(serverPushScope(B, HOME)).toBe(pushScope(B, HOME)); // the page's and the worker's
+    expect(serverPushScope(B, HOME)).toBe(`${HOME}/push/${encodeURIComponent(B)}/`);
     expect(serverOfScope(`${HOME}/`, HOME)).toBe(HOME);
-    expect(serverOfScope(pushScope(B, HOME), HOME)).toBe(B);
+    expect(serverOfScope(serverPushScope(B, HOME), HOME)).toBe(B); // the page's scope, the worker's reading
     // Anything else counts as the home server.
     expect(serverOfScope(`${HOME}/push/not%20an%20origin/`, HOME)).toBe(HOME);
   });

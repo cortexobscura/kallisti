@@ -67,7 +67,8 @@ const home = (base: string): Target => ({ base, scope: "/" });
 // chunk of its own).
 export const serverPushScope = (server: string, home: string) => `${home}/push/${encodeURIComponent(server)}/`;
 
-const ownerKey = (t: Target) => (t.scope === "/" ? "pushOwner" : `pushOwner ${t.scope}`);
+// Whose the home server's push is (an added server's follows it).
+const OWNER_KEY = "pushOwner";
 
 const request = (t: Target, init: RequestInit = {}): RequestInit => ({
   ...init,
@@ -133,14 +134,14 @@ const subscribe = (t: Target, owner: string, prefs: PushPrefs) => {
     sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey(key) });
     if (asked === offs()) await send(t, "POST", subscriptionBody(sub.toJSON(), prefs));
     if (asked !== offs()) return stopPush(t, reg, sub);
-    safeSet(localStorage, ownerKey(t), owner);
+    if (!t.token) safeSet(localStorage, OWNER_KEY, owner);
   });
   queue = run.catch(() => {});
   return run;
 };
 
 export const pushIsOn = async (base: string, name: string) =>
-  safeGet(localStorage, ownerKey(home(base))) === pushOwner(base, name) && !!(await (await registration())?.pushManager.getSubscription());
+  safeGet(localStorage, OWNER_KEY) === pushOwner(base, name) && !!(await (await registration())?.pushManager.getSubscription());
 
 // Push turned on or off here (added servers follow; see App).
 const changed = () => void globalThis.dispatchEvent?.(new Event("kallisti-push"));
@@ -166,7 +167,7 @@ export const turnOffPush = (base: string) => {
 };
 
 const stopPush = async (t: Target, reg?: ServiceWorkerRegistration, sub?: PushSubscription | null) => {
-  safeSet(localStorage, ownerKey(t), "");
+  if (!t.token) safeSet(localStorage, OWNER_KEY, "");
   reg ??= await registration(t.scope).catch(() => undefined);
   sub ??= await reg?.pushManager.getSubscription().catch(() => null);
   if (sub) await send(t, "DELETE", { endpoint: sub.endpoint }).catch(() => {});
@@ -178,7 +179,7 @@ const stopPush = async (t: Target, reg?: ServiceWorkerRegistration, sub?: PushSu
 // follows the session and the prefs (and comes back if the browser dropped
 // the subscription); another account's goes.
 export const syncPush = async (base: string, name: string, prefs: PushPrefs) => {
-  const owner = safeGet(localStorage, ownerKey(home(base)));
+  const owner = safeGet(localStorage, OWNER_KEY);
   if (owner === pushOwner(base, name) && Notification.permission === "granted")
     await subscribe(home(base), owner, prefs).catch((err) => console.warn("push", err));
   else if (owner || (await registration().catch(() => undefined))) await turnOffPush(base);
@@ -199,7 +200,6 @@ export const dropServerPushes = async (keep: readonly string[]) => {
   for (const reg of (await navigator.serviceWorker?.getRegistrations().catch(() => [])) ?? []) {
     if (!reg.scope.startsWith(`${location.origin}/push/`) || kept.includes(reg.scope)) continue;
     await (await reg.pushManager.getSubscription().catch(() => null))?.unsubscribe().catch(() => {});
-    safeSet(localStorage, `pushOwner ${new URL(reg.scope).pathname}`, "");
     await reg.unregister().catch(() => {});
   }
 };

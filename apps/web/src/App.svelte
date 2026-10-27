@@ -33,6 +33,7 @@
   import { browserPushSupport, dropServerPushes, pushIsOn, syncServerPush, turnOffPush, type PushPrefs } from "./lib/push";
   import { voiceJoined } from "./lib/voice";
   import { inviteOf, inviteRoute } from "./lib/invites";
+  import { parseMessageLink } from "./lib/messageLink";
   import type { RailBadge } from "./lib/title";
   import { voiceSupported } from "./lib/voice/support";
   import { loadCaptureWorklet, startAfter } from "./lib/voice/worklet";
@@ -444,16 +445,23 @@
       else homePushOn = false;
     };
     check();
+    // Here, or in another tab (its owner key changes).
+    const other = (e: StorageEvent) => e.key === "pushOwner" && check();
     addEventListener("kallisti-push", check);
-    return () => removeEventListener("kallisti-push", check);
+    addEventListener("storage", other);
+    return () => {
+      removeEventListener("kallisti-push", check);
+      removeEventListener("storage", other);
+    };
   });
   const pushSyncFor = (a: HubServer<ServerSession<Connection>>) => (prefs: PushPrefs) => {
     if (a.token) void syncServerPush({ origin: a.origin, token: a.token, name: a.name }, homePushOn, prefs);
   };
   // Servers that went (removed, logged out): their registrations too.
+  // Only once the list is known (before it, all would look gone).
   $effect(() => {
     const keep = hub.servers.filter((s) => s.token).map((s) => s.origin);
-    if (browserPushSupport() === "ok") untrack(() => void dropServerPushes(keep));
+    if (browserPushSupport() === "ok" && (hub.listed || (ownerKnown && owner === null))) untrack(() => void dropServerPushes(keep));
   });
 
   // Invites (see lib/invites): a link to a server, clicked in a client or
@@ -491,7 +499,7 @@
       return;
     }
     const id = origin === new URL(homeOrigin()).origin ? "" : hub.servers.find((s) => s.origin === origin && s.session)?.origin;
-    if (id === undefined) return;
+    if (id === undefined || !parseMessageLink(url, origin)) return; // message links only
     pendingLinks[id] = url;
     selectServer(id);
   };
@@ -499,7 +507,7 @@
   if (openUrl) history.replaceState(history.state, "", location.pathname);
   // Once the added servers are there (restored after the home connects).
   $effect(() => {
-    if (openUrl && hub.servers.some((s) => openUrl!.startsWith(`${s.origin}/`) && s.session?.connection))
+    if (openUrl && (hub.listed || owner === null) && (connection?.state.status === "synced" || hub.servers.some((s) => openUrl!.startsWith(`${s.origin}/`) && s.session?.connection)))
       untrack(() => {
         openMessageLink(openUrl!);
         openUrl = null;
