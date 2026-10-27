@@ -181,6 +181,13 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
 
   // Untracked: callers save from their effects, which must not run again
   // when the credentials change.
+  const dispose = () => {
+    disposed = true;
+    starts++;
+    stopReconnecting();
+    disposeEffects();
+  };
+
   const keepPlace = (p: Place | null, left = false) => {
     place = p;
     const c = untrack(() => credentials);
@@ -265,11 +272,11 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     keepStreams,
     // Into voice, or a new output device (see lib/voice/restart).
     setAudio: (ctx: AudioContext, keepMic: boolean) => [connection, attempt].forEach((c) => c?.setAudio(ctx, keepMic)),
-    dispose: () => {
-      disposed = true;
-      starts++;
-      stopReconnecting();
-      disposeEffects();
+    dispose,
+    // For good, without forgetting the place (the app goes away).
+    close: () => {
+      dispose();
+      connection?.close();
     },
   };
 };

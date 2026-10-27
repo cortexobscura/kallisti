@@ -136,6 +136,18 @@ describe("a server session", () => {
     session.dispose();
   });
 
+  it("close ends everything and closes the connection", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.sync();
+    session.close();
+    expect(made[0]!.closeRequests).toBe(1);
+    void session.start(credentials);
+    await settle();
+    expect(made).toHaveLength(1);
+  });
+
   it("dispose ends everything: no attempt later", async () => {
     const { session, made } = setup();
     await session.start(credentials);
