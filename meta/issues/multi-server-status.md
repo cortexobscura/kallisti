@@ -36,20 +36,21 @@ rest. test.kallisti.chat runs this branch.
 - Steps 3 to 5 (login provider, the list on the home account, tokens
   without typing).
 
-## Open points from the reviews (not fixed)
+## Accepted (2026-10-27)
 
-- The last two commits (logout naming the account) have not had their
-  two reviews yet.
-- A delayed logout answer's Set-Cookie can delete a newer login's cookie
-  (server; older than this work): [A new cookie name for each
-  login](cookie-per-login.md).
-- Two tabs writing the saved list in the same instant are not atomic:
-  [One tab at a time writes the saved server list](saved-list-lock.md).
-- Another owner's empty list record can be taken over by a stale tab
-  (its owner's next add is then refused until a reload).
-- Without a session fingerprint (a check failed) there is no "+" until
-  the next check succeeds; nothing asks again by itself.
-- A home logout that fails still ends the added servers (the user asked
-  to log out).
+Unlikely and self-healing, or not destructive: not handled (a rule for
+this work: no handlers for two tabs acting in the same instant).
+
+- A logout and a login in two tabs at nearly the same time: the late
+  logout answer can clear the newer login's cookie (log in again). A
+  cookie name per login (Chatto) would fix it: the patch was written and
+  dropped as not worth its complexity.
+- Two tabs writing the saved list in the same instant: one entry can be
+  lost. Web Locks alone do not fix it (localStorage is not consistent
+  across tab processes); IndexedDB would. Step 4 replaces the list.
+- Another owner's empty list record taken over by a stale tab; no "+"
+  until the next successful check without a fingerprint; a failed home
+  logout still ends the added servers; a guest's logout guarded by its
+  name only; a database error during a logout check.
 - On the test server and in the browser tests only: the local servers
   use http, so the tests bypass the page's CSP (production is https).

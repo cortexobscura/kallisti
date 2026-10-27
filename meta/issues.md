@@ -5,8 +5,6 @@
   - [ ] [Activity status: game and music](issues/activity-status.md)
 - [ ] [Join other servers with your account](issues/join-other-servers.md) (in progress on the branch `multi-server`)
   - [ ] [Status of the branch multi-server](issues/multi-server-status.md)
-    - [ ] [A new cookie name for each login](issues/cookie-per-login.md)
-    - [ ] [One tab at a time writes the saved server list](issues/saved-list-lock.md)
   - [ ] [Several servers in one client](issues/multiple-servers.md)
   - [ ] [Kallisti as a login provider](issues/kallisti-login-provider.md)
   - [ ] [The server list on the home account](issues/home-server-list.md)
