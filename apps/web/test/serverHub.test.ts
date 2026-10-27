@@ -363,6 +363,22 @@ describe("the added servers", () => {
     expect(tokens.get(A)).toBe("ta");
   });
 
+  it("a stale remove does not delete another tab's newer entry of the same server", () => {
+    const storage = memory();
+    const tokens = new Map<string, string | null>();
+    const a = setup(storage, tokens);
+    const b = setup(storage, tokens);
+    a.hub.follow("home alice");
+    a.hub.add(A, "alice", "t1");
+    b.hub.follow("home alice");
+    b.hub.restore();
+    b.hub.remove(A);
+    b.hub.add(A, "alice", "t2");
+    a.hub.remove(A); // the old entry in tab a
+    expect(tokens.get(A)).toBe("t2");
+    expect(loadServers(storage, "home alice")).toEqual([{ origin: A, name: "alice" }]);
+  });
+
   it("close (the app goes away) closes the sessions and keeps list and tokens", () => {
     const { hub, tokens, sessions, storage, revoked } = setup();
     hub.add(A, "alice", "ta");

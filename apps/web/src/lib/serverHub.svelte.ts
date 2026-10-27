@@ -129,7 +129,9 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
       const s = servers.find((x) => x.origin === origin);
       if (shown === origin) shown = null;
       const owner = deps.owner();
-      if (ours(owner)) save(owner!, removeServer(loadServers(deps.storage(), owner!), origin));
+      // The saved entry only if it is still this login of it (another tab
+      // may have removed and added it again).
+      if (ours(owner) && (!s || deps.tokens(origin).get() === s.token)) save(owner!, removeServer(loadServers(deps.storage(), owner!), origin));
       if (!s) return;
       release(s);
       servers = servers.filter((x) => x !== s);
