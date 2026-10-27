@@ -17,6 +17,19 @@ and apps.
   switching); users see you online on each.
 - From another site only "Log in" works (step 2: new accounts and guests
   on a server's own site); joining with the home account is step 3.
+- A home logout (also "logged out" by the server, and changing the
+  desktop app's home server) ends all added servers: disconnected, logged
+  out there, their tokens and the list gone from the device (step 4 brings
+  the list back from the home account).
+- A server on the home server's host with another port is refused:
+  browsers send the home cookie to every port of a host.
+- Voice continues while another server is on screen (as in Discord): the
+  voice bar, mute, deafen and push-to-talk follow the voice connection;
+  joining voice elsewhere leaves it.
+- The rail lives outside the client: usable while a server connects,
+  fails or reconnects (on phones in the channel drawer).
+- Push notifications stay with the home server until notifications from
+  servers in the background exist.
 
 ## Steps
 
