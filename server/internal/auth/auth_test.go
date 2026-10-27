@@ -863,3 +863,21 @@ func TestLogoutNamingASessionWithoutOne(t *testing.T) {
 		t.Fatal("409 without a session")
 	}
 }
+
+// A logout can name the account it shows (a guest has no fingerprint):
+// another account's login is not ended.
+func TestLogoutOfAnotherAccountIsRefused(t *testing.T) {
+	a, srv := setup(t)
+	resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "bob", "password": "longpassword"}, nil)
+	c := sessionCookie(resp)
+	resp, _ = post(t, srv, "/api/logout", map[string]string{"name": "guest1"}, c)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("another account: %d, want 409", resp.StatusCode)
+	}
+	if _, ok := a.AccountFor(requestWith(c)); !ok {
+		t.Fatal("bob was logged out")
+	}
+	if resp, _ = post(t, srv, "/api/logout", map[string]string{"name": "Bob"}, c); resp.StatusCode == http.StatusConflict {
+		t.Fatal("bob's own logout refused")
+	}
+}

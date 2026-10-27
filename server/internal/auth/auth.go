@@ -568,15 +568,19 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 func (a *Service) logout(w http.ResponseWriter, r *http.Request) {
 	// It may name the session it means (see sessionID): a login screen that
 	// still shows an older login must not end the one now in this browser.
+	// It may also name the account (a guest has no fingerprint).
 	var body struct {
 		Session string `json:"session"`
+		Name    string `json:"name"`
 	}
 	json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
-	if key := a.SessionKey(r); body.Session != "" && key != "" && body.Session != sessionID(key) {
+	acc, ok := a.AccountFor(r)
+	key := a.SessionKey(r)
+	if (body.Session != "" && key != "" && body.Session != sessionID(key)) || (body.Name != "" && ok && names.Key(body.Name) != names.Key(acc.Name)) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "another login is active here now"})
 		return
 	}
-	if acc, ok := a.AccountFor(r); ok && acc.Temporary {
+	if ok && acc.Temporary {
 		if err := a.Store.ExpireAccount(acc.ID); err != nil {
 			slog.Error("ending a guest account", "account", acc.Name, "err", err)
 		}
