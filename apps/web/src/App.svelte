@@ -53,7 +53,8 @@
 
   const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? proxyUrl(location);
 
-  let connection = $state<Connection | null>(null);
+  // Raw: the object itself (its getters are reactive), so viaBridge finds it.
+  let connection = $state.raw<Connection | null>(null);
   // The account API lives on the Kallisti server (same host as the bridge).
   // The desktop app's server is chosen on the login screen (see below).
   let api = $state.raw(createAccountsApi(httpBase(PROXY_URL)));
@@ -399,7 +400,7 @@
   let drafts = $state.raw<Drafts>({ value: new Map() });
   // Files picked but not sent, by chat: also over reloads (see lib/pendingFiles).
   let pendingFiles = $state.raw(createPendingFiles(null, ""));
-  let attempt: Connection | null = $state(null);
+  let attempt: Connection | null = $state.raw(null);
   let attempts = 0;
   let busyTries = 0;
   let starting = false;
