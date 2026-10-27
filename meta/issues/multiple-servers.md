@@ -11,6 +11,13 @@ all of them: voice goes on while you switch. "Add a server" opens that
 server's normal login (password, guest, fediverse) inside the client. Web
 and apps.
 
+## Decisions (2026-10-27)
+
+- All added servers stay connected (unread marks, mentions, instant
+  switching); users see you online on each.
+- From another site only "Log in" works (step 2: new accounts and guests
+  on a server's own site); joining with the home account is step 3.
+
 ## Acceptance Criteria
 
 - Add, switch and remove servers; the list kept on the device (the home
