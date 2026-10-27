@@ -10,35 +10,46 @@
   // out again).
   let {
     home,
+    homeCookie = true,
     taken,
     apiFor,
     onAdded,
     onClose,
   }: {
     home: string;
+    // The home login is a cookie (the web app): see serverOrigin.
+    homeCookie?: boolean;
     // Origins already in the rail.
     taken: readonly string[];
     // A server's account API whose token stays in memory (see token()).
     apiFor: (origin: string) => { api: AccountsApi; token: () => string | null };
-    onAdded: (origin: string, account: Account, token: string) => void;
+    // False: not taken (no longer logged in at home, or added meanwhile).
+    onAdded: (origin: string, account: Account, token: string) => boolean;
     onClose: () => void;
   } = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
   let address = $state("");
-  let found = $state<{ origin: string } & ReturnType<typeof apiFor> | null>(null);
+  let found = $state<{ origin: string } | null>(null);
   let name = $state("");
   let password = $state("");
   let error = $state<string | null>(null);
   let busy = $state(false);
   // Each check and login gets a number: Back, Close and a new try make
-  // older ones count for nothing.
+  // older ones count for nothing, and log out a login they got (each login
+  // has its own token: a late one cannot touch a newer one).
   let attempt = 0;
+  let holding: { logout: () => void } | null = null;
+  const cancel = () => {
+    attempt++;
+    holding?.logout();
+    holding = null;
+  };
   $effect(() => dialog?.showModal());
-  $effect(() => () => void attempt++);
+  $effect(() => cancel);
 
   const back = () => {
-    attempt++;
+    cancel();
     found = null;
     name = password = "";
     error = null;
@@ -48,7 +59,7 @@
   const check = async (event: SubmitEvent) => {
     event.preventDefault();
     error = null;
-    const parsed = serverOrigin(address, home);
+    const parsed = serverOrigin(address, home, homeCookie);
     if ("error" in parsed) return void (error = parsed.error);
     const { origin } = parsed;
     if (taken.includes(origin)) return void (error = "This server is already in the list.");
@@ -59,32 +70,44 @@
     busy = false;
     if (kind === "unreachable") error = `Cannot reach ${origin}. Check the address, or try again.`;
     else if (kind === "other") error = `${origin} is not a Kallisti server.`;
-    else found = { origin, ...apiFor(origin) };
+    else found = { origin };
   };
 
   const logIn = async (event: SubmitEvent) => {
     event.preventDefault();
-    const target = found;
-    if (!target) return;
-    const mine = ++attempt;
+    if (!found) return;
+    const origin = found.origin;
+    cancel();
+    const mine = attempt;
+    const { api, token } = apiFor(origin);
+    // Until it is taken, this login's token is ours to log out.
+    const mineHolds = { logout: () => void (token() && api.logout()) };
+    holding = mineHolds;
+    const drop = () => {
+      if (holding === mineHolds) holding = null;
+      mineHolds.logout();
+    };
+    const cancelled = () => mine !== attempt;
     error = null;
     busy = true;
-    const cancelled = () => mine !== attempt;
     try {
-      const result = await target.api.login(name.trim(), password);
+      const result = await api.login(name.trim(), password);
+      if (cancelled()) return drop();
       // A Mumble registration has no session for other sites (the server
       // refuses it there; an older one may not).
       if (result.mumble) throw new Error("Log in with this name on the server's own site.");
-      const account = await target.api.me();
-      const token = target.token();
-      if (cancelled()) {
-        if (token) void target.api.logout();
-        return;
+      const account = await api.me();
+      if (cancelled()) return drop();
+      const t = token();
+      if (!account || !t) throw new Error("The login did not last. Please try again.");
+      holding = null;
+      if (!onAdded(origin, account, t)) {
+        mineHolds.logout();
+        throw new Error("This server could not be added (it may be in the list already, or you are no longer logged in).");
       }
-      if (!account || !token) throw new Error("The login did not last. Please try again.");
-      onAdded(target.origin, account, token);
       dialog?.close();
     } catch (err) {
+      if (holding === mineHolds) drop();
       if (!cancelled()) error = err instanceof Error ? err.message : String(err);
     } finally {
       if (!cancelled()) busy = false;
@@ -92,7 +115,7 @@
   };
 </script>
 
-<dialog bind:this={dialog} onclose={() => (attempt++, onClose())} aria-labelledby="add-server-title">
+<dialog bind:this={dialog} onclose={() => (cancel(), onClose())} aria-labelledby="add-server-title">
   <header>
     <h2 id="add-server-title">Add a server</h2>
     <button type="button" class="close" onclick={() => dialog?.close()} aria-label="Close">×</button>
