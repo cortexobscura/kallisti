@@ -22,5 +22,3 @@
 - [ ] [Voice CI: Safari fails now and then](issues/voice-ci-flaky-safari.md)
 - [ ] [Stream sound drifts after lost packets (Chrome)](issues/stream-sound-drift-after-loss.md)
 - [ ] [Firefox: no stream controls on hover](issues/firefox-stream-controls.md)
-- [ ] [Admins change the server's name and logo](issues/server-name-and-logo.md)
-  - [ ] [Server logo](issues/server-logo.md)
