@@ -129,6 +129,7 @@ export type ServerEvent =
       guestsReadOnly?: boolean;
       // The browser check for new accounts (see lib/captcha).
       captcha?: CaptchaLevel;
+      logo?: string;
       // Registered users' direct chats (with messages).
       directs?: DirectChat[];
       streams?: LiveStream[];
@@ -207,6 +208,8 @@ export type ServerEvent =
   // Admins renamed the server (the state has it as the root channel's
   // name: the confirmation only).
   | { type: "server-name"; name: string }
+  // The server's logo changed ("": removed; see lib/serverLogo).
+  | { type: "logo"; version: string }
   // Every connection (admins, asked for: see lib/connections).
   | { type: "connections"; connections: Connection[] }
   // The message rules (admins, asked for or saved: see lib/messageRules).
@@ -299,6 +302,9 @@ export type TextState = {
   // The text of the last refused send (n counts them, see ChatPane).
   returned?: { channel: number; text: string; n: number };
   captcha: CaptchaLevel;
+  // The server's logo's version (null: none, undefined: not known before
+  // ready; see lib/serverLogo).
+  logo: string | null | undefined;
   // Every connection, once asked for (admins).
   connections: Connection[] | null;
   // The message rules, once asked for (admins).
@@ -372,6 +378,7 @@ export const initialTextState: TextState = {
   guestsReadOnly: false,
   slowUntil: {},
   captcha: "off",
+  logo: undefined,
   connections: null,
   messageRules: null,
   directs: {},
@@ -579,6 +586,7 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
         ...(isChannelTimeouts(v.channelTimeouts) ? { channelTimeouts: v.channelTimeouts } : {}),
         ...(v.guestsReadOnly === true ? { guestsReadOnly: true } : {}),
         ...(isCaptchaLevel(v.captcha) ? { captcha: v.captcha } : {}),
+        ...(typeof v.logo === "string" && v.logo ? { logo: v.logo } : {}),
         ...(Array.isArray(v.directs) ? { directs: v.directs.filter(isDirect) } : {}),
         ...(isStreams(v.streams) ? { streams: v.streams } : {}),
         ...(Array.isArray(v.recording) && v.recording.every(isNum) ? { recording: v.recording } : {}),
@@ -650,6 +658,8 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
       return isCaptchaLevel(v.level) ? { type: "captcha", level: v.level } : null;
     case "server-name":
       return typeof v.name === "string" ? { type: "server-name", name: v.name } : null;
+    case "logo":
+      return typeof v.version === "string" ? { type: "logo", version: v.version } : null;
     case "connections": {
       const connections = parseConnections(v.connections);
       return connections && { type: "connections", connections };
@@ -812,6 +822,7 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
         channelTimeouts: event.channelTimeouts ?? [],
         guestsReadOnly: event.guestsReadOnly === true,
         captcha: event.captcha ?? "off",
+        logo: event.logo ?? null,
         directs: { ...state.directs, ...Object.fromEntries((event.directs ?? []).map((d) => [d.channel, d.peer])) },
         streams: event.streams ?? [],
         streamPreviews: keepPreviews({}, event.streams ?? []),
@@ -879,6 +890,8 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
       return { ...state, captcha: event.level };
     case "server-name":
       return state; // the root channel's name (Mumble)
+    case "logo":
+      return { ...state, logo: event.version || null };
     case "connections":
       return { ...state, connections: event.connections };
     case "message-rules":
@@ -1095,6 +1108,8 @@ export const uploadTokenRequest = (count = 1) => JSON.stringify(count > 1 ? { ty
 // Custom emoji (admins and moderators; the server checks): a token to
 // upload one, and deleting one.
 export const emojiTokenRequest = (name: string) => JSON.stringify({ type: "emoji-token", name });
+// The server's logo (admins): a token for one upload.
+export const logoTokenRequest = () => JSON.stringify({ type: "logo-token" });
 export const deleteEmojiRequest = (name: string) => JSON.stringify({ type: "delete-emoji", name });
 // Personal emoji (registered users): a token to upload a new one, one
 // from a message (":name:" or "<:name:id>") under our name, rename and
@@ -1148,6 +1163,7 @@ export type ManageAction =
   | { guestsReadOnly: boolean }
   | { captcha: CaptchaLevel }
   | { serverName: string }
+  | { removeLogo: true }
   // Every connection (admins).
   | { connections: true }
   // The message rules (admins): ask for them, or save new ones.
@@ -1189,6 +1205,7 @@ const manageBody = (a: ManageAction) => {
   if ("guestsReadOnly" in a) return { type: "set-guests-read-only", on: a.guestsReadOnly };
   if ("captcha" in a) return { type: "set-captcha", level: a.captcha };
   if ("serverName" in a) return { type: "set-server-name", name: a.serverName };
+  if ("removeLogo" in a) return { type: "remove-logo" };
   if ("connections" in a) return { type: "connections" };
   if ("messageRules" in a) return { type: "message-rules" };
   if ("setMessageRules" in a) return { type: "set-message-rules", rules: a.setMessageRules };

@@ -53,6 +53,9 @@
     onDeleteSticker,
     serverName = "",
     onServerName,
+    logo = null,
+    onUploadLogo,
+    onRemoveLogo,
     guestsReadOnly = null,
     onGuestsReadOnly,
     captcha = "off",
@@ -88,6 +91,10 @@
     // Admins: the server's name; without onServerName, no tab.
     serverName?: string;
     onServerName?: (name: string) => Promise<void>;
+    // The logo (null: none); without onUploadLogo, no logo controls.
+    logo?: string | null;
+    onUploadLogo?: (file: File) => Promise<void>;
+    onRemoveLogo?: () => Promise<void>;
     // Admins: whether guests may only read (null: not ours to change).
     guestsReadOnly?: boolean | null;
     onGuestsReadOnly?: (on: boolean) => Promise<void>;
@@ -129,6 +136,7 @@
     bans: createSave(),
     users: createSave(),
     name: createSave(),
+    logo: createSave(),
     guests: createSave(),
     captcha: createSave(),
     archive: createSave(),
@@ -144,6 +152,12 @@
   const saveName = (e: SubmitEvent) => {
     e.preventDefault();
     if (onServerName) saves.name.run(() => onServerName(nameDraft));
+  };
+  // Cleared at once: the same file again is a new upload.
+  const uploadLogo = (el: HTMLInputElement) => {
+    const file = el.files?.[0];
+    el.value = "";
+    if (file && onUploadLogo) saves.logo.run(() => onUploadLogo(file));
   };
   $effect(() => dialog?.showModal());
   $effect(() => {
@@ -278,6 +292,20 @@
       <SaveStatus save={saves.name.state} />
     </form>
     <p class="note">In the top left, as the tab's title and on the login page. Mumble clients see it as the name of the root channel.</p>
+    {#if onUploadLogo}
+      <div class="logo-row">
+        {#if logo}<img class="logo" src={logo} alt="The server's logo" />{/if}
+        <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" aria-label="Logo image" disabled={saves.logo.busy} onchange={(e) => uploadLogo(e.currentTarget)} />
+        {#if logo && onRemoveLogo}
+          <button type="button" disabled={saves.logo.busy} onclick={() => saves.logo.run(onRemoveLogo)}>Remove</button>
+        {/if}
+        <SaveStatus save={saves.logo.state} />
+      </div>
+      <p class="note">
+        The logo: a square picture (PNG, JPEG, GIF or WebP, at most 2 MB; the middle of others). In the top left, as the tab's icon,
+        on the login page and as the installed app's icon (installed apps may show a new one only later).
+      </p>
+    {/if}
   {:else if tab === "guests"}
     <label class="check">
       <input type="checkbox" checked={guestsReadOnly === true} disabled={saves.guests.busy} onchange={(e) => setGuests(e.currentTarget)} />
@@ -592,6 +620,22 @@
   .note {
     color: var(--text-muted);
     font-size: 14px;
+  }
+  .logo-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    object-fit: cover;
+  }
+  .logo-row input {
+    max-width: 100%;
   }
   .check {
     display: flex;

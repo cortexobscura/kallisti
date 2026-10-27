@@ -1,14 +1,15 @@
 <script lang="ts">
   import { initials } from "../lib/avatar";
 
-  let { serverName }: { serverName: string } = $props();
+  // logo: the server's logo (null: its initials).
+  let { serverName, logo = null }: { serverName: string; logo?: string | null } = $props();
 </script>
 
 <nav class="rail" aria-label="Servers">
   <div class="item">
     <span class="pill active" aria-hidden="true"></span>
     <button class="server active" title={serverName} aria-current="true">
-      {initials(serverName)}
+      {#if logo}<img src={logo} alt="" />{:else}{initials(serverName)}{/if}
     </button>
   </div>
   <!-- Adding other servers comes later (meta/issues/multiple-servers.md). -->
@@ -55,6 +56,7 @@
   .server {
     width: 40px;
     height: 40px;
+    padding: 0;
     border-radius: 12px;
     background: var(--bg-input);
     font-size: 16px;
@@ -62,6 +64,13 @@
     transition:
       background 0.15s,
       color 0.15s;
+  }
+  .server img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: inherit;
+    object-fit: cover;
   }
   .server.active,
   .server:hover:not(:disabled) {

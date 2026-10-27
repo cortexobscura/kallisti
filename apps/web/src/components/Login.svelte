@@ -4,6 +4,7 @@
   import { solveInWorker } from "../lib/captcha";
   import { formatFingerprint, type CertificateProblem } from "../lib/desktop";
   import type { Credentials } from "../lib/connection.svelte";
+  import { iconHref, showIcons } from "../lib/serverLogo";
   import { safeGet, safeSet } from "../lib/storage";
 
   let {
@@ -124,11 +125,14 @@
   let askServerPassword = $state(false);
   // The server's name (admins set it), also as the tab's title.
   let serverName = $state<string | null>(null);
+  let logo = $state<string | null>(null);
   $effect(() => {
     if (desktop?.kind === "mumble") return;
     void api.serverInfo().then((info) => {
       askServerPassword = info.password;
       serverName = info.name;
+      logo = info.logo && iconHref(api.base, 192, info.logo);
+      showIcons(document, api.base, info.logo);
       document.title = info.name ?? "Kallisti";
     });
   });
@@ -260,6 +264,7 @@
     </form>
     {:else}
     <form class="card" onsubmit={submit}>
+      {#if logo}<img class="logo" src={logo} alt="" />{/if}
       <h1>Welcome to {serverName ?? "Kallisti"}</h1>
       {@render serverLine()}
       {#if !mumbleOnly}
@@ -464,5 +469,12 @@
   .error {
     margin: 0;
     color: var(--danger);
+  }
+  .logo {
+    align-self: center;
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    object-fit: cover;
   }
 </style>

@@ -36,6 +36,7 @@ import {
   deleteMessageRequest,
   editMessageRequest,
   emojiTokenRequest,
+  logoTokenRequest,
   historyRequest,
   httpBase,
   markReadRequest,
@@ -511,6 +512,11 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     // event.
     uploadEmoji: async (name: string, file: File): Promise<void> => {
       await upload(emojiTokenRequest(name), "/api/emoji", file, true);
+    },
+    // The server's logo (admins, see lib/serverLogo): its version comes
+    // as an event.
+    uploadLogo: async (file: File): Promise<void> => {
+      await upload(logoTokenRequest(), "/api/logo", file, true);
     },
     // Stickers (see lib/stickers): the list comes as an event.
     uploadSticker: async (fields: StickerFields, file: File): Promise<void> => {

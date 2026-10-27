@@ -49,6 +49,8 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     return data;
   };
   return {
+    // The server's address (for pictures from it: see lib/serverLogo).
+    base,
     // mumble: a Mumble registration (built-in server), not a web account. It
     // has no session: connect with the name and password.
     login: async (name: string, password: string) => {
@@ -99,11 +101,13 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     removeStreamKey: async () => {
       await call("/api/stream-key", undefined, "DELETE");
     },
-    // Whether guests may need the server password, and the server's name
-    // (null: not known, with Murmur or an older server).
+    // Whether guests may need the server password, the server's name and
+    // its logo's version (null: not known, with Murmur or an older server;
+    // no logo).
     serverInfo: async () => {
-      const v = await call("/api/server").catch(() => ({}) as Answer & { password?: boolean; name?: unknown });
-      return { password: v.password !== false, name: typeof v.name === "string" ? v.name : null };
+      const v = (await call("/api/server").catch(() => ({}))) as { password?: boolean; name?: unknown; logo?: unknown };
+      const text = (x: unknown) => (typeof x === "string" && x ? x : null);
+      return { password: v.password !== false, name: text(v.name), logo: text(v.logo) };
     },
     // Fediverse logins (see lib/fedi): on for this server?
     fediEnabled: async () => (await call("/api/fedi").catch(() => ({}) as Answer & { enabled?: boolean })).enabled === true,

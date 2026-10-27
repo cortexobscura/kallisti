@@ -36,6 +36,7 @@
   import { htmlToLines, htmlToText } from "../lib/htmlText";
   import { previewText } from "../lib/markdown";
   import { parseSearch, type SearchPlace } from "../lib/search";
+  import { iconHref, showIcons } from "../lib/serverLogo";
   import { directChatWith, toChatMessage, type DisplayMessage, type Peer, type TextMessage, type UserTarget } from "../lib/textChannels";
   import { hiddenMembers, offlineMembers, pictureNames, readerGroups } from "../lib/members";
   import { adminAction, badgeOf, moderatorAction, roleOf } from "../lib/roles";
@@ -1091,6 +1092,13 @@
     document.title = tabTitle(name, sum(mentions) + sum(unread));
     return () => (document.title = name);
   });
+  // Once the server said (the page has its icons until then); Kallisti's
+  // again when the client goes (another server may come next).
+  $effect(() => {
+    if (text.logo === undefined) return;
+    showIcons(document, connection.httpBase, text.logo);
+    return () => showIcons(document, "", null);
+  });
   $effect(() => {
     if (dm === null) return;
     const [name, count] = [dm.name, server.privateCounts[dm.name] ?? 0];
@@ -1744,6 +1752,9 @@
     onDeleteSticker={connection.deleteSticker}
     {serverName}
     onServerName={mayChangeGuests(server, text) ? (name) => connection.request({ serverName: name }) : undefined}
+    logo={text.logo ? iconHref(connection.httpBase, 192, text.logo) : null}
+    onUploadLogo={mayChangeGuests(server, text) ? connection.uploadLogo : undefined}
+    onRemoveLogo={() => connection.request({ removeLogo: true })}
     guestsReadOnly={mayChangeGuests(server, text) ? text.guestsReadOnly : null}
     onGuestsReadOnly={(on) => connection.request({ guestsReadOnly: on })}
     captcha={text.captcha}
@@ -1815,7 +1826,7 @@
   data-panel={phone ? panel : undefined}
 >
   <div class="left" bind:this={leftEl} inert={phone && panel !== "channels"}>
-  <ServerRail {serverName} />
+  <ServerRail {serverName} logo={text.logo ? iconHref(connection.httpBase, 192, text.logo) : null} />
   <div class="sidebar">
     <header>
       <span class="ellipsis">{serverName}</span>

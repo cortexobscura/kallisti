@@ -18,8 +18,8 @@ describe("the server's name", () => {
 
   it("comes with the server info for the login page", async () => {
     const info = (status: number, body: unknown) => createAccountsApi("http://srv", fetchJson(status, body)).serverInfo();
-    expect(await info(200, { password: false, name: "Our place" })).toEqual({ password: false, name: "Our place" });
-    expect(await info(200, { password: true })).toEqual({ password: true, name: null }); // with Murmur
-    expect(await info(404, {})).toEqual({ password: true, name: null }); // an older server
+    expect(await info(200, { password: false, name: "Our place" })).toEqual({ password: false, name: "Our place", logo: null });
+    expect(await info(200, { password: true })).toEqual({ password: true, name: null, logo: null }); // with Murmur
+    expect(await info(404, {})).toEqual({ password: true, name: null, logo: null }); // an older server
   });
 });
