@@ -41,15 +41,20 @@ rest. test.kallisti.chat runs this branch.
 - Step 5, logins without typing (web): "Continue with your account" in
   the add dialog; the server's page in a popup logs in through the home
   server and hands its token to the home page (no cookie there).
+- Invite links across servers: a click on another server's invite in a
+  client adds or shows that server and redeems it there; the invite page
+  leads to the home server (?join=).
+- Push from added servers while the page is closed: a service worker
+  registration per server, on while the home server's push is on.
 
 ## Still to do
 
 - Step 4 part 2: servers you join update the list at home, and the rail
   on their own sites (a design question: see home-server-list.md).
-- Step 5, the rest: the web+kallisti: link handler, invite links inside
-  the apps, the desktop app (no popup: deep links).
-- [Push from added servers](push-from-added-servers.md) while the page is
-  closed.
+- Step 5, the rest: the desktop app (no popup: deep links). The
+  web+kallisti: handler is left out: a page cannot know if it is
+  registered, so its links could do nothing; the invite page's "Open in my
+  Kallisti" (the home address, remembered) does the same.
 - An account made through the popup has no password: the added server's
   settings still ask for the current one when changing it (it fails;
   better: set the first one on that server's own site).
