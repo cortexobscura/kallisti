@@ -147,7 +147,7 @@
     logout: async () => {
       void stopPush(); // not waited for: the logout ends it on the server too
       const mine = authGeneration;
-      const ok = await api.logout();
+      const ok = await api.logout(account?.session);
       if (mine !== authGeneration) return;
       if (ok) account = null;
       leave(ok ? null : "Logging out did not finish: you may still be logged in.");
@@ -312,7 +312,16 @@
   // Mumble server in the desktop app), in this login (its session: tabs of
   // one browser share it, a new login is another). Once the first check is done, every
   // change goes to the hub (another login ends the previous one's).
-  const owner = $derived(account && !account.temporary ? `${homeOrigin()} ${account.name} ${account.session ?? ""}` : null);
+  // Without a known session (a fediverse sign-up, a check that failed
+  // after a login), none yet: it is asked for at once (below).
+  const owner = $derived(account && !account.temporary && account.session ? `${homeOrigin()} ${account.name} ${account.session}` : null);
+  $effect(() => {
+    if (!account || account.temporary || account.session) return;
+    const mine = authGeneration;
+    void api.check().then((acc) => {
+      if (mine === authGeneration && acc && acc !== "unknown" && acc.name === account?.name) account = acc;
+    });
+  });
   $effect(() => {
     const now = owner;
     if (ownerKnown) untrack(() => hub.follow(now));
