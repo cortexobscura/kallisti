@@ -203,7 +203,11 @@
     const at = shown();
     const ok = await used.logout(account?.session);
     if (!current(used, at)) return;
-    if (ok) onAccountChange(null);
+    if (ok === "other") {
+      // Another login is here now (another tab): show it, or none.
+      const answer = await used.check();
+      if (current(used, at) && answer !== "unknown") onAccountChange(answer);
+    } else if (ok) onAccountChange(null);
     else apiError = "Logging out did not finish: you may still be logged in. Try again.";
   };
 </script>

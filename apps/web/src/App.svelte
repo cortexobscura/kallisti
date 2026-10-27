@@ -149,6 +149,11 @@
       const mine = authGeneration;
       const ok = await api.logout(account?.session);
       if (mine !== authGeneration) return;
+      if (ok === "other") {
+        // Another login is here now (another tab): this one ended there.
+        account = null;
+        return leave("You were logged out in another tab.");
+      }
       if (ok) account = null;
       leave(ok ? null : "Logging out did not finish: you may still be logged in.");
     },
@@ -319,7 +324,7 @@
     if (!account || account.temporary || account.session) return;
     const mine = authGeneration;
     void api.check().then((acc) => {
-      if (mine === authGeneration && acc && acc !== "unknown" && acc.name === account?.name) account = acc;
+      if (mine === authGeneration && acc && acc !== "unknown" && acc.name === account?.name && acc.session) account = acc;
     });
   });
   $effect(() => {

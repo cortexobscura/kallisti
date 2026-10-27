@@ -78,4 +78,8 @@ describe("logging out", () => {
     await createAccountsApi("http://srv", fetchFn).logout("0123456789abcdef");
     expect(bodies).toEqual([{ session: "0123456789abcdef" }]);
   });
+  it("says when another login is active here now (409)", async () => {
+    const conflict = (async () => new Response(JSON.stringify({ error: "another login is active here now" }), { status: 409 })) as unknown as typeof fetch;
+    expect(await createAccountsApi("http://srv", conflict).logout("0123456789abcdef")).toBe("other");
+  });
 });
