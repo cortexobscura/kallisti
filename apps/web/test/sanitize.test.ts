@@ -44,12 +44,15 @@ describe("sanitize loads nothing remote", () => {
       '<svg><image href="https://tracker.example/a"></image></svg>',
       '<svg><image xlink:href="https://tracker.example/a"></image></svg>',
       '<table background="https://tracker.example/a"><tr><td>x</td></tr></table>',
+      '<p>a</p><style>p{background:url(https://tracker.example/a)}</style>',
+      '<svg><style>circle{fill:url(https://tracker.example/a)}</style><circle r="5"/></svg>',
     ]) {
       expect(remote(html), html).toBeNull();
     }
   });
   it("keeps colours, links and inline pictures", () => {
     expect(sanitize('<span style="color: red">x</span>')).toBe('<span style="color: red">x</span>');
+    expect(sanitize("<span style=\"font-family: 'Curlz MT'; color: red\">x</span>")).toContain("color: red");
     expect(sanitize('<a href="https://x.org/">x</a>')).toContain('href="https://x.org/"');
     expect(sanitize('<img src="data:image/png;base64,AA==">')).toContain("data:image/png");
   });

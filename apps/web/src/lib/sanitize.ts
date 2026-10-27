@@ -13,8 +13,9 @@ export const isChannelLink = (a: Element) => a.getAttribute("href") === "#" && /
 // Nothing remote may load: the page may load pictures and media from other
 // servers (several servers in one client), so its CSP no longer stops it.
 // Styles that could name an address (url(), image-set(), CSS escapes,
-// @import) go whole.
-const REMOTE_STYLE = /\\|url|image|src|@/i;
+// @import) go whole, and style elements altogether.
+const REMOTE_STYLE = /\\|@|(url|image|image-set|cross-fade|src)\(/i;
+const CONFIG = { FORBID_TAGS: ["style"] };
 const REMOTE_ATTRS = ["srcset", "poster", "background", "xlink:href", "lowsrc", "dynsrc", "longdesc"];
 
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -32,8 +33,8 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 // only), so nothing from the message can make or change them. The same for
 // custom emoji (":name:" and "<:name:id>" -> image URL).
 export const sanitize = (html: string, emoji = false, custom?: EmojiImages) => {
-  if (!emoji && !custom) return DOMPurify.sanitize(html);
-  const fragment = DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true });
+  if (!emoji && !custom) return DOMPurify.sanitize(html, CONFIG);
+  const fragment = DOMPurify.sanitize(html, { ...CONFIG, RETURN_DOM_FRAGMENT: true });
   if (custom) addCustomEmojiImages(fragment, custom);
   if (emoji) addEmojiImages(fragment);
   const div = document.createElement("div");

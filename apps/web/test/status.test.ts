@@ -25,6 +25,11 @@ describe("connectionError", () => {
     expect(connectionError(initialState, true, "join as a guest on the server's own site")).toBe("join as a guest on the server's own site");
   });
 
+  it("keeps technical close reasons to itself", () => {
+    expect(connectionError(initialState, true, "upstream error")).toMatch(/Lost/);
+    expect(connectionError(initialState, true, "cannot reach voice.example:64738: refused")).toBe("cannot reach voice.example:64738: refused");
+  });
+
   it("reports a closed socket", () => {
     expect(connectionError({ ...initialState, status: "synced" }, true)).toMatch(/Lost/);
   });
