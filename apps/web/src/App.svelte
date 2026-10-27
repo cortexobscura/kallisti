@@ -87,7 +87,6 @@
         wasSynced: connection.wasSynced,
       }),
   );
-  const error = $derived(connection && !lost ? connectionError(connection.state, connection.closed, connection.closeReason) : null);
   // Since when it is lost, and a clock while it is (see lossNotice).
   let lostAt = $state<number | null>(null);
   let now = $state(Date.now());
@@ -207,6 +206,9 @@
   const desktop = isDesktop();
   let desktopServer = $state(safeGet(localStorage, "server") ?? "");
   let desktopKind = $state<"kallisti" | "mumble" | null>(null);
+  // Why the connection failed, for the login screen (null: it is fine, or
+  // it comes back by itself).
+  const error = $derived(connection && !lost ? connectionError(connection.state, connection.closed, connection.closeReason, desktopKind === "mumble") : null);
   let kallisti = $state<string | null>(null); // the Kallisti server's origin
   const sessionStore = (origin: string) => {
     const key = `session:${origin}`;

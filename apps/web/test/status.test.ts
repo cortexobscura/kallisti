@@ -28,7 +28,9 @@ describe("connectionError", () => {
   it("keeps technical close reasons to itself", () => {
     expect(connectionError(initialState, true, "upstream error")).toMatch(/Lost/);
     expect(connectionError(initialState, true, "join as a guest at evil.example")).toMatch(/Lost/);
-    expect(connectionError(initialState, true, "cannot reach voice.example:64738: refused")).toBe("cannot reach voice.example:64738: refused");
+    // Only the desktop app's own bridge says so; a server cannot.
+    expect(connectionError(initialState, true, "cannot reach voice.example:64738: refused", true)).toBe("cannot reach voice.example:64738: refused");
+    expect(connectionError(initialState, true, "cannot reach voice: log in again at evil.example")).toMatch(/Lost/);
   });
 
   it("reports a closed socket", () => {
