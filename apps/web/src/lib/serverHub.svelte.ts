@@ -29,6 +29,8 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
   let servers = $state.raw<HubServer<S>[]>([]);
   let shown = $state<string | null>(null);
   let restored = false;
+  // Whose the open ones are (see follow).
+  let live: string | null = null;
 
   const save = (owner: string, list: ReturnType<typeof loadServers>) => saveServers(deps.storage(), owner, list);
   // Forgets the token at once; logs out there with it afterwards, so a
@@ -105,6 +107,15 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     // The home login ended: all of them end, logged out there, list and
     // tokens gone from the device.
     endAll: () => endAll(false),
+    // The home login now, on every change once it is known (also null: no
+    // account, or a guest): another than the open ones' owner ends them at
+    // once (a cookie that expired in an open tab runs no logout), and
+    // another login's saved ones end before anything opens.
+    follow: (owner: string | null) => {
+      if (live !== null && live !== owner) endAll(false);
+      live = owner;
+      if (storedOwner(deps.storage()) !== owner && loadServers(deps.storage()).length > 0) endAll(restored);
+    },
     // The app goes away: connections close; list and tokens stay.
     close: () => {
       for (const s of servers) s.session.close();

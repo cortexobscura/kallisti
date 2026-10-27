@@ -107,6 +107,53 @@ describe("the added servers", () => {
     expect(hub.servers).toEqual([]);
   });
 
+  it("follow: another home login, or none, ends the live ones at once (a cookie that expired in an open tab)", () => {
+    const { hub, revoked, sessions, login, storage } = setup();
+    hub.follow("home alice");
+    hub.add(A, "alice", "ta");
+    login(null);
+    hub.follow(null);
+    expect(hub.servers).toEqual([]);
+    expect(revoked).toEqual([[A, "ta"]]);
+    expect(sessions[0]!.leave).toHaveBeenCalled();
+    expect(loadServers(storage)).toEqual([]);
+    login("home bob");
+    hub.follow("home bob");
+    hub.restore();
+    expect(hub.servers).toEqual([]); // bob restores his own (none)
+  });
+
+  it("follow at start: another login's saved ones end before anything opens (also for a guest)", () => {
+    const first = setup();
+    first.hub.add(A, "alice", "ta");
+    const next = setup(first.storage);
+    next.tokens.set(A, "ta");
+    next.login(null);
+    next.hub.follow(null);
+    expect(next.revoked).toEqual([[A, "ta"]]);
+    expect(loadServers(first.storage)).toEqual([]);
+  });
+
+  it("follow keeps the same login's (a reload, a reconnect)", () => {
+    const { hub, revoked } = setup();
+    hub.follow("home alice");
+    hub.add(A, "alice", "ta");
+    hub.follow("home alice");
+    expect(hub.servers).toHaveLength(1);
+    expect(revoked).toEqual([]);
+  });
+
+  it("an old list (an array, before owners) is ended, not restored", () => {
+    const storage = memory();
+    storage.setItem("servers", JSON.stringify([{ origin: A, name: "alice" }]));
+    const { hub, tokens, revoked } = setup(storage);
+    tokens.set(A, "ta");
+    hub.follow("home alice");
+    hub.restore();
+    expect(hub.servers).toEqual([]);
+    expect(revoked).toEqual([[A, "ta"]]);
+  });
+
   it("close (the app goes away) closes the sessions and keeps list and tokens", () => {
     const { hub, tokens, sessions, storage, revoked } = setup();
     hub.add(A, "alice", "ta");
