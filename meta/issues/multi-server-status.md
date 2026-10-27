@@ -41,9 +41,10 @@ rest. test.kallisti.chat runs this branch.
 - The last two commits (logout naming the account) have not had their
   two reviews yet.
 - A delayed logout answer's Set-Cookie can delete a newer login's cookie
-  (server; older than this work).
-- Two tabs writing the saved list in the same instant are not atomic (a
-  lock across tabs, Web Locks, would be needed).
+  (server; older than this work): [A new cookie name for each
+  login](cookie-per-login.md).
+- Two tabs writing the saved list in the same instant are not atomic:
+  [One tab at a time writes the saved server list](saved-list-lock.md).
 - Another owner's empty list record can be taken over by a stale tab
   (its owner's next add is then refused until a reload).
 - Without a session fingerprint (a check failed) there is no "+" until

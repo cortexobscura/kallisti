@@ -43,6 +43,14 @@ and apps.
 4. One voice channel across servers; unread marks, mentions and
    notifications of servers in the background.
 
+## From Chatto and Fluxer (2026-10-27)
+
+- Fluxer keeps one full connection for the account on screen and light
+  ones for the others (unread counts, mentions, notifications). We keep all
+  full (decided); light connections only if the load becomes a problem.
+- Push for servers in the background: each server sends with its own key
+  to its own subscription (Chatto FDR-013).
+
 ## Acceptance Criteria
 
 - Add, switch and remove servers; the list kept on the device (the home
