@@ -1,7 +1,9 @@
 import { safeGet, safeSet } from "./storage";
 
 // The Kallisti servers added on this device (several servers in one
-// client), by origin with the name logged in there, in the rail's order. The home server (this site, or
+// client), by origin with the name logged in there, in the rail's order,
+// for one owner: the home login that added them (another login on this
+// device does not get them, see lib/serverHub). The home server (this site, or
 // the desktop app's chosen one) is not in it. Later the home account keeps
 // the list (meta/issues/home-server-list.md).
 
@@ -28,39 +30,56 @@ export const addServer = (list: readonly SavedServer[], server: SavedServer, hom
 
 export const removeServer = (list: readonly SavedServer[], origin: string) => list.filter((s) => s.origin !== origin);
 
-export const loadServers = (storage: Storage | undefined): SavedServer[] => {
+const read = (storage: Storage | undefined): { owner: string; servers: SavedServer[] } => {
   try {
-    const v: unknown = JSON.parse(safeGet(storage, KEY) ?? "[]");
-    return Array.isArray(v) ? v.filter(isSaved).map(({ origin, name }) => ({ origin, name })) : [];
+    const v = JSON.parse(safeGet(storage, KEY) ?? "null") as { owner?: unknown; servers?: unknown } | null;
+    const servers = Array.isArray(v?.servers) ? v.servers.filter(isSaved).map(({ origin, name }) => ({ origin, name })) : [];
+    return { owner: typeof v?.owner === "string" ? v.owner : "", servers };
   } catch {
-    return [];
+    return { owner: "", servers: [] };
   }
 };
 
-export const saveServers = (storage: Storage | undefined, list: readonly SavedServer[]) => void safeSet(storage, KEY, JSON.stringify(list));
+// The saved ones; with an owner, only if they are that login's.
+export const loadServers = (storage: Storage | undefined, owner?: string): SavedServer[] => {
+  const saved = read(storage);
+  return owner === undefined || saved.owner === owner ? saved.servers : [];
+};
+
+export const storedOwner = (storage: Storage | undefined) => read(storage).owner;
+
+export const saveServers = (storage: Storage | undefined, owner: string, list: readonly SavedServer[]) =>
+  void safeSet(storage, KEY, JSON.stringify({ owner, servers: list }));
 
 const local = (host: string) => host === "localhost" || host === "127.0.0.1" || host === "[::1]";
 
+// A host without a trailing dot (one spelling of a name).
+const host = (url: URL) => url.hostname.replace(/\.$/, "");
+
 // The origin of another server from what the user typed: https (http only
 // on this computer, for development), its port kept, any path dropped.
-// Not the home server, and not another port of its host: browsers send the
-// home cookie to every port of a host.
-export const serverOrigin = (input: string, home: string): { origin: string } | { error: string } => {
+// Not the home server, and (homeCookie: the web app, whose home login is a
+// cookie) not another port of its host: browsers send the home cookie to
+// every port of a host.
+export const serverOrigin = (input: string, home: string, homeCookie = true): { origin: string } | { error: string } => {
   const text = input.trim();
+  const invalid = { error: "Enter a server address, for example chat.example.org" };
   let url: URL;
   try {
-    url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(text) ? text : `https://${text}`);
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`);
   } catch {
-    return { error: "Enter a server address, for example chat.example.org" };
+    return invalid;
   }
-  if (!text || !url.hostname || (url.protocol !== "https:" && !(url.protocol === "http:" && local(url.hostname)))) {
-    return { error: "Enter a server address, for example chat.example.org" };
-  }
-  if (url.origin === home) return { error: "This is your home server." };
+  if (!text || !host(url) || (url.protocol !== "https:" && !(url.protocol === "http:" && local(host(url))))) return invalid;
+  const origin = `${url.protocol}//${host(url)}${url.port ? `:${url.port}` : ""}`;
+  let homeUrl: URL | null = null;
   try {
-    if (new URL(home).hostname === url.hostname) return { error: "Another port of your home server's host cannot be added: it would see your login there." };
+    homeUrl = new URL(home);
   } catch {
     // No home origin to compare.
   }
-  return { origin: url.origin };
+  const homeOrigin = homeUrl && `${homeUrl.protocol}//${host(homeUrl)}${homeUrl.port ? `:${homeUrl.port}` : ""}`;
+  if (origin === homeOrigin) return { error: "This is your home server." };
+  if (homeCookie && homeUrl && host(homeUrl) === host(url)) return { error: "Another port of your home server's host cannot be added: it would see your login there." };
+  return { origin };
 };
