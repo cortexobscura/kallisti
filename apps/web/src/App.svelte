@@ -143,15 +143,20 @@
     get temporary() {
       return account?.temporary ?? false;
     },
+    // An answer that comes after another login or logout acts on nothing.
     logout: async () => {
       void stopPush(); // not waited for: the logout ends it on the server too
+      const mine = authGeneration;
       const ok = await api.logout();
+      if (mine !== authGeneration) return;
       if (ok) account = null;
       leave(ok ? null : "Logging out did not finish: you may still be logged in.");
     },
     logoutAll: async () => {
       void stopPush();
+      const mine = authGeneration;
       await api.logoutAll();
+      if (mine !== authGeneration) return;
       account = null;
       leave("Logged out on all devices.");
     },
@@ -353,8 +358,10 @@
       temporary: false,
       logout: async () => hub.remove(origin),
       logoutAll: async () => {
+        // The entry this was for (another may have taken its place meanwhile).
+        const entry = hub.servers.find((a) => a.origin === origin);
         await api.logoutAll();
-        hub.remove(origin);
+        if (entry && hub.servers.includes(entry)) hub.remove(origin);
       },
       changePassword: (old, next) => api.changePassword(old, next),
       whipUrl: api.whipUrl,
