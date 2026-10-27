@@ -8,8 +8,8 @@ import (
 func TestRules(t *testing.T) {
 	// Entries as login hosts are: lower case, IDN in ASCII, no root dot or
 	// :443; URLs and handles give their host.
-	r, err := Normalize(Rules{Mode: "block", Hosts: []string{" Evil.Example ", "evil.example.", "", "https://bad.example:443/x", "@me@Bücher.example", "chat.local:8443"}})
-	if err != nil || !slices.Equal(r.Hosts, []string{"evil.example", "bad.example", "xn--bcher-kva.example", "chat.local:8443"}) {
+	r, err := Normalize(Rules{Mode: "block", Hosts: []string{" Evil.Example ", "evil.example.", "", "https://bad.example:443/x", "@me@Bücher.example", "chat.local:8443", "http://Straße.example./", "http://xn--bcher-kva.example"}})
+	if err != nil || !slices.Equal(r.Hosts, []string{"evil.example", "bad.example", "xn--bcher-kva.example", "chat.local:8443", "xn--strae-oqa.example"}) {
 		t.Fatalf("normalize: %+v %v", r, err)
 	}
 	for _, c := range []struct {

@@ -6,8 +6,11 @@ package homes
 import (
 	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
+
+	"golang.org/x/net/idna"
 
 	"kallisti.chat/server/internal/fedi"
 )
@@ -53,8 +56,10 @@ func Normalize(r Rules) (Rules, error) {
 			continue
 		}
 		inst, err := fedi.ParseInstance(raw, false)
-		if err != nil { // a local or test server, with its port
-			inst, err = fedi.ParseInstance(raw, true)
+		if err != nil { // a local or test server (a port, http): its name as above
+			if inst, err = fedi.ParseInstance(raw, true); err == nil {
+				inst.Host, err = canonical(inst.Host)
+			}
 		}
 		if err != nil || strings.ContainsAny(inst.Host, " ") {
 			return Rules{}, fmt.Errorf("%q is not a server's address", strings.TrimSpace(raw))
@@ -67,4 +72,22 @@ func Normalize(r Rules) (Rules, error) {
 		return Rules{}, fmt.Errorf("at most %d servers", MaxHosts)
 	}
 	return Rules{Mode: r.Mode, Hosts: hosts}, nil
+}
+
+// canonical is host[:port] with the name in ASCII (IDNA), without a root dot.
+func canonical(hostport string) (string, error) {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host, port = hostport, ""
+	}
+	if net.ParseIP(strings.Trim(host, "[]")) == nil {
+		if host, err = idna.Lookup.ToASCII(host); err != nil {
+			return "", err
+		}
+		host = strings.TrimSuffix(host, ".")
+	}
+	if port != "" {
+		return net.JoinHostPort(host, port), nil
+	}
+	return host, nil
 }
