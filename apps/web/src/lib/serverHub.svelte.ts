@@ -13,8 +13,9 @@ export type HubDeps<S extends Closable> = {
   owner: () => string | null;
   // A server's session token on this device.
   tokens: (origin: string) => { get: () => string | null; set: (token: string | null) => void };
-  // A started session for a server, logged in as name (with its token).
-  open: (origin: string, name: string) => S;
+  // A started session for a server, logged in as name with this token
+  // (kept: another tab may put another login's token into storage).
+  open: (origin: string, name: string, token: string | null) => S;
   // Logs out there with this token (best effort, after it is forgotten).
   revoke: (origin: string, token: string) => Promise<void>;
 };
@@ -71,7 +72,10 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     for (const { origin } of loadServers(deps.storage())) forget(origin);
     saveServers(deps.storage(), "", []);
   };
-  const opened = (origin: string, name: string): HubServer<S> => ({ origin, name, session: deps.open(origin, name), token: deps.tokens(origin).get() });
+  const opened = (origin: string, name: string): HubServer<S> => {
+    const token = deps.tokens(origin).get();
+    return { origin, name, session: deps.open(origin, name, token), token };
+  };
 
   return {
     get servers(): readonly HubServer<S>[] {
@@ -88,6 +92,9 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     add: (origin: string, name: string, token: string) => {
       const owner = deps.owner();
       if (owner === null || origin === deps.home() || servers.some((s) => s.origin === origin)) return false;
+      // Another login's list (a stale tab: another tab logged in since).
+      const stored = storedOwner(deps.storage());
+      if (stored !== "" && stored !== owner && loadServers(deps.storage()).length > 0) return false;
       deps.tokens(origin).set(token);
       live = owner;
       servers = [...servers, opened(origin, name)];

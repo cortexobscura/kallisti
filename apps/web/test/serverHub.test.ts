@@ -14,14 +14,14 @@ const B = "https://b.example";
 const setup = (storage = memory(), tokens = new Map<string, string | null>()) => {
   let owner: string | null = "home alice";
   const revoked: [string, string][] = [];
-  const sessions: { origin: string; name: string; leave: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }[] = [];
+  const sessions: { origin: string; name: string; token: string | null; leave: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }[] = [];
   const hub = createServerHub({
     storage: () => storage,
     home: () => HOME,
     owner: () => owner,
     tokens: (origin) => ({ get: () => tokens.get(origin) ?? null, set: (t) => void tokens.set(origin, t) }),
-    open: (origin, name) => {
-      const s = { origin, name, leave: vi.fn(), dispose: vi.fn(), close: vi.fn() };
+    open: (origin, name, token) => {
+      const s = { origin, name, token, leave: vi.fn(), dispose: vi.fn(), close: vi.fn() };
       sessions.push(s);
       return s;
     },
@@ -172,6 +172,34 @@ describe("the added servers", () => {
     expect(tokens.get(A)).toBe("tb");
     expect(stale.revoked).toEqual([]);
     expect(loadServers(storage, "home bob")).toEqual([{ origin: A, name: "bob" }]);
+  });
+
+  it("sessions keep the token they were opened with; restore then logout logs out the restored token", () => {
+    const storage = memory();
+    const tokens = new Map<string, string | null>();
+    const first = setup(storage, tokens);
+    first.hub.add(A, "alice", "ta");
+    expect(first.sessions[0]!.token).toBe("ta");
+    const again = setup(storage, tokens);
+    again.hub.follow("home alice");
+    again.hub.restore();
+    expect(again.sessions[0]!.token).toBe("ta");
+    again.hub.endAll();
+    expect(again.revoked).toEqual([[A, "ta"]]);
+  });
+
+  it("a stale tab does not add over another login's saved list", () => {
+    const storage = memory();
+    const tokens = new Map<string, string | null>();
+    const stale = setup(storage, tokens);
+    stale.hub.follow("home alice");
+    const fresh = setup(storage, tokens);
+    fresh.login("home bob");
+    fresh.hub.follow("home bob");
+    fresh.hub.add(B, "bob", "tb");
+    expect(stale.hub.add(A, "alice", "ta")).toBe(false);
+    expect(tokens.get(A)).toBeUndefined();
+    expect(loadServers(storage, "home bob")).toEqual([{ origin: B, name: "bob" }]);
   });
 
   it("close (the app goes away) closes the sessions and keeps list and tokens", () => {
