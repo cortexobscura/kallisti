@@ -210,7 +210,9 @@ func (a *Service) serveFedi(w http.ResponseWriter, r *http.Request) bool {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "the fediverse login expired, please try again"})
 		}
 	case p == fediPath+"/signup" && post:
-		a.fediSignup(w, r)
+		if a.ownSite(w, r, "create an account on the server's own site") {
+			a.fediSignup(w, r)
+		}
 	case p == fediPath+"/unlink" && post:
 		a.fediUnlink(w, r)
 	case p == fediPath+"/public" && post:

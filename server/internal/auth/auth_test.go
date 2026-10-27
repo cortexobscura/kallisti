@@ -361,6 +361,14 @@ func TestOtherSitesUseTokens(t *testing.T) {
 	if got := post("/api/guest", "tauri://localhost"); got == http.StatusForbidden {
 		t.Fatalf("a guest in the app: %d", got)
 	}
+	// New accounts too (they would stay for ever); other servers' users
+	// come with their home login, existing accounts log in from anywhere.
+	if got := post("/api/accounts", "https://other-kallisti.example"); got != http.StatusForbidden {
+		t.Fatalf("an account from another site: %d, want 403", got)
+	}
+	if got := post("/api/accounts", "tauri://localhost"); got == http.StatusForbidden {
+		t.Fatalf("an account in the app: %d", got)
+	}
 	// The cookie counts only without an origin or from our own: not from a
 	// sibling subdomain (same site: the browser sends the cookie), nor from
 	// another site.

@@ -205,6 +205,17 @@ func (f *failures) evict(now time.Time) {
 	}
 }
 
+// ownSite: new accounts and guests only on our own pages and in the apps,
+// else any site could make its visitors fill the server; it answers with
+// why not.
+func (a *Service) ownSite(w http.ResponseWriter, r *http.Request, why string) bool {
+	if config.OwnSite(a.AllowedOrigins, r.Header.Get("Origin")) {
+		return true
+	}
+	writeJSON(w, http.StatusForbidden, map[string]string{"error": why})
+	return false
+}
+
 type credentials struct {
 	Name     string `json:"name"`
 	Password string `json:"password"`
@@ -353,6 +364,9 @@ func (a *Service) DeleteExpiredSessions() error {
 }
 
 func (a *Service) create(w http.ResponseWriter, r *http.Request) {
+	if !a.ownSite(w, r, "create an account on the server's own site") {
+		return
+	}
 	if !a.allow(r) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 		return
@@ -390,8 +404,7 @@ func (a *Service) create(w http.ResponseWriter, r *http.Request) {
 // guest makes a temporary account: no password, kept by its session
 // cookie, deleted after a day without a visit.
 func (a *Service) guest(w http.ResponseWriter, r *http.Request) {
-	if !config.OwnSite(a.AllowedOrigins, r.Header.Get("Origin")) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "join as a guest on the server's own site"})
+	if !a.ownSite(w, r, "join as a guest on the server's own site") {
 		return
 	}
 	if !a.allow(r) {

@@ -581,3 +581,21 @@ func TestFediReauthExpiresAndNeedsALink(t *testing.T) {
 		t.Fatalf("password change: %d", resp.StatusCode)
 	}
 }
+
+// A new account from a fediverse login is made on our own site only, as
+// other new accounts.
+func TestFediSignupOnlyOnTheOwnSite(t *testing.T) {
+	_, srv, _ := fediSetup(t, &fedifake.Instance{})
+	req, _ := http.NewRequest("POST", srv.URL+"/api/fedi/signup", strings.NewReader(`{"name":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://other.example")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("from another site: %d, want 403", resp.StatusCode)
+	}
+}
