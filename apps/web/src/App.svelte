@@ -147,7 +147,7 @@
     logout: async () => {
       void stopPush(); // not waited for: the logout ends it on the server too
       const mine = authGeneration;
-      const ok = await api.logout(account?.session);
+      const ok = await api.logout({ session: account?.session, name: account?.name });
       if (mine !== authGeneration) return;
       if (ok === "other") {
         // Another login is here now (another tab): this one ended there.

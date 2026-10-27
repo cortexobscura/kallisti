@@ -75,11 +75,12 @@ describe("logging out", () => {
       bodies.push(JSON.parse(String(init.body)));
       return new Response(null, { status: 204 });
     }) as unknown as typeof fetch;
-    await createAccountsApi("http://srv", fetchFn).logout("0123456789abcdef");
-    expect(bodies).toEqual([{ session: "0123456789abcdef" }]);
+    await createAccountsApi("http://srv", fetchFn).logout({ session: "0123456789abcdef", name: "alice" });
+    await createAccountsApi("http://srv", fetchFn).logout({ name: "guest1" });
+    expect(bodies).toEqual([{ session: "0123456789abcdef", name: "alice" }, { name: "guest1" }]);
   });
   it("says when another login is active here now (409)", async () => {
     const conflict = (async () => new Response(JSON.stringify({ error: "another login is active here now" }), { status: 409 })) as unknown as typeof fetch;
-    expect(await createAccountsApi("http://srv", conflict).logout("0123456789abcdef")).toBe("other");
+    expect(await createAccountsApi("http://srv", conflict).logout({ session: "0123456789abcdef" })).toBe("other");
   });
 });

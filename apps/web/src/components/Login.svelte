@@ -201,7 +201,7 @@
   const logout = async () => {
     const used = api;
     const at = shown();
-    const ok = await used.logout(account?.session);
+    const ok = await used.logout({ session: account?.session, name: account?.name });
     if (!current(used, at)) return;
     if (ok === "other") {
       // Another login is here now (another tab): show it, or none.

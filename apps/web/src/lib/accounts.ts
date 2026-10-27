@@ -91,11 +91,13 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     },
     // false: the server did not confirm (the session cookie may remain).
     // The token goes only if it is still the one logged out. expected: the
-    // login meant (its fingerprint); "other": another login is active here
-    // now (the server refused to end it).
-    logout: async (expected?: string): Promise<boolean | "other"> => {
+    // login meant (its fingerprint, and the account's name: a guest has no
+    // fingerprint); "other": another login is active here now (the server
+    // refused to end it).
+    logout: async (expected: { session?: string; name?: string } = {}): Promise<boolean | "other"> => {
       const token = session?.get();
-      return call("/api/logout", expected ? { session: expected } : {}).then(
+      const body = { ...(expected.session && { session: expected.session }), ...(expected.name && { name: expected.name }) };
+      return call("/api/logout", body).then(
         () => (clearIf(token), true),
         (err) => (err instanceof ApiError && err.status === 409 ? "other" : false),
       );
