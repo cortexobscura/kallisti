@@ -599,32 +599,58 @@ func TestServerSaysItsNameAndLogo(t *testing.T) {
 	}
 }
 
-// Password guessing spread over many addresses (another site's visitors)
-// stops at a limit per account.
+// Password guessing from another site, spread over its visitors'
+// addresses, stops at a limit per account; only failures count, and logins
+// on our own pages are not held up (no lockout from outside).
 func TestLoginsPerAccountAreLimited(t *testing.T) {
 	a, srv := setup(t)
 	a.TrustForwardedFor = true
-	status := 0
-	for i := range 40 {
-		req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(`{"name":"alice","password":"guess"}`))
+	login := func(name, origin string, i int) int {
+		req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(fmt.Sprintf(`{"name":%q,"password":"guess"}`, name)))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Forwarded-For", fmt.Sprintf("203.0.113.%d", i+1))
+		req.Header.Set("Origin", origin)
+		if origin != "https://app.example" {
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+		}
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("203.0.%d.%d", i/250, i%250+1))
 		resp, _ := http.DefaultClient.Do(req)
 		resp.Body.Close()
-		if status = resp.StatusCode; status == http.StatusTooManyRequests {
+		return resp.StatusCode
+	}
+	const other = "https://other.example"
+	status := 0
+	for i := range 40 {
+		if status = login("alice", other, i); status == http.StatusTooManyRequests {
 			break
 		}
 	}
 	if status != http.StatusTooManyRequests {
 		t.Fatalf("40 guesses from 40 addresses: %d", status)
 	}
-	// Other accounts are not held up.
-	req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(`{"name":"bob","password":"guess"}`))
+	if got := login("bob", other, 100); got != http.StatusUnauthorized {
+		t.Fatalf("bob: %d", got)
+	}
+	if got := login("alice", "https://app.example", 101); got != http.StatusUnauthorized {
+		t.Fatalf("alice on our own page: %d", got)
+	}
+	// A name too long for any account is refused before it is counted.
+	if got := login(strings.Repeat("x", 200), other, 102); got != http.StatusUnauthorized {
+		t.Fatalf("a long name: %d", got)
+	}
+}
+
+// A Mumble registration logs in without a session (the socket uses the
+// name and password): not from another site, whose sockets need a token.
+func TestMumbleRegistrationLoginsOnlyOnTheOwnSite(t *testing.T) {
+	a, srv := setup(t)
+	a.MumbleLogin = func(netip.Addr, string, string) (string, bool) { return "SuperUser", true }
+	req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(`{"name":"superuser","password":"adminpw"}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Forwarded-For", "198.51.100.1")
+	req.Header.Set("Origin", "https://other.example")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	resp, _ := http.DefaultClient.Do(req)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("bob: %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("from another site: %d, want 403", resp.StatusCode)
 	}
 }

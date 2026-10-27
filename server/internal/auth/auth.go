@@ -35,9 +35,12 @@ const (
 	// Account creation and login attempts per client IP.
 	perMinute = 10
 	burst     = 10
-	// Per account name, whatever the address (guesses spread over another
-	// site's visitors): 30 an hour after a burst of 10.
+	// Failed logins from other sites per account name, whatever the
+	// address (guesses spread over another site's visitors): 30 an hour
+	// after a burst of 10.
 	accountPerHour = 30
+	// No account (32) or Mumble registration has a longer name.
+	maxLoginName = 128
 	// Guest accounts per client IP: a few at once, then one per 10 minutes.
 	guestBurst = 5
 	guestEvery = 10 * time.Minute
@@ -92,8 +95,9 @@ type Service struct {
 	// if it has none if onlyIfNone. Nil: none.
 	SetAvatar func(acc store.Account, avatar []byte, onlyIfNone bool)
 
-	logins, guests, accounts limiter
-	challenges               challenges
+	logins, guests limiter
+	failures       failures
+	challenges     challenges
 }
 
 // limiter keeps a rate limiter per client IP.
@@ -123,6 +127,52 @@ func (l *limiter) allow(ip string, limit rate.Limit, burst int) bool {
 		l.m[key] = lim
 	}
 	return lim.Allow()
+}
+
+// failures counts failed logins per account name (hashed: names come from
+// anyone), for logins from other sites. Only failures count, so a user's
+// own good logins do not use up the budget.
+type failures struct {
+	mu sync.Mutex
+	m  map[[16]byte]*rate.Limiter
+}
+
+func failureKey(name string) [16]byte {
+	sum := sha256.Sum256([]byte(names.Key(name)))
+	return [16]byte(sum[:16])
+}
+
+// blocked: too many failures for this name lately.
+func (f *failures) blocked(name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	lim := f.m[failureKey(name)]
+	return lim != nil && lim.Tokens() < 1
+}
+
+func (f *failures) failed(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.m == nil {
+		f.m = map[[16]byte]*rate.Limiter{}
+	}
+	key := failureKey(name)
+	lim, ok := f.m[key]
+	if !ok {
+		if len(f.m) >= 10_000 { // bounded: idle ones first, then any
+			for k, v := range f.m {
+				if v.Tokens() >= burst || len(f.m) >= 10_000 {
+					delete(f.m, k)
+				}
+				if len(f.m) < 9_000 {
+					break
+				}
+			}
+		}
+		lim = rate.NewLimiter(rate.Limit(accountPerHour)/3600, burst)
+		f.m[key] = lim
+	}
+	lim.Allow()
 }
 
 type credentials struct {
@@ -398,7 +448,16 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	if !a.accounts.allow(names.Key(c.Name), rate.Limit(accountPerHour)/3600, burst) {
+	// Names longer than any account's: wrong at once, not counted.
+	if utf8.RuneCountInString(c.Name) > maxLoginName {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong name or password"})
+		return
+	}
+	// From other sites: a limit per account (guesses spread over their
+	// visitors' addresses); our own pages and the apps keep the limit per
+	// address only, so nobody outside can lock an account.
+	guarded := !config.OwnSite(a.AllowedOrigins, r.Header.Get("Origin"))
+	if guarded && a.failures.blocked(c.Name) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts for this name, try again later"})
 		return
 	}
@@ -418,6 +477,12 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 	if err != nil && a.MumbleLogin != nil {
 		host, _ := netip.ParseAddr(clientip.Of(r, a.TrustForwardedFor))
 		if name, ok := a.MumbleLogin(host.Unmap(), c.Name, c.Password); ok {
+			// No session: its socket uses the name and password, which
+			// other sites cannot (their sockets need a token).
+			if guarded {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "log in with a Mumble registration on the server's own site"})
+				return
+			}
 			// Not a web account: end a web session of this browser, or the
 			// bridge would connect with that account instead.
 			a.clearSession(w, r)
@@ -426,6 +491,9 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !ok || err != nil || acc.Temporary || acc.PasswordHash == "" {
+		if guarded {
+			a.failures.failed(c.Name)
+		}
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong name or password"})
 		return
 	}
