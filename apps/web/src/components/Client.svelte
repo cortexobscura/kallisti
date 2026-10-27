@@ -1866,6 +1866,9 @@
     messageRules={text.messageRules}
     onLoadMessageRules={mayChangeGuests(server, text) ? () => connection.manage({ messageRules: true }) : undefined}
     onSaveMessageRules={(rules) => connection.request({ setMessageRules: rules })}
+    homeServers={text.homeServers}
+    onLoadHomeServers={mayChangeGuests(server, text) ? () => connection.manage({ homeServers: true }) : undefined}
+    onSaveHomeServers={(homes) => connection.request({ setHomeServers: homes })}
     threadArchive={text.threadArchive}
     onThreadArchive={canManageText(server, text)
       ? (seconds) => connection.ask(threadRequest({ archiveAfter: seconds }), (ev) => ev.type === "thread-archive" && ev.seconds === seconds)
