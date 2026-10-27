@@ -119,10 +119,11 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       return { enabled: data.enabled === true, exists: data.exists === true };
     },
     // The home account's list of the servers it joined (the rail; not for
-    // guests).
-    servers: async () => savedServers(((await call("/api/servers")) as { servers?: unknown }).servers),
-    addServer: async (server: SavedServer) => void (await call("/api/servers", server)),
-    removeServer: async (origin: string) => void (await call("/api/servers", { origin }, "DELETE")),
+    // guests). account: the one meant (another login here now: refused).
+    servers: async (account: string) =>
+      savedServers(((await call(`/api/servers?account=${encodeURIComponent(account)}`)) as { servers?: unknown }).servers),
+    addServer: async (server: SavedServer, account: string) => void (await call("/api/servers", { ...server, account })),
+    removeServer: async (origin: string, account: string) => void (await call("/api/servers", { origin, account }, "DELETE")),
     // A new key (the old one stops working): shown this once.
     newStreamKey: async () => (await call("/api/stream-key", {})).key ?? "",
     removeStreamKey: async () => {

@@ -19,8 +19,8 @@ and apps.
   on a server's own site); joining with the home account is step 3.
 - A home logout (also "logged out" by the server, and changing the
   desktop app's home server) ends all added servers: disconnected, logged
-  out there, their tokens and the list gone from the device (step 4 brings
-  the list back from the home account).
+  out there, their tokens gone from the device. The list stays on the home
+  account (moved there early, see home-server-list.md).
 - A server on the home server's host with another port is refused:
   browsers send the home cookie to every port of a host.
 - Voice continues while another server is on screen (as in Discord): the

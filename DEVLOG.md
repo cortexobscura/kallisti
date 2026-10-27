@@ -2429,3 +2429,11 @@ What that opened, and the answers (two independent reviews per commit, Claude an
 - Message HTML could track readers once the CSP allowed remote pictures: HTML profile only, no style elements, nothing that names an address outside link addresses and text.
 - Sibling subdomains could plant cookies: `__Host-` names over HTTPS (users log in once again after this deploy). Older ones fixed on the way: a wrong fediverse callback no longer cancels a login, a link needs its session to last.
 - Svelte's `$state` wraps objects in a proxy: a WeakSet of connections missed every one; connections are kept raw now.
+
+## Several servers: the list on the home account
+
+Step 1 first kept the added servers on the device, with an owner record (home login and session fingerprint) and many rules for stale tabs. All steps ship together, so the list moved to the home account early (part 1 of meta/issues/home-server-list.md): `/api/servers` (own site and apps, not guests, 100 per account, canonical origins of other servers) and a hub that loads it at start and when the page shows again. The device keeps only the tokens of the added servers, for one home login ("<home> <account>"); another login ends them (logged out there), a home logout too, the list stays. A new device shows the servers and asks for a login there (until step 5). About 240 lines fewer than the device list.
+
+A rule from this work: no handlers for unlikely races that heal themselves (two tabs acting in the same instant, a short wrong display), only for destructive ones. So a cookie name per login (Chatto's ADR-017, against a late logout answer clearing a newer login's cookie) was written and dropped. Web Locks would not have made the device list safe anyway: localStorage writes are not guaranteed visible in another tab when it gets the lock.
+
+Looked at Chatto and Fluxer (2026-10-27): neither has a home server across instances (Chatto: accounts per server, the list on the device; Fluxer: one big instance with guilds, about 20 services to host). Ideas kept for steps 3 and 4: short access tokens with rotating refresh tokens, a one-time authorization code bound to PKCE, push per server with its own key.

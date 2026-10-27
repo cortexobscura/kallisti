@@ -1,36 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { addServer, loadServers, removeServer, saveServers, serverOrigin, storedOwner } from "../src/lib/serverList";
+import { loadTokens, savedServers, saveTokens, serverOrigin } from "../src/lib/serverList";
 
 const memory = () => {
   const m = new Map<string, string>();
   return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) } as Storage;
 };
 
-describe("the servers added on this device", () => {
-  const a = { origin: "https://test.kallisti.chat", name: "alice" };
-  const b = { origin: "https://other.example", name: "al" };
-  it("are kept with the name there, in order, without duplicates or the home server", () => {
-    const home = "https://chat.kallisti.chat";
-    let list = addServer([], a, home);
-    list = addServer(list, { ...a, name: "bob" }, home);
-    list = addServer(list, { origin: home, name: "x" }, home);
-    list = addServer(list, b, home);
-    expect(list).toEqual([a, b]);
-    expect(removeServer(list, a.origin)).toEqual([b]);
+describe("a list from the server", () => {
+  it("keeps valid entries only", () => {
+    const a = { origin: "https://test.kallisti.chat", name: "alice" };
+    expect(savedServers([a, { origin: "javascript:alert(1)", name: "x" }, { origin: "https://x.example/path", name: "x" }, { origin: "https://y.example" }, "https://z.example", 3])).toEqual([a]);
+    expect(savedServers({})).toEqual([]);
   });
+});
 
-  it("survive storage for their owner (the home login) only; broken or foreign entries are dropped", () => {
+describe("the added servers' tokens on this device", () => {
+  it("are kept for their owner (the home login); broken entries are dropped", () => {
     const s = memory();
-    saveServers(s, "home alice", [a, b]);
-    expect(loadServers(s, "home alice")).toEqual([a, b]);
-    expect(loadServers(s, "home bob")).toEqual([]);
-    expect(storedOwner(s)).toBe("home alice");
-    expect(loadServers(s)).toEqual([a, b]); // any owner: for ending them
-    s.setItem("servers", "not json");
-    expect(loadServers(s)).toEqual([]);
-    s.setItem("servers", JSON.stringify({ owner: "o", servers: [a, { origin: "javascript:alert(1)", name: "x" }, { origin: "https://x.example/path", name: "x" }, { origin: "https://y.example" }, "https://z.example", 3] }));
-    expect(loadServers(s, "o")).toEqual([a]);
-    expect(loadServers(undefined)).toEqual([]);
+    const ta = { token: "ta", name: "al" };
+    saveTokens(s, "home alice", { "https://a.example": ta });
+    expect(loadTokens(s)).toEqual({ owner: "home alice", tokens: { "https://a.example": ta } });
+    s.setItem("added-sessions", JSON.stringify({ owner: "o", tokens: { "https://a.example": ta, "https://b.example": "tb", "https://c.example": { token: "" }, "not an origin": ta } }));
+    expect(loadTokens(s)).toEqual({ owner: "o", tokens: { "https://a.example": ta } });
+    s.setItem("added-sessions", "not json");
+    expect(loadTokens(s)).toEqual({ owner: "", tokens: {} });
+    expect(loadTokens(undefined)).toEqual({ owner: "", tokens: {} });
   });
 });
 

@@ -1,13 +1,10 @@
 import { safeGet, safeSet } from "./storage";
 
-// The Kallisti servers added on this device (several servers in one
-// client), by origin with the name logged in there, in the rail's order,
-// for one owner: the home login that added them (another login on this
-// device does not get them, see lib/serverHub). The home server (this site, or
-// the desktop app's chosen one) is not in it. Later the home account keeps
-// the list (meta/issues/home-server-list.md).
+// Other Kallisti servers in the rail (several servers in one client): the
+// home account keeps the list (origin, and the name logged in there; see
+// lib/accounts servers), this device the tokens of the ones logged in here.
 
-const KEY = "servers";
+const KEY = "added-sessions";
 
 // An http(s) origin, and only that (no path, no other scheme).
 const isOrigin = (v: unknown): v is string => {
@@ -28,36 +25,31 @@ const isSaved = (v: unknown): v is SavedServer =>
 // The valid entries of a list from the server.
 export const savedServers = (v: unknown): SavedServer[] => (Array.isArray(v) ? v.filter(isSaved).map(({ origin, name }) => ({ origin, name })) : []);
 
-export const addServer = (list: readonly SavedServer[], server: SavedServer, home: string) =>
-  server.origin === home || list.some((s) => s.origin === server.origin) ? [...list] : [...list, server];
+// The tokens by origin, each with the name it is logged in as there (the
+// list's name may be another device's login), and whose they are: the home
+// login that made them (another login here does not use them, see
+// lib/serverHub).
+export type Login = { token: string; name: string };
+export type Tokens = { owner: string; tokens: Record<string, Login> };
 
-export const removeServer = (list: readonly SavedServer[], origin: string) => list.filter((s) => s.origin !== origin);
+const isLogin = (v: unknown): v is Login =>
+  !!v && typeof v === "object" && typeof (v as Login).token === "string" && (v as Login).token !== "" && typeof (v as Login).name === "string";
 
-// at: when it was saved (see lib/serverHub).
-type Stored = { owner: string; at: number; servers: SavedServer[] };
-const read = (storage: Storage | undefined): Stored => {
+export const loadTokens = (storage: Storage | undefined): Tokens => {
   try {
-    const v = JSON.parse(safeGet(storage, KEY) ?? "null") as { owner?: unknown; at?: unknown; servers?: unknown } | unknown[] | null;
-    // Before owners: an array (no owner: ended, never restored).
-    if (Array.isArray(v)) return { owner: "", at: 0, servers: v.map((x) => (typeof x === "string" ? { origin: x, name: "?" } : x)).filter(isSaved) };
-    const servers = Array.isArray(v?.servers) ? v.servers.filter(isSaved).map(({ origin, name }) => ({ origin, name })) : [];
-    return { owner: typeof v?.owner === "string" ? v.owner : "", at: typeof v?.at === "number" ? v.at : 0, servers };
+    const v = JSON.parse(safeGet(storage, KEY) ?? "null") as { owner?: unknown; tokens?: unknown } | null;
+    const entries = Object.entries(v?.tokens && typeof v.tokens === "object" ? v.tokens : {});
+    return {
+      owner: typeof v?.owner === "string" ? v.owner : "",
+      tokens: Object.fromEntries(entries.filter(([o, t]) => isOrigin(o) && isLogin(t)).map(([o, t]) => [o, { token: t.token, name: t.name }])),
+    };
   } catch {
-    return { owner: "", at: 0, servers: [] };
+    return { owner: "", tokens: {} };
   }
 };
 
-// The saved ones; with an owner, only if they are that login's.
-export const loadServers = (storage: Storage | undefined, owner?: string): SavedServer[] => {
-  const saved = read(storage);
-  return owner === undefined || saved.owner === owner ? saved.servers : [];
-};
-
-export const storedOwner = (storage: Storage | undefined) => read(storage).owner;
-export const storedAt = (storage: Storage | undefined) => read(storage).at;
-
-export const saveServers = (storage: Storage | undefined, owner: string, list: readonly SavedServer[], at = Date.now()) =>
-  void safeSet(storage, KEY, JSON.stringify({ owner, at, servers: list }));
+export const saveTokens = (storage: Storage | undefined, owner: string, tokens: Record<string, Login>) =>
+  void safeSet(storage, KEY, JSON.stringify({ owner, tokens }));
 
 const local = (host: string) => host === "localhost" || host === "127.0.0.1" || host === "[::1]";
 

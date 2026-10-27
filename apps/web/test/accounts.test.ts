@@ -17,13 +17,13 @@ describe("accounts API", () => {
     const calls: Call[] = [];
     const list = { servers: [{ origin: "https://b.example", name: "lain" }, { origin: "not an origin", name: "x" }, { origin: "https://c.example" }] };
     const api = createAccountsApi("http://srv", fakeFetch(200, list, calls));
-    expect(await api.servers()).toEqual([{ origin: "https://b.example", name: "lain" }]);
-    await api.addServer({ origin: "https://b.example", name: "lain" });
-    await api.removeServer("https://b.example");
+    expect(await api.servers("al ice")).toEqual([{ origin: "https://b.example", name: "lain" }]);
+    await api.addServer({ origin: "https://b.example", name: "lain" }, "alice");
+    await api.removeServer("https://b.example", "alice");
     expect(calls.map((c) => [c.url, c.init.method, c.init.body && JSON.parse(String(c.init.body))])).toEqual([
-      ["http://srv/api/servers", "GET", undefined],
-      ["http://srv/api/servers", "POST", { origin: "https://b.example", name: "lain" }],
-      ["http://srv/api/servers", "DELETE", { origin: "https://b.example" }],
+      ["http://srv/api/servers?account=al%20ice", "GET", undefined],
+      ["http://srv/api/servers", "POST", { origin: "https://b.example", name: "lain", account: "alice" }],
+      ["http://srv/api/servers", "DELETE", { origin: "https://b.example", account: "alice" }],
     ]);
   });
 

@@ -12,6 +12,7 @@
     home,
     homeCookie = true,
     taken,
+    server,
     apiFor,
     onAdded,
     onClose,
@@ -21,6 +22,9 @@
     homeCookie?: boolean;
     // Origins already in the rail.
     taken: readonly string[];
+    // A server of the list without a login on this device: straight to its
+    // login, with the name it had.
+    server?: { origin: string; name: string };
     // A server's account API whose token stays in memory (see token()).
     apiFor: (origin: string) => { api: AccountsApi; token: () => string | null };
     // False: not taken (no longer logged in at home, or added meanwhile).
@@ -29,9 +33,11 @@
   } = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
+  // svelte-ignore state_referenced_locally
+  const preset = server;
   let address = $state("");
-  let found = $state<{ origin: string } | null>(null);
-  let name = $state("");
+  let found = $state<{ origin: string } | null>(preset ? { origin: preset.origin } : null);
+  let name = $state(preset?.name ?? "");
   let password = $state("");
   let error = $state<string | null>(null);
   let busy = $state(false);
@@ -117,7 +123,7 @@
 
 <dialog bind:this={dialog} onclose={() => (cancel(), onClose())} aria-labelledby="add-server-title">
   <header>
-    <h2 id="add-server-title">Add a server</h2>
+    <h2 id="add-server-title">{preset ? `Log in to ${new URL(preset.origin).host}` : "Add a server"}</h2>
     <button type="button" class="close" onclick={() => dialog?.close()} aria-label="Close">×</button>
   </header>
   {#if !found}
@@ -149,7 +155,11 @@
       <p class="hint">No account there yet? Make one on <a href={found.origin} target="_blank" rel="noopener noreferrer">its own site</a>.</p>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <footer>
-        <button type="button" class="secondary" onclick={back}>Back</button>
+        {#if preset}
+          <button type="button" class="secondary" onclick={() => dialog?.close()}>Cancel</button>
+        {:else}
+          <button type="button" class="secondary" onclick={back}>Back</button>
+        {/if}
         <button type="submit" class="primary" disabled={busy || !name.trim() || !password}>{busy ? "Logging in…" : "Log in"}</button>
       </footer>
     </form>

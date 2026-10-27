@@ -20,6 +20,7 @@
     trustServer,
   } from "./lib/desktop";
   import { httpBase } from "./lib/textChannels";
+  import { serverOrigin } from "./lib/serverList";
   import { safeGet, safeSet } from "./lib/storage";
   import { proxyUrl } from "./lib/status";
   import { loggedOut } from "./lib/reconnect";
@@ -150,9 +151,11 @@
       const ok = await api.logout({ session: account?.session, name: account?.name });
       if (mine !== authGeneration) return;
       if (ok === "other") {
-        // Another login is here now (another tab): this one ended there.
+        // Another login is here now (another tab): this one ended there;
+        // the added servers' tokens are that login's.
+        hub.detach();
         account = null;
-        return leave("Another login is active in this browser now.");
+        return leave("Another login is active in this browser now.", false);
       }
       if (ok) account = null;
       leave(ok ? null : "Logging out did not finish: you may still be logged in.");
@@ -279,15 +282,10 @@
   $effect(() => session.dispose);
   const connection = $derived(session.connection);
 
-  // Several servers in one client (see lib/serverHub): the servers added
-  // on this device, each with its own token and session; all stay
-  // connected, one is on screen (null: the home server). Their tokens have
-  // keys of their own (in the desktop app the home server's is session:).
+  // Several servers in one client (see lib/serverHub): the home account's
+  // list, each server with its own token on this device and its session;
+  // all stay connected, one is on screen (null: the home server).
   const homeOrigin = () => kallisti ?? location.origin;
-  const addedStore = (origin: string) => {
-    const key = `added-session:${origin}`;
-    return { get: () => safeGet(localStorage, key) || null, set: (token: string | null) => void safeSet(localStorage, key, token ?? "") };
-  };
   const memoryStore = (token: string | null = null) => ({ get: () => token, set: (t: string | null) => void (token = t) });
   const hub = createServerHub<ServerSession<Connection>>({
     storage: () => {
@@ -297,13 +295,20 @@
         return undefined;
       }
     },
-    home: homeOrigin,
+    allowed: (origin) => {
+      const r = serverOrigin(origin, homeOrigin(), !desktop);
+      return "origin" in r && r.origin === origin;
+    },
+    // Each call names the account this page shows (a stale window after
+    // another login in this browser is refused).
+    list: () => {
+      const name = owner === null ? null : account?.name;
+      return name ? { load: () => api.servers(name), add: (s) => api.addServer(s, name), remove: (o) => api.removeServer(o, name) } : null;
+    },
     owner: () => owner,
-    tokens: addedStore,
     open: (origin, name, token) => {
       const s = createServerSession<Connection>({
         site: () => origin,
-        // Its own token (another tab may store another login's).
         urlFor: async () => kallistiSocket(origin, token),
         connect: (target, c) => connect(target.url, c, audio, target.protocols),
         tabStorage,
@@ -313,31 +318,22 @@
     },
     revoke: async (origin, token) => void (await createAccountsApi(origin, fetch, memoryStore(token)).logout()),
   });
-  // Whose the added servers are: an account at home (not a guest, not a
-  // Mumble server in the desktop app), in this login (its session: tabs of
-  // one browser share it, a new login is another). Once the first check is done, every
-  // change goes to the hub (another login ends the previous one's).
-  // Without a known session (a fediverse sign-up, a check that failed
-  // after a login), none yet: it is asked for at once (below).
-  const owner = $derived(account && !account.temporary && account.session ? `${homeOrigin()} ${account.name} ${account.session}` : null);
-  $effect(() => {
-    if (!account || account.temporary || account.session) return;
-    const mine = authGeneration;
-    void api.check().then((acc) => {
-      if (mine === authGeneration && acc && acc !== "unknown" && acc.name === account?.name && acc.session) account = acc;
-    });
-  });
+  // Whose the added servers' tokens are: an account at home (not a guest,
+  // not a Mumble server in the desktop app). Once the first check is done,
+  // every change goes to the hub (another login ends the previous one's).
+  const owner = $derived(account && !account.temporary ? `${homeOrigin()} ${account.name}` : null);
   $effect(() => {
     const now = owner;
     if (ownerKnown) untrack(() => hub.follow(now));
   });
   // The add dialog, for the home login that opened it (another login
   // closes it, and a login there that ends later is not taken).
-  let addingFor = $state<string | null>(null);
-  const addingServer = $derived(addingFor !== null && addingFor === owner);
+  // server: one of the list that needs a login on this device.
+  let addingFor = $state<{ owner: string; server?: { origin: string; name: string } } | null>(null);
+  const addingServer = $derived(addingFor !== null && addingFor.owner === owner);
   // Closed by another login: forgotten (it must not open again later).
   $effect(() => {
-    if (addingFor !== null && addingFor !== owner) addingFor = null;
+    if (addingFor !== null && addingFor.owner !== owner) addingFor = null;
   });
   // The add dialog's logins: the token stays in memory until the hub
   // takes it.
@@ -347,10 +343,16 @@
   };
   // Once the home server is in: the saved ones (once per home login).
   $effect(() => {
-    if (connection?.state.status === "synced") untrack(() => hub.restore());
+    if (connection?.state.status === "synced") untrack(() => void hub.sync());
+  });
+  // Changes from other devices and tabs: when the page shows again.
+  $effect(() => {
+    const onShow = () => document.visibilityState === "visible" && void hub.sync();
+    document.addEventListener("visibilitychange", onShow);
+    return () => document.removeEventListener("visibilitychange", onShow);
   });
   $effect(() => () => hub.close());
-  const allSessions = () => [session, ...hub.servers.map((a) => a.session)];
+  const allSessions = () => [session, ...hub.servers.flatMap((a) => (a.session ? [a.session] : []))];
   const shownAdded = $derived(hub.shown === null ? null : (hub.servers.find((a) => a.origin === hub.shown) ?? null));
   const railEntry = (id: string, c: Connection | null, fallback: string): RailServer => ({
     id,
@@ -360,10 +362,9 @@
   });
   const rail = $derived<RailServer[]>([
     railEntry("", connection, "Home"),
-    ...hub.servers.map((a) => railEntry(a.origin, a.session.connection, new URL(a.origin).host)),
+    ...hub.servers.map((a) => railEntry(a.origin, a.session?.connection ?? null, new URL(a.origin).host)),
   ]);
   const selectServer = (id: string) => hub.show(id || null);
-  const canAdd = $derived(owner !== null);
   // An added server's account in its settings: logging out takes it out
   // of the rail; no fediverse link from here (that is its own site's).
   const addedActions = (origin: string): AccountActions => {
@@ -472,7 +473,7 @@
     // Created here: a login is a user gesture.
     audio = voiceSupported() ? makeAudio() : null;
     if (!audio) audioState = null;
-    else for (const a of hub.servers) a.session.setAudio(audio, true); // their microphones stay
+    else for (const a of hub.servers) a.session?.setAudio(audio, true); // their microphones stay
     try {
       await started;
     } catch (err) {
@@ -509,20 +510,24 @@
   />
 {:else if shownAdded}
   {@const a = shownAdded}
-  {#if a.session.connection?.state.status === "synced" && !a.session.error}
-    {#if a.session.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
-    <div class="client" inert={a.session.lost}>
-      {#key a.session.connection}
-        <Client connection={a.session.connection} account={addedActions(a.origin)} push={false} resume={a.session.place} onPlace={(p) => a.session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={a.session.drafts} pendingFiles={a.session.pendingFiles} streams={a.session.streams} servers={rail} onSelectServer={selectServer} onAddServer={canAdd ? () => (addingFor = owner) : undefined} />
+  {@const s = a.session}
+  {#if s?.connection?.state.status === "synced" && !s.error}
+    {#if s.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
+    <div class="client" inert={s.lost}>
+      {#key s.connection}
+        <Client connection={s.connection} account={addedActions(a.origin)} push={false} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} servers={rail} onSelectServer={selectServer} onAddServer={owner !== null ? () => (addingFor = { owner: owner! }) : undefined} />
       {/key}
     </div>
   {:else}
+    {@const host = new URL(a.origin).host}
     <div class="connecting">
-      <p>{a.session.error ? `${new URL(a.origin).host}: ${a.session.error}` : `Connecting to ${new URL(a.origin).host}…`}</p>
+      <p>{!s ? `Log in to ${host} on this device.` : s.error ? `${host}: ${s.error}` : `Connecting to ${host}…`}</p>
       <p class="actions">
         <button type="button" onclick={() => hub.show(null)}>Back</button>
-        {#if a.session.error}
-          <button type="button" onclick={() => void a.session.retry().catch(() => {})}>Try again</button>
+        {#if !s && owner !== null}
+          <button type="button" onclick={() => (addingFor = { owner: owner!, server: { origin: a.origin, name: a.name } })}>Log in</button>
+        {:else if s?.error}
+          <button type="button" onclick={() => void s.retry().catch(() => {})}>Try again</button>
         {/if}
         <button type="button" onclick={() => hub.remove(a.origin)}>Remove this server</button>
       </p>
@@ -542,7 +547,7 @@
   <!-- While lost, the old view stays readable but takes no input (it would be lost). -->
   <div class="client" inert={session.lost}>
     {#key connection}
-      <Client {connection} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} servers={rail} onSelectServer={selectServer} onAddServer={canAdd ? () => (addingFor = owner) : undefined} />
+      <Client {connection} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} servers={rail} onSelectServer={selectServer} onAddServer={owner !== null ? () => (addingFor = { owner: owner! }) : undefined} />
     {/key}
   </div>
 {:else}
@@ -552,6 +557,7 @@
 <div class="status-bar" aria-hidden="true"></div>
 
 {#if fediNotice}<Toast text={fediNotice} />{/if}
+{#key hub.error}{#if hub.error}<Toast text={hub.error} />{/if}{/key}
 
 {#if addingServer}
   <AddServerDialog
@@ -559,7 +565,8 @@
     homeCookie={!desktop}
     taken={hub.servers.map((a) => a.origin)}
     apiFor={dialogApi}
-    onAdded={(origin, acc, token) => addingFor === owner && hub.add(origin, acc.name, token)}
+    server={addingFor?.server}
+    onAdded={(origin, acc, token) => addingFor?.owner === owner && (addingFor.server ? hub.login(origin, acc.name, token) : hub.add(origin, acc.name, token))}
     onClose={() => (addingFor = null)}
   />
 {/if}
