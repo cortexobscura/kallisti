@@ -127,8 +127,9 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     // Another server asks who you are (Kallisti as a login provider): the
     // question for this authorize query, and the answer (where to go).
     oauthRequest: async (query: string) =>
-      (await call(`/api/oauth/request?${query}`)) as { site: string; account: string; deny: string },
-    oauthApprove: async (query: string) => ((await call("/api/oauth/approve", { query })) as { redirect: string }).redirect,
+      (await call(`/api/oauth/request?${query}`)) as { site: string; account: string; deny: string; ticket: string },
+    // The answer is for exactly the request shown (its ticket).
+    oauthApprove: async (ticket: string) => ((await call("/api/oauth/approve", { ticket })) as { redirect: string }).redirect,
     // A new key (the old one stops working): shown this once.
     newStreamKey: async () => (await call("/api/stream-key", {})).key ?? "",
     removeStreamKey: async () => {
@@ -146,8 +147,12 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     fediEnabled: async () => (await call("/api/fedi").catch(() => ({}) as Answer & { enabled?: boolean })).enabled === true,
     // The instance's page to go to, for a login (or a link: with the
     // account's password, "" for one without).
-    fediStart: async (instance: string, linkPassword?: string) => {
-      const { url } = await call("/api/fedi/start", { instance, ...(linkPassword !== undefined && { link: true, password: linkPassword }) });
+    fediStart: async (instance: string, linkPassword?: string, handoff = false) => {
+      const { url } = await call("/api/fedi/start", {
+        instance,
+        ...(linkPassword !== undefined && { link: true, password: linkPassword }),
+        ...(handoff && { handoff: true }),
+      });
       if (!url) throw new Error("No answer from the server. Please try again.");
       return url;
     },
@@ -163,7 +168,13 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       if (!url) throw new Error("No answer from the server. Please try again.");
       return url;
     },
-    fediCreate: async (name: string, proof?: Proof) => (await call("/api/fedi/signup", { name, ...proof })).name ?? name,
+    // handoff: its token waits for the popup (see Connect), no session here.
+    fediCreate: async (name: string, proof?: Proof) => {
+      const data = (await call("/api/fedi/signup", { name, ...proof })) as Answer & { handoff?: boolean };
+      return { name: data.name ?? name, handoff: data.handoff === true };
+    },
+    // A handoff's token, once: for the provider's origin (see Connect).
+    fediHandoff: async () => (await call("/api/fedi/handoff", {})) as { token: string; name: string; origin: string },
     fediUnlink: async () => {
       await call("/api/fedi/unlink", {});
     },

@@ -25,8 +25,9 @@
     // A server of the list without a login on this device: straight to its
     // login, with the name it had.
     server?: { origin: string; name: string };
-    // A server's account API whose token stays in memory (see token()).
-    apiFor: (origin: string) => { api: AccountsApi; token: () => string | null };
+    // A server's account API whose token stays in memory (see token()),
+    // starting with this one.
+    apiFor: (origin: string, token?: string) => { api: AccountsApi; token: () => string | null };
     // False: not taken (no longer logged in at home, or added meanwhile).
     onAdded: (origin: string, account: Account, token: string) => boolean;
     onClose: () => void;
@@ -77,6 +78,45 @@
     if (kind === "unreachable") error = `Cannot reach ${origin}. Check the address, or try again.`;
     else if (kind === "other") error = `${origin} is not a Kallisti server.`;
     else found = { origin };
+  };
+
+  // With the home account, no typing (web only): the server's page in a
+  // popup logs in through the home server and posts the token back (see
+  // Connect there). Only that popup, from that server's origin, counts.
+  const viaHome = () => {
+    if (!found) return;
+    const origin = found.origin;
+    cancel();
+    const mine = attempt;
+    error = null;
+    const popup = window.open(`${origin}/?kallisti-connect=${encodeURIComponent(home)}`, "kallisti-connect", "popup,width=480,height=720");
+    if (!popup) return void (error = "The browser blocked the login window. Allow pop-ups for this site, or log in with a password.");
+    busy = true;
+    let result = false;
+    const stop = () => {
+      window.removeEventListener("message", onMessage);
+      clearInterval(watch);
+      if (mine === attempt) busy = false;
+    };
+    const onMessage = (e: MessageEvent) => {
+      const d = e.data as { type?: unknown; token?: unknown; name?: unknown } | null;
+      if (e.origin !== origin || e.source !== popup || d?.type !== "kallisti-login" || typeof d.token !== "string" || typeof d.name !== "string") return;
+      result = true;
+      stop();
+      if (!onAdded(origin, { name: d.name, temporary: false }, d.token)) {
+        void apiFor(origin, d.token).api.logout();
+        error = "This server could not be added (it may be in the list already, or you are no longer logged in).";
+        return;
+      }
+      dialog?.close();
+    };
+    const watch = setInterval(() => {
+      if (!popup.closed) return;
+      stop();
+      if (!result && mine === attempt) error = "The login window was closed before it finished.";
+    }, 500);
+    window.addEventListener("message", onMessage);
+    holding = { logout: () => (stop(), popup.close()) };
   };
 
   const logIn = async (event: SubmitEvent) => {
@@ -143,6 +183,10 @@
   {:else}
     <form onsubmit={logIn}>
       <p class="server">{found.origin}</p>
+      {#if homeCookie}
+        <button type="button" class="primary" disabled={busy} onclick={viaHome}>Continue with your account at {new URL(home).host}</button>
+        <p class="or">or log in with a password there</p>
+      {/if}
       <label>
         Name
         <!-- svelte-ignore a11y_autofocus -->
@@ -167,6 +211,12 @@
 </dialog>
 
 <style>
+  .or {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+  }
   dialog {
     width: min(440px, 92vw);
     padding: 24px;

@@ -15,6 +15,7 @@
     onConnect,
     fediSignup = false,
     onFediSignupDone,
+    onHandoff,
     desktop = null,
     certificate = null,
     onTrust,
@@ -38,6 +39,8 @@
     // (see lib/fedi). onFediSignupDone: made, or given up.
     fediSignup?: boolean;
     onFediSignupDone?: () => void;
+    // A handoff's account was made (see Connect): its token waits.
+    onHandoff?: () => void;
   } = $props();
 
   // An answer counts only for the server it was asked of, while this
@@ -187,7 +190,8 @@
     busy = true;
     apiError = null;
     try {
-      const made = await api.fediCreate(name, await prove());
+      const { name: made, handoff } = await api.fediCreate(name, await prove());
+      if (handoff) return void onHandoff?.();
       onAccountChange({ name: made, temporary: false, password: false, fedi: { handle: signup.handle, public: false } });
       onFediSignupDone?.();
       connectAs(made, true);

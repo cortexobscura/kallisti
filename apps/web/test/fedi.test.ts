@@ -7,6 +7,7 @@ describe("fediResult", () => {
     expect(fediResult("")).toBeNull();
     expect(fediResult("?x=1")).toBeNull();
     expect(fediResult("?fedi=register")).toEqual({ kind: "register" });
+    expect(fediResult("?fedi=connect")).toEqual({ kind: "connect" });
     expect(fediResult("?fedi=linked")).toEqual({ kind: "linked", text: "Fediverse account linked: you can log in with it now." });
     expect(fediResult("?fedi=error&reason=taken")).toEqual({
       kind: "error",
@@ -61,7 +62,7 @@ describe("fediverse account API", () => {
     expect(await createAccountsApi("http://srv", fakeFetch(404, { error: "expired" }, [])).fediSignup()).toBeNull();
     const calls: Call[] = [];
     const create = createAccountsApi("http://srv", fakeFetch(201, { name: "alice" }, calls));
-    expect(await create.fediCreate("alice", { challenge: "c", nonce: "n" })).toBe("alice");
+    expect(await create.fediCreate("alice", { challenge: "c", nonce: "n" })).toEqual({ name: "alice", handoff: false });
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ name: "alice", challenge: "c", nonce: "n" });
   });
 

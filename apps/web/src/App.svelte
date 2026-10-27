@@ -2,6 +2,7 @@
   import Client from "./components/Client.svelte";
   import Login from "./components/Login.svelte";
   import Authorize from "./components/Authorize.svelte";
+  import Connect from "./components/Connect.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
   import ServerRail, { type RailServer } from "./components/ServerRail.svelte";
   import type { RemoteVoice } from "./components/Client.svelte";
@@ -76,7 +77,8 @@
   // nothing (see the check after an error).
   let authGeneration = 0;
   const autoLogin = (acc: Account | null) => {
-    if (!acc || connection || account !== null) return void (checking = false);
+    // The popup of a handoff logs in nobody here.
+    if (!acc || connection || account !== null || connectHome) return void (checking = false);
     account = acc;
     // Another server asks who you are: only the question, no chat (a Mumble
     // connection would take over this user's voice elsewhere).
@@ -105,6 +107,39 @@
   const fediBack = isDesktop() ? null : fediResult(location.search);
   // Another server asks who you are (see Authorize): after the login here.
   const authorizeQuery = isDesktop() ? null : new URLSearchParams(location.search).get("authorize");
+  // This page is the popup in which a Kallisti page adds this server (see
+  // Connect): its home server, kept in this tab over the login's pages.
+  // Such a page is only that popup: no account here, no servers of its own.
+  const popupLogin = (() => {
+    if (isDesktop()) return { home: null, kept: true };
+    let tab: Storage | undefined;
+    try {
+      tab = sessionStorage;
+    } catch {
+      // No tab storage: see kept.
+    }
+    const asked = new URLSearchParams(location.search).get("kallisti-connect");
+    // kept: it survives the login's pages (else it could never finish).
+    const kept = !asked || safeSet(tab, "kallisti-connect", asked);
+    // Back from the login: once (a later login in this tab is a normal one).
+    const back = fediBack && ["connect", "register", "error"].includes(fediBack.kind) ? safeGet(tab, "kallisti-connect") : null;
+    if (fediBack) safeSet(tab, "kallisti-connect", "");
+    return { home: asked ?? (back || null), kept };
+  })();
+  const connectHome = popupLogin.home;
+  let connectPhase = $state<"start" | "deliver" | { error: string } | null>(
+    !connectHome
+      ? null
+      : !popupLogin.kept
+        ? { error: "This browser keeps no data for this window. Log in with a password there instead." }
+        : !fediBack
+        ? "start"
+        : fediBack.kind === "connect"
+          ? "deliver"
+          : fediBack.kind === "error"
+            ? { error: fediBack.text }
+            : null, // register: the name first (Login), then deliver
+  );
   if (fediBack) history.replaceState(history.state, "", withoutFediResult(location.pathname + location.search + location.hash));
   let fediSignup = $state(fediBack?.kind === "register");
   let fediNotice = $state<string | null>(null);
@@ -114,6 +149,9 @@
     void untrack(() => api)
       .check()
       .then((answer) => {
+        // The popup of a handoff: nobody's login here counts (it must not
+        // end this browser's other tabs' servers, nor the name step).
+        if (connectHome) return void (checking = false);
         // Unknown (the server or the network failed): the login form, but
         // nothing of the last login ends (see ownerKnown).
         if (answer !== "unknown") ownerKnown = true;
@@ -121,7 +159,7 @@
         // Logged in: a notice over the app (and no name step); else errors
         // on the login screen.
         if (acc) fediSignup = false;
-        if (fediBack && fediBack.kind !== "register") {
+        if (fediBack && "text" in fediBack) {
           if (acc) fediNotice = fediBack.text;
           else if (fediBack.kind === "error") loginNote = fediBack.text;
         }
@@ -350,8 +388,8 @@
   });
   // The add dialog's logins: the token stays in memory until the hub
   // takes it.
-  const dialogApi = (origin: string) => {
-    const store = memoryStore();
+  const dialogApi = (origin: string, token?: string) => {
+    const store = memoryStore(token ?? null);
     return { api: createAccountsApi(origin, fetch, store), token: store.get };
   };
   // Once the home server is in: the saved ones (once per home login).
@@ -576,7 +614,9 @@
   {/if}
 {/snippet}
 
-{#if authorizeQuery && account && !checking}
+{#if connectHome && connectPhase}
+  <Connect {api} home={connectHome} phase={connectPhase} />
+{:else if authorizeQuery && account && !checking}
   <Authorize {api} query={authorizeQuery} serverName={location.host} />
 {:else if checking}
   <div class="connecting" aria-busy="true"></div>
@@ -653,7 +693,8 @@
         }}
         onConnect={start}
         {fediSignup}
-        onFediSignupDone={() => (fediSignup = false)}
+        onFediSignupDone={() => (connectHome ? window.close() : (fediSignup = false))}
+        onHandoff={() => (connectPhase = "deliver")}
       />
     {/snippet}
     {@render withRail(login)}

@@ -19,7 +19,7 @@
   const allow = async () => {
     busy = true;
     try {
-      location.assign(await api.oauthApprove(query));
+      location.assign(await api.oauthApprove(ask!.ticket));
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
       busy = false;
