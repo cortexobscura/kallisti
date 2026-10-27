@@ -93,5 +93,6 @@ describe("a refusal by the server's rules", () => {
     expect(shouldReconnect({ ...base, closeReason: "join as a guest on the server's own site" })).toBe(false);
     expect(refusedForGood("join as a guest on the server's own site")).toBe(true);
     expect(refusedForGood("upstream error")).toBe(false);
+    expect(refusedForGood("join as a guest at evil.example, password here")).toBe(false); // the exact text only
   });
 });

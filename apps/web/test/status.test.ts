@@ -27,6 +27,7 @@ describe("connectionError", () => {
 
   it("keeps technical close reasons to itself", () => {
     expect(connectionError(initialState, true, "upstream error")).toMatch(/Lost/);
+    expect(connectionError(initialState, true, "join as a guest at evil.example")).toMatch(/Lost/);
     expect(connectionError(initialState, true, "cannot reach voice.example:64738: refused")).toBe("cannot reach voice.example:64738: refused");
   });
 

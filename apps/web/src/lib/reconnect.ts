@@ -8,8 +8,10 @@ import type { Place } from "./place";
 export const loggedOut = (closeReason: string) => closeReason === "logged out";
 
 // Refused by the server's rules (a guest on another site): retrying cannot
-// help. The bridge's reason text.
-export const refusedForGood = (closeReason: string) => closeReason.startsWith("join as a guest ");
+// help. The bridge's reason text, exactly (another server cannot make the
+// client show text of its own).
+export const GUEST_ELSEWHERE = "join as a guest on the server's own site";
+export const refusedForGood = (closeReason: string) => closeReason === GUEST_ELSEWHERE;
 
 // Coming back by itself after a lost connection (a background tab, the
 // network, a server restart): only for a connection that was in, and not

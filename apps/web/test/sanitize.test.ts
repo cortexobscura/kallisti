@@ -59,5 +59,9 @@ describe("sanitize loads nothing remote", () => {
     expect(sanitize("<span style=\"font-family: 'Curlz MT'; color: red\">x</span>")).toContain("color: red");
     expect(sanitize('<a href="https://x.org/">x</a>')).toContain('href="https://x.org/"');
     expect(sanitize('<img src="data:image/png;base64,AA==">')).toContain("data:image/png");
+    // Text and link addresses may say url( (they load nothing by it).
+    const link = sanitize('<a href="https://example.org/url(example)/details" title="CSS url(...) syntax">x</a>');
+    expect(link).toContain('href="https://example.org/url(example)/details"');
+    expect(link).toContain('title="CSS url(...) syntax"');
   });
 });

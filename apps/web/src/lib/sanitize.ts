@@ -19,6 +19,9 @@ const REMOTE_STYLE = /\\|@|(url|image|image-set|cross-fade|src)\(/i;
 // attribute naming url() at all (SVG mask, fill, filter ... in any form).
 const CONFIG = { USE_PROFILES: { html: true }, FORBID_TAGS: ["style"] };
 const NAMES_URL = /url\(/i;
+// Attributes that load nothing by what they say: text, and link addresses
+// (DOMPurify checks those, a link loads only when clicked).
+const TEXT_ATTRS = new Set(["href", "title", "alt", "aria-label"]);
 const REMOTE_ATTRS = ["srcset", "poster", "background", "xlink:href", "lowsrc", "dynsrc", "longdesc"];
 
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -30,7 +33,7 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName !== "A") node.removeAttribute("href");
   if (!(node.tagName === "IMG" && node.getAttribute("src")?.startsWith("data:image/"))) node.removeAttribute("src");
   if (REMOTE_STYLE.test(node.getAttribute("style") ?? "")) node.removeAttribute("style");
-  for (const { name, value } of [...node.attributes]) if (NAMES_URL.test(value)) node.removeAttribute(name);
+  for (const { name, value } of [...node.attributes]) if (!TEXT_ATTRS.has(name) && NAMES_URL.test(value)) node.removeAttribute(name);
 });
 
 // emoji: emoji become Twemoji images, added after sanitizing (into text
