@@ -155,8 +155,9 @@ func (b *bucket) refill(now time.Time) {
 	b.at = now
 }
 
-// take: one attempt for this name; false: too many lately.
-func (f *failures) take(name string, now time.Time) bool {
+// take: one attempt for this name; false: too many lately for it, or (full)
+// a new name while every name is counting.
+func (f *failures) take(name string, now time.Time) (ok, full bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.m == nil {
@@ -166,24 +167,17 @@ func (f *failures) take(name string, now time.Time) bool {
 	b := f.m[key]
 	if b == nil {
 		if !f.room(now) {
-			return false
+			return false, true
 		}
 		b = &bucket{tokens: burst, at: now}
 		f.m[key] = b
 	}
 	b.refill(now)
 	if b.tokens < 1 {
-		return false
+		return false, false
 	}
 	b.tokens--
-	return true
-}
-
-// full: every name is counting, new names wait (see room).
-func (f *failures) full() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.m) >= maxFailureNames
+	return true, false
 }
 
 // refund: the attempt was no failure.
@@ -502,20 +496,24 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 	// visitors' addresses); our own pages and the apps keep the limit per
 	// address only, so nobody outside can lock an account.
 	guarded := !config.OwnSite(a.AllowedOrigins, r.Header.Get("Origin"))
-	if guarded && !a.failures.take(c.Name, a.Now()) {
-		why := "too many attempts for this name, try again later"
-		if a.failures.full() {
-			why = "too many logins from other sites right now, try again later or on the server's own site"
+	if guarded {
+		if ok, full := a.failures.take(c.Name, a.Now()); !ok {
+			why := "too many attempts for this name, try again later"
+			if full {
+				why = "too many logins from other sites right now, try again later or on the server's own site"
+			}
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": why})
+			return
 		}
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": why})
-		return
 	}
 	acc, err := a.Store.AccountByName(c.Name)
 	// From other sites, a name without a web account gives its token back
 	// (random names cannot fill the table) and is answered before the
-	// password, so the answer says nothing about it: wrong, or (with the
-	// built-in server) maybe a Mumble registration, whose socket uses the
-	// name and password, which other sites cannot (theirs need a token).
+	// password, so the answer says nothing about the password (that the
+	// name has no web account shows, as signing up shows "taken"): wrong,
+	// or (with the built-in server) maybe a Mumble registration, whose
+	// socket uses the name and password, which other sites cannot (theirs
+	// need a token).
 	if guarded && errors.Is(err, store.ErrNotFound) {
 		a.failures.refund(c.Name)
 		if a.MumbleLogin != nil {

@@ -763,21 +763,20 @@ func TestFailuresKeepActiveNamesWhenFull(t *testing.T) {
 	for range burst {
 		f.take("alice", now)
 	}
-	if f.take("alice", now) {
-		t.Fatal("alice not blocked")
+	if ok, full := f.take("alice", now); ok || full {
+		t.Fatal("alice not blocked by name")
 	}
 	for i := range maxFailureNames {
 		f.take(fmt.Sprintf("junk%d", i), now)
 	}
-	if f.take("alice", now) {
-		t.Fatal("alice reset by a full table")
+	if ok, full := f.take("alice", now); ok || full {
+		t.Fatal("alice reset by a full table, or blamed on it")
 	}
-	if f.take("newcomer", now) || !f.full() {
+	if ok, full := f.take("newcomer", now); ok || !full {
 		t.Fatal("a new name got in while every name is counting")
 	}
 	// Later, names that are full again make room.
-	later := now.Add(time.Hour)
-	if !f.take("newcomer", later) {
+	if ok, _ := f.take("newcomer", now.Add(time.Hour)); !ok {
 		t.Fatal("no room after an hour")
 	}
 }
