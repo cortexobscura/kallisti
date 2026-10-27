@@ -1,4 +1,4 @@
-import { addServer, loadServers, removeServer, saveServers } from "./serverList";
+import { addServer, loadServers, removeServer, saveServers, storedOwner } from "./serverList";
 
 // What the hub needs of a server's session (see lib/serverSession).
 type Closable = { leave: () => void; dispose: () => void; close: () => void };
@@ -8,6 +8,9 @@ export type HubDeps<S extends Closable> = {
   storage: () => Storage | undefined;
   // The home server's origin (this site, or the desktop app's choice).
   home: () => string;
+  // Whose they are: the home login (server and account); null: none, or a
+  // guest (who adds none: nothing of theirs survives on a shared device).
+  owner: () => string | null;
   // A server's session token on this device.
   tokens: (origin: string) => { get: () => string | null; set: (token: string | null) => void };
   // A started session for a server, logged in as name (with its token).
@@ -27,7 +30,7 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
   let shown = $state<string | null>(null);
   let restored = false;
 
-  const save = (list: ReturnType<typeof loadServers>) => saveServers(deps.storage(), list);
+  const save = (owner: string, list: ReturnType<typeof loadServers>) => saveServers(deps.storage(), owner, list);
   // Forgets the token at once; logs out there with it afterwards, so a
   // slow answer cannot touch a later login's token.
   const forget = (origin: string) => {
@@ -39,6 +42,19 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
   const end = (s: HubServer<S>) => {
     s.session.leave();
     s.session.dispose();
+  };
+  // keepRestored: the current login stays (restore found another's list).
+  const endAll = (keepRestored: boolean) => {
+    const all = servers;
+    servers = [];
+    shown = null;
+    restored = keepRestored;
+    for (const { origin } of loadServers(deps.storage())) forget(origin);
+    for (const s of all) {
+      forget(s.origin);
+      end(s);
+    }
+    saveServers(deps.storage(), "", []);
   };
 
   return {
@@ -54,10 +70,11 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     // A server logged in as name with this token (from the add dialog);
     // false: it is the home server or in the list (the first login stays).
     add: (origin: string, name: string, token: string) => {
-      if (origin === deps.home() || servers.some((s) => s.origin === origin)) return false;
+      const owner = deps.owner();
+      if (owner === null || origin === deps.home() || servers.some((s) => s.origin === origin)) return false;
       deps.tokens(origin).set(token);
       servers = [...servers, { origin, name, session: deps.open(origin, name) }];
-      save(addServer(loadServers(deps.storage()), { origin, name }, deps.home()));
+      save(owner, addServer(loadServers(deps.storage(), owner), { origin, name }, deps.home()));
       shown = origin;
       return true;
     },
@@ -65,35 +82,29 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     remove: (origin: string) => {
       const s = servers.find((x) => x.origin === origin);
       if (shown === origin) shown = null;
-      save(removeServer(loadServers(deps.storage()), origin));
+      const owner = deps.owner();
+      if (owner !== null) save(owner, removeServer(loadServers(deps.storage(), owner), origin));
       forget(origin);
       if (!s) return;
       servers = servers.filter((x) => x !== s);
       end(s);
     },
     // The saved ones, once per home login (a token that no longer works
-    // shows as an error there, with "Remove").
+    // shows as an error there). Another login's end: logged out there,
+    // tokens and list gone (a login that expired while the tab was closed
+    // never ran endAll).
     restore: () => {
-      if (restored) return;
+      const owner = deps.owner();
+      if (restored || owner === null) return;
       restored = true;
+      if (storedOwner(deps.storage()) !== owner) return endAll(true);
       const opened = new Set(servers.map((s) => s.origin));
-      const fresh = loadServers(deps.storage()).filter((s) => s.origin !== deps.home() && !opened.has(s.origin));
+      const fresh = loadServers(deps.storage(), owner).filter((s) => s.origin !== deps.home() && !opened.has(s.origin));
       servers = [...servers, ...fresh.map(({ origin, name }) => ({ origin, name, session: deps.open(origin, name) }))];
     },
     // The home login ended: all of them end, logged out there, list and
     // tokens gone from the device.
-    endAll: () => {
-      const all = servers;
-      servers = [];
-      shown = null;
-      restored = false;
-      for (const { origin } of loadServers(deps.storage())) forget(origin);
-      for (const s of all) {
-        forget(s.origin);
-        end(s);
-      }
-      save([]);
-    },
+    endAll: () => endAll(false),
     // The app goes away: connections close; list and tokens stay.
     close: () => {
       for (const s of servers) s.session.close();
