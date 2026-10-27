@@ -3,7 +3,7 @@
 - [ ] [Desktop app (Tauri)](issues/desktop-app-tauri.md)
   - [ ] [Desktop: overlay of who is talking](issues/desktop-overlay.md)
   - [ ] [Activity status: game and music](issues/activity-status.md)
-- [ ] [Join other servers with your account](issues/join-other-servers.md) (design decided, not started)
+- [ ] [Join other servers with your account](issues/join-other-servers.md) (in progress on the branch `multi-server`)
   - [ ] [Several servers in one client](issues/multiple-servers.md)
   - [ ] [Cross-origin access with tokens](issues/cross-origin-tokens.md)
   - [ ] [Kallisti as a login provider](issues/kallisti-login-provider.md)
@@ -19,3 +19,4 @@
 - [ ] [Firefox: no stream controls on hover](issues/firefox-stream-controls.md)
 - [ ] [Message HTML: forms](issues/message-forms.md)
 - [ ] [Mentions of names with emoji](issues/mention-emoji-names.md)
+- [ ] [Fixes from the multi-server branch that main could use](issues/hardening-from-multi-server.md)
