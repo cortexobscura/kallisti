@@ -5,7 +5,6 @@
   - [ ] [Activity status: game and music](issues/activity-status.md)
 - [ ] [Join other servers with your account](issues/join-other-servers.md) (design decided, not started)
   - [ ] [Several servers in one client](issues/multiple-servers.md)
-  - [ ] [Cross-origin access with tokens](issues/cross-origin-tokens.md)
   - [ ] [Kallisti as a login provider](issues/kallisti-login-provider.md)
   - [ ] [The server list on the home account](issues/home-server-list.md)
   - [ ] [Tokens without typing](issues/seamless-tokens.md)
