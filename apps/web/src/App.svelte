@@ -347,7 +347,8 @@
   // An added server's account in its settings: logging out takes it out
   // of the rail; no fediverse link from here (that is its own site's).
   const addedActions = (origin: string): AccountActions => {
-    const api = createAccountsApi(origin, fetch, addedStore(origin));
+    // Its own token (another tab may store another login's for the origin).
+    const api = createAccountsApi(origin, fetch, memoryStore(hub.servers.find((a) => a.origin === origin)?.token ?? null));
     return {
       temporary: false,
       logout: async () => hub.remove(origin),
