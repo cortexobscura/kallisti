@@ -89,6 +89,8 @@ describe("a server session", () => {
     await vi.advanceTimersByTimeAsync(1000); // an attempt asks for its address
     session.dispose();
     pending[1]!(true);
+    await settle();
+    expect(vi.getTimerCount()).toBe(0); // nothing scheduled
     await vi.advanceTimersByTimeAsync(60_000);
     void session.start(credentials);
     session.wake();
@@ -125,6 +127,9 @@ describe("a server session", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(pending.length).toBe(4); // the new loss asked again
     pending[1]!(); // the old lookup ends late: nothing comes of it
+    await settle();
+    void session.tryNow(); // the new lookup still runs: no second one
+    expect(pending.length).toBe(4);
     pending[3]!();
     await settle();
     expect(made.map((c) => c.url)).toHaveLength(3);
