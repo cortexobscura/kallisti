@@ -179,6 +179,13 @@ func (f *failures) take(name string, now time.Time) bool {
 	return true
 }
 
+// full: every name is counting, new names wait (see room).
+func (f *failures) full() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.m) >= maxFailureNames
+}
+
 // refund: the attempt was no failure.
 func (f *failures) refund(name string) {
 	f.mu.Lock()
@@ -496,17 +503,26 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 	// address only, so nobody outside can lock an account.
 	guarded := !config.OwnSite(a.AllowedOrigins, r.Header.Get("Origin"))
 	if guarded && !a.failures.take(c.Name, a.Now()) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts for this name, try again later"})
+		why := "too many attempts for this name, try again later"
+		if a.failures.full() {
+			why = "too many logins from other sites right now, try again later or on the server's own site"
+		}
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": why})
 		return
 	}
 	acc, err := a.Store.AccountByName(c.Name)
-	// A name without a web account may be a Mumble registration: no
-	// session, its socket uses the name and password, which other sites
-	// cannot (their sockets need a token). Refused before the password, so
-	// the answer says nothing about it.
-	if guarded && errors.Is(err, store.ErrNotFound) && a.MumbleLogin != nil {
+	// From other sites, a name without a web account gives its token back
+	// (random names cannot fill the table) and is answered before the
+	// password, so the answer says nothing about it: wrong, or (with the
+	// built-in server) maybe a Mumble registration, whose socket uses the
+	// name and password, which other sites cannot (theirs need a token).
+	if guarded && errors.Is(err, store.ErrNotFound) {
 		a.failures.refund(c.Name)
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "log in with a Mumble registration on the server's own site"})
+		if a.MumbleLogin != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "log in with a Mumble registration on the server's own site"})
+		} else {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong name or password"})
+		}
 		return
 	}
 	hash := acc.PasswordHash
@@ -517,6 +533,9 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 	ok := password.Check(hash, c.Password)
 	release()
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		if guarded {
+			a.failures.refund(c.Name) // our fault, no failed guess
+		}
 		slog.Error("login", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "please try again later"})
 		return

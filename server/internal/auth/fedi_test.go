@@ -599,3 +599,20 @@ func TestFediSignupOnlyOnTheOwnSite(t *testing.T) {
 		t.Fatalf("from another site: %d, want 403", resp.StatusCode)
 	}
 }
+
+// Cookies of the old path (/api/fedi) go when a flow starts: over plain
+// HTTP they have the same name and the browser sends them first.
+func TestFediStartRemovesOldPathCookies(t *testing.T) {
+	_, srv, inst := fediSetup(t, &fedifake.Instance{})
+	b := newBrowser(t, srv)
+	resp, _ := b.do("POST", "/api/fedi/start", map[string]any{"instance": inst})
+	gone := map[string]bool{}
+	for _, c := range resp.Cookies() {
+		if c.Path == fediPath && c.MaxAge < 0 {
+			gone[c.Name] = true
+		}
+	}
+	if !gone[stateCookie] || !gone[signupCookie] {
+		t.Fatalf("cookies %v", resp.Cookies())
+	}
+}

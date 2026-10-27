@@ -87,16 +87,27 @@ func TestFediIdentities(t *testing.T) {
 
 	// Linking: a guest account becomes permanent; one identity per account.
 	guest, _ := s.CreateAccount(Account{Name: "guest", Temporary: true, CertPEM: []byte("c"), KeyPEM: []byte("k")}, now)
-	if err := s.LinkFedi(guest.ID, id, now); err != nil {
+	later := now.Add(time.Hour)
+	s.CreateSession("guest-session", guest.ID, later)
+	s.CreateSession("acc-session", acc.ID, later)
+	// Only while the session that started it lasts (a logout everywhere
+	// meanwhile ends it).
+	if err := s.LinkFedi(guest.ID, "gone", id, now); !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("link without the session: %v", err)
+	}
+	if err := s.LinkFedi(guest.ID, "acc-session", id, now); !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("link with another account's session: %v", err)
+	}
+	if err := s.LinkFedi(guest.ID, "guest-session", id, now); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	if g, _ := s.AccountByName("guest"); g.Temporary {
 		t.Fatal("a linked guest account stays temporary")
 	}
-	if err := s.LinkFedi(acc.ID, id, now); !errors.Is(err, ErrFediTaken) {
+	if err := s.LinkFedi(acc.ID, "acc-session", id, now); !errors.Is(err, ErrFediTaken) {
 		t.Fatalf("identity of another account: %v", err)
 	}
-	if err := s.LinkFedi(guest.ID, FediIdentity{Host: "x.example", RemoteID: "1", Handle: "@g@x.example"}, now); !errors.Is(err, ErrFediTaken) {
+	if err := s.LinkFedi(guest.ID, "guest-session", FediIdentity{Host: "x.example", RemoteID: "1", Handle: "@g@x.example"}, now); !errors.Is(err, ErrFediTaken) {
 		t.Fatalf("second identity: %v", err)
 	}
 	if ident, err := s.FediIdentityOf(guest.ID); err != nil || ident.RemoteID != "42" {

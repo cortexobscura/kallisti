@@ -614,6 +614,8 @@ func TestServerSaysItsNameAndLogo(t *testing.T) {
 // on our own pages are not held up (no lockout from outside).
 func TestLoginsPerAccountAreLimited(t *testing.T) {
 	a, srv := setup(t)
+	post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	post(t, srv, "/api/accounts", map[string]string{"name": "bob", "password": "longpassword"}, nil)
 	a.TrustForwardedFor = true
 	login := func(name, origin string, i int) int {
 		req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(fmt.Sprintf(`{"name":%q,"password":"guess"}`, name)))
@@ -668,6 +670,7 @@ func TestMumbleRegistrationLoginsOnlyOnTheOwnSite(t *testing.T) {
 // Parallel guesses are counted before the password work, not after.
 func TestLoginsPerAccountHoldInParallel(t *testing.T) {
 	a, srv := setup(t)
+	post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
 	a.TrustForwardedFor = true
 	var wg sync.WaitGroup
 	var limited atomic.Int32
@@ -769,12 +772,38 @@ func TestFailuresKeepActiveNamesWhenFull(t *testing.T) {
 	if f.take("alice", now) {
 		t.Fatal("alice reset by a full table")
 	}
-	if f.take("newcomer", now) {
+	if f.take("newcomer", now) || !f.full() {
 		t.Fatal("a new name got in while every name is counting")
 	}
 	// Later, names that are full again make room.
 	later := now.Add(time.Hour)
 	if !f.take("newcomer", later) {
 		t.Fatal("no room after an hour")
+	}
+}
+
+// Names without a web account give their token back (also with Murmur):
+// random names cannot fill the table.
+func TestUnknownNamesFromOtherSitesDoNotFillTheTable(t *testing.T) {
+	a, srv := setup(t)
+	a.TrustForwardedFor = true
+	for i := range 20 {
+		req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(fmt.Sprintf(`{"name":"nobody%d","password":"guess"}`, i)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "https://other.example")
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", i+1))
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("nobody%d: %d", i, resp.StatusCode)
+		}
+	}
+	a.failures.mu.Lock()
+	defer a.failures.mu.Unlock()
+	for _, b := range a.failures.m {
+		if b.tokens < burst {
+			t.Fatal("an unknown name kept its token")
+		}
 	}
 }

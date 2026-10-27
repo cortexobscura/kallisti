@@ -108,14 +108,25 @@ func (s *Store) CreateFediAccount(a Account, id FediIdentity, at time.Time) (Acc
 	return a, tx.Commit()
 }
 
-// LinkFedi links a remote account to an account; a guest account becomes
-// a normal one (it can log in again now).
-func (s *Store) LinkFedi(accountID int64, id FediIdentity, at time.Time) error {
+// ErrSessionGone: the session that started a change ended meanwhile.
+var ErrSessionGone = errors.New("the session ended")
+
+// LinkFedi links a remote account to an account, while the session that
+// asked for it (by its stored key) still lasts; a guest account becomes a
+// normal one (it can log in again now).
+func (s *Store) LinkFedi(accountID int64, session string, id FediIdentity, at time.Time) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE token_hash = ? AND account_id = ? AND expires_at > ?`, session, accountID, at.UnixMilli()).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrSessionGone
+	}
 	if err := linkFedi(tx, accountID, id, at); err != nil {
 		return err
 	}

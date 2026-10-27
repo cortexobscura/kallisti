@@ -175,6 +175,11 @@ func (f *FediLogin) home(result, reason string) string {
 }
 
 func (a *Service) setFediCookie(w http.ResponseWriter, r *http.Request, name, value string, life time.Duration) {
+	// Before __Host- names they lived at /api/fedi: over plain HTTP the
+	// browser would send such a stale one first.
+	for _, old := range []string{stateCookie, signupCookie} {
+		http.SetCookie(w, &http.Cookie{Name: old, Value: "", Path: fediPath, MaxAge: -1, HttpOnly: true})
+	}
 	if value == "" {
 		a.clearCookie(w, r, name)
 		return
@@ -411,7 +416,7 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if flow.link != 0 {
-		result, reason := a.fediLink(linkTo, id)
+		result, reason := a.fediLink(linkTo, flow.session, id)
 		if result == "linked" {
 			a.fediAvatar(linkTo, remote.Avatar, true)
 		}
@@ -472,10 +477,13 @@ func (a *Service) remoteAccount(ctx context.Context, flow fediFlow, code string)
 }
 
 // fediLink links the remote account to the account; the result for home.
-func (a *Service) fediLink(acc store.Account, id store.FediIdentity) (string, string) {
-	err := a.Store.LinkFedi(acc.ID, id, a.Now())
+func (a *Service) fediLink(acc store.Account, session string, id store.FediIdentity) (string, string) {
+	err := a.Store.LinkFedi(acc.ID, session, id, a.Now())
 	if errors.Is(err, store.ErrFediTaken) {
 		return "error", "taken"
+	}
+	if errors.Is(err, store.ErrSessionGone) {
+		return "error", "expired"
 	}
 	if err != nil {
 		slog.Error("link fediverse account", "err", err)
