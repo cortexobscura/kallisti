@@ -10,6 +10,8 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -652,5 +654,55 @@ func TestMumbleRegistrationLoginsOnlyOnTheOwnSite(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("from another site: %d, want 403", resp.StatusCode)
+	}
+}
+
+// Parallel guesses are counted before the password work, not after.
+func TestLoginsPerAccountHoldInParallel(t *testing.T) {
+	a, srv := setup(t)
+	a.TrustForwardedFor = true
+	var wg sync.WaitGroup
+	var limited atomic.Int32
+	for i := range 60 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(`{"name":"alice","password":"guess"}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Origin", "https://other.example")
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+			req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", i+1))
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return
+			}
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusTooManyRequests {
+				limited.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := limited.Load(); n < 60-burst-1 {
+		t.Fatalf("%d of 60 parallel guesses limited", n)
+	}
+}
+
+// From another site, a name without a web account gets the same answer
+// whatever the password (no hint that a Mumble password was right).
+func TestMumbleRegistrationAnswerFromOtherSitesDoesNotDependOnThePassword(t *testing.T) {
+	a, srv := setup(t)
+	a.MumbleLogin = func(_ netip.Addr, _, pw string) (string, bool) { return "SuperUser", pw == "adminpw" }
+	status := func(pw string) int {
+		req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(fmt.Sprintf(`{"name":"superuser","password":%q}`, pw)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "https://other.example")
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if right, wrong := status("adminpw"), status("nope"); right != wrong {
+		t.Fatalf("right %d, wrong %d", right, wrong)
 	}
 }

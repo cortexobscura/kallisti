@@ -130,49 +130,79 @@ func (l *limiter) allow(ip string, limit rate.Limit, burst int) bool {
 }
 
 // failures counts failed logins per account name (hashed: names come from
-// anyone), for logins from other sites. Only failures count, so a user's
-// own good logins do not use up the budget.
+// anyone), for logins from other sites. An attempt takes a token before the
+// password work (parallel guesses count at once); a good login gives it
+// back, so a user's own logins do not use up the budget.
 type failures struct {
 	mu sync.Mutex
-	m  map[[16]byte]*rate.Limiter
+	m  map[[16]byte]*bucket
 }
+
+type bucket struct {
+	tokens float64
+	at     time.Time
+}
+
+const maxFailureNames = 10_000
 
 func failureKey(name string) [16]byte {
 	sum := sha256.Sum256([]byte(names.Key(name)))
 	return [16]byte(sum[:16])
 }
 
-// blocked: too many failures for this name lately.
-func (f *failures) blocked(name string) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	lim := f.m[failureKey(name)]
-	return lim != nil && lim.Tokens() < 1
+func (b *bucket) refill(now time.Time) {
+	b.tokens = min(burst, b.tokens+now.Sub(b.at).Hours()*accountPerHour)
+	b.at = now
 }
 
-func (f *failures) failed(name string) {
+// take: one attempt for this name; false: too many lately.
+func (f *failures) take(name string, now time.Time) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.m == nil {
-		f.m = map[[16]byte]*rate.Limiter{}
+		f.m = map[[16]byte]*bucket{}
 	}
 	key := failureKey(name)
-	lim, ok := f.m[key]
-	if !ok {
-		if len(f.m) >= 10_000 { // bounded: idle ones first, then any
-			for k, v := range f.m {
-				if v.Tokens() >= burst || len(f.m) >= 10_000 {
-					delete(f.m, k)
-				}
-				if len(f.m) < 9_000 {
-					break
-				}
-			}
-		}
-		lim = rate.NewLimiter(rate.Limit(accountPerHour)/3600, burst)
-		f.m[key] = lim
+	b := f.m[key]
+	if b == nil {
+		f.evict(now)
+		b = &bucket{tokens: burst, at: now}
+		f.m[key] = b
 	}
-	lim.Allow()
+	b.refill(now)
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
+}
+
+// refund: the attempt was no failure.
+func (f *failures) refund(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if b := f.m[failureKey(name)]; b != nil {
+		b.tokens = min(burst, b.tokens+1)
+	}
+}
+
+// evict keeps the map bounded: names that are full again first, then any
+// (a reset limit costs an attacker thousands of other names first).
+func (f *failures) evict(now time.Time) {
+	if len(f.m) < maxFailureNames {
+		return
+	}
+	for k, b := range f.m {
+		if b.refill(now); b.tokens >= burst {
+			delete(f.m, k)
+		}
+	}
+	for k := range f.m {
+		if len(f.m) < maxFailureNames*9/10 {
+			break
+		}
+		delete(f.m, k)
+	}
 }
 
 type credentials struct {
@@ -457,11 +487,20 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 	// visitors' addresses); our own pages and the apps keep the limit per
 	// address only, so nobody outside can lock an account.
 	guarded := !config.OwnSite(a.AllowedOrigins, r.Header.Get("Origin"))
-	if guarded && a.failures.blocked(c.Name) {
+	if guarded && !a.failures.take(c.Name, a.Now()) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts for this name, try again later"})
 		return
 	}
 	acc, err := a.Store.AccountByName(c.Name)
+	// A name without a web account may be a Mumble registration: no
+	// session, its socket uses the name and password, which other sites
+	// cannot (their sockets need a token). Refused before the password, so
+	// the answer says nothing about it.
+	if guarded && errors.Is(err, store.ErrNotFound) && a.MumbleLogin != nil {
+		a.failures.refund(c.Name)
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "log in with a Mumble registration on the server's own site"})
+		return
+	}
 	hash := acc.PasswordHash
 	if err != nil || acc.Temporary || hash == "" {
 		hash = password.Dummy // same work for unknown names; no login without a password
@@ -477,12 +516,6 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 	if err != nil && a.MumbleLogin != nil {
 		host, _ := netip.ParseAddr(clientip.Of(r, a.TrustForwardedFor))
 		if name, ok := a.MumbleLogin(host.Unmap(), c.Name, c.Password); ok {
-			// No session: its socket uses the name and password, which
-			// other sites cannot (their sockets need a token).
-			if guarded {
-				writeJSON(w, http.StatusForbidden, map[string]string{"error": "log in with a Mumble registration on the server's own site"})
-				return
-			}
 			// Not a web account: end a web session of this browser, or the
 			// bridge would connect with that account instead.
 			a.clearSession(w, r)
@@ -491,11 +524,11 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !ok || err != nil || acc.Temporary || acc.PasswordHash == "" {
-		if guarded {
-			a.failures.failed(c.Name)
-		}
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong name or password"})
 		return
+	}
+	if guarded {
+		a.failures.refund(c.Name)
 	}
 	token, ok := a.startSession(w, r, acc)
 	if !ok {
