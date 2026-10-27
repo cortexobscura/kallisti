@@ -90,10 +90,11 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       }
     },
     // false: the server did not confirm (the session cookie may remain).
-    // The token goes only if it is still the one logged out.
-    logout: async () => {
+    // The token goes only if it is still the one logged out. session: the
+    // login meant (its fingerprint): the server refuses another.
+    logout: async (expected?: string) => {
       const token = session?.get();
-      return call("/api/logout", {}).then(
+      return call("/api/logout", expected ? { session: expected } : {}).then(
         () => (clearIf(token), true),
         () => false,
       );

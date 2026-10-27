@@ -67,3 +67,15 @@ describe("the session token", () => {
     expect(stored).toBe("t3");
   });
 });
+
+describe("logging out", () => {
+  it("names the session it means", async () => {
+    const bodies: unknown[] = [];
+    const fetchFn = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof fetch;
+    await createAccountsApi("http://srv", fetchFn).logout("0123456789abcdef");
+    expect(bodies).toEqual([{ session: "0123456789abcdef" }]);
+  });
+});
