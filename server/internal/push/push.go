@@ -37,7 +37,8 @@ const (
 
 // Note is one push: a short text without the message itself (privacy), the
 // page to open, its chat (Parent: a thread's channel) and author. Tag:
-// notifications of a chat replace each other.
+// notifications of a chat replace each other. Title, Icon: the server's
+// name and logo (see Service.Brand).
 type Note struct {
 	Channel int64  `json:"-"`
 	Parent  int64  `json:"-"`
@@ -45,6 +46,8 @@ type Note struct {
 	Body    string `json:"body"`
 	URL     string `json:"url"`
 	Tag     string `json:"tag"`
+	Title   string `json:"title,omitempty"`
+	Icon    string `json:"icon,omitempty"`
 }
 
 // Sender delivers an encrypted push; status is the push service's answer.
@@ -58,8 +61,11 @@ type Service struct {
 	Store     *store.Store
 	Sender    Sender
 	PublicKey string
-	Now       func() time.Time
-	Account   func(r *http.Request) (store.Account, string, bool)
+	// Brand: the server's name and its logo's icon path ("": Kallisti's;
+	// nil: none).
+	Brand   func() (title, icon string)
+	Now     func() time.Time
+	Account func(r *http.Request) (store.Account, string, bool)
 
 	mu   sync.Mutex
 	last map[string]time.Time // by user and chat
@@ -157,6 +163,9 @@ func (s *Service) deliver(ctx context.Context, name string, n Note) {
 	}
 	topic := fmt.Sprintf("chat-%d", n.Channel)
 	n.Tag = topic
+	if s.Brand != nil {
+		n.Title, n.Icon = s.Brand()
+	}
 	payload, _ := json.Marshal(n)
 	author := names.Key(n.Author)
 	for _, sub := range subs {

@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"slices"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -138,10 +139,23 @@ func run() error {
 	hub.OnUploadDeleted = fileHandler.Remove
 	hub.UploadMax = cfg.UploadMaxBytes
 	hub.SaveFile = fileHandler.Save
+	var builtinServer *builtin
+	// The server's name and logo (admins set them; with Murmur:
+	// Kallisti's), for the page, the manifest and pushes. Atomic: push
+	// workers may ask while the built-in server starts.
+	var named atomic.Pointer[mumbled.Server]
+	brand := func() site.Brand {
+		var out site.Brand
+		if srv := named.Load(); srv != nil {
+			out.Name = srv.ServerName()
+		}
+		out.Logo, _ = db.LogoVersion()
+		return out
+	}
 	// Before the built-in server listens, too.
 	var pushes http.Handler = http.NotFoundHandler() // not app routes
 	if cfg.Builtin != nil && !cfg.Push.Off {
-		svc, err := startPush(cfg, db, accounts, hub)
+		svc, err := startPush(cfg, db, accounts, hub, brand)
 		if err != nil {
 			return err
 		}
@@ -149,7 +163,6 @@ func run() error {
 		pushes = svc
 	}
 	dial, upstream := murmurDialer(cfg)
-	var builtinServer *builtin
 	cleanup := func(time.Time) {}                // guest accounts (built-in server)
 	var avatars http.Handler = mumbled.NoAvatars // Murmur's avatars are not ours to read
 	if cfg.Builtin != nil {
@@ -158,6 +171,7 @@ func run() error {
 			return err
 		}
 		builtinServer = mumble
+		named.Store(mumble.srv)
 		defer mumble.close()
 		dial, upstream = mumble.dial, "built-in on "+cfg.Builtin.Listen
 		accounts.NameTaken = mumble.nameTaken
@@ -262,16 +276,6 @@ func run() error {
 	}
 	// WebSocket upgrades (the client uses /ws) go to the bridge, everything
 	// else to the web app.
-	// The page and the manifest with the server's name and logo (admins
-	// set them; with Murmur: Kallisti's).
-	brand := func() site.Brand {
-		var out site.Brand
-		if builtinServer != nil {
-			out.Name = builtinServer.srv.ServerName()
-		}
-		out.Logo, _ = db.LogoVersion()
-		return out
-	}
 	mux.Handle("/", site.New(b, cfg.WebDir, brand))
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.ListenPort))
@@ -313,13 +317,17 @@ const (
 
 // startPush turns on Web Push notifications: the hub decides who gets one,
 // the service sends them.
-func startPush(cfg config.Config, db *store.Store, accounts *auth.Service, hub *sidecar.Hub) (*push.Service, error) {
+func startPush(cfg config.Config, db *store.Store, accounts *auth.Service, hub *sidecar.Hub, brand func() site.Brand) (*push.Service, error) {
 	public, private, err := push.Keys(db, cfg.Push.PublicKey, cfg.Push.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("push keys: %w", err)
 	}
 	svc := &push.Service{
 		Store: db, PublicKey: public, Now: time.Now,
+		Brand: func() (string, string) {
+			b := brand()
+			return b.Name, site.LogoIcon(b.Logo)
+		},
 		Sender: push.NewWebPush(public, private, cfg.Push.Subject, publicBase(cfg.AllowedOrigins)),
 		Account: func(r *http.Request) (store.Account, string, bool) {
 			acc, ok := accounts.AccountFor(r)

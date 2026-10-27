@@ -393,3 +393,19 @@ func TestSubject(t *testing.T) {
 		}
 	}
 }
+
+// Pushes carry the server's name and logo (none set: the service worker
+// shows Kallisti's).
+func TestDeliverWithTheServersNameAndLogo(t *testing.T) {
+	s, f, _ := newService(t)
+	call(t, s, "POST", "/api/push/subscriptions", "a1", subscribe(phone))
+	s.deliver(context.Background(), "alice", Note{Channel: 1, Body: "x", URL: "/channels/1/7"})
+	if got := f.take(); len(got) != 1 || got[0].note.Title != "" || got[0].note.Icon != "" {
+		t.Fatalf("no brand: %+v", got)
+	}
+	s.Brand = func() (string, string) { return "Our place", "/api/logo/192.png?v=abc" }
+	s.deliver(context.Background(), "alice", Note{Channel: 2, Body: "x", URL: "/channels/2/8"})
+	if got := f.take(); len(got) != 1 || got[0].note.Title != "Our place" || got[0].note.Icon != "/api/logo/192.png?v=abc" {
+		t.Fatalf("with a brand: %+v", got)
+	}
+}

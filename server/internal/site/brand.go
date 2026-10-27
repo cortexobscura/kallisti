@@ -18,6 +18,14 @@ type Brand struct {
 
 func logoURL(size, version string) string { return "/api/logo/" + size + ".png?v=" + version }
 
+// LogoIcon is the logo's icon for notifications ("": no logo).
+func LogoIcon(version string) string {
+	if version == "" {
+		return ""
+	}
+	return logoURL("192", version)
+}
+
 // brandIndex puts the name in the page's title and the logo in its icons
 // (index.html as Vite builds it: other pages stay as they are).
 func brandIndex(page string, b Brand) string {

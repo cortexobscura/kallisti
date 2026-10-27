@@ -92,3 +92,9 @@ func TestTheWebAppsPageCanBeBranded(t *testing.T) {
 		t.Fatalf("manifest: %s %v", out, err)
 	}
 }
+
+func TestLogoIcon(t *testing.T) {
+	if LogoIcon("") != "" || LogoIcon("abc") != "/api/logo/192.png?v=abc" {
+		t.Fatal(LogoIcon(""), LogoIcon("abc"))
+	}
+}
