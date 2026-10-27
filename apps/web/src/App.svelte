@@ -152,7 +152,7 @@
       if (ok === "other") {
         // Another login is here now (another tab): this one ended there.
         account = null;
-        return leave("You were logged out in another tab.");
+        return leave("Another login is active in this browser now.");
       }
       if (ok) account = null;
       leave(ok ? null : "Logging out did not finish: you may still be logged in.");

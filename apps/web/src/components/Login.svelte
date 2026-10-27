@@ -206,7 +206,9 @@
     if (ok === "other") {
       // Another login is here now (another tab): show it, or none.
       const answer = await used.check();
-      if (current(used, at) && answer !== "unknown") onAccountChange(answer);
+      if (!current(used, at)) return;
+      if (answer === "unknown") apiError = "Another login is active in this browser now. Reload the page.";
+      else onAccountChange(answer);
     } else if (ok) onAccountChange(null);
     else apiError = "Logging out did not finish: you may still be logged in. Try again.";
   };
