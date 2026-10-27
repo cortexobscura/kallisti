@@ -11,6 +11,8 @@ const HOME = "https://chat.example";
 const A = "https://a.example";
 const B = "https://b.example";
 
+// One clock for all hubs of a test (tabs of one browser).
+let clock = 1000;
 const setup = (storage = memory(), tokens = new Map<string, string | null>()) => {
   let owner: string | null = "home alice";
   const revoked: [string, string][] = [];
@@ -26,6 +28,7 @@ const setup = (storage = memory(), tokens = new Map<string, string | null>()) =>
       return s;
     },
     revoke: async (origin, token) => void revoked.push([origin, token]),
+    now: () => ++clock,
   });
   return { hub, storage, tokens, revoked, sessions, login: (o: string | null) => void (owner = o) };
 };
@@ -200,6 +203,52 @@ describe("the added servers", () => {
     expect(stale.hub.add(A, "alice", "ta")).toBe(false);
     expect(tokens.get(A)).toBeUndefined();
     expect(loadServers(storage, "home bob")).toEqual([{ origin: B, name: "bob" }]);
+  });
+
+  it("a delayed first follow does not end a list another tab saved after this tab started", () => {
+    const storage = memory();
+    const tokens = new Map<string, string | null>();
+    const slow = setup(storage, tokens); // started, its check still under way
+    const other = setup(storage, tokens);
+    other.login("home bob");
+    other.hub.follow("home bob");
+    other.hub.add(B, "bob", "tb");
+    slow.hub.follow("home alice"); // the old answer
+    slow.hub.restore();
+    expect(tokens.get(B)).toBe("tb");
+    expect(loadServers(storage, "home bob")).toEqual([{ origin: B, name: "bob" }]);
+  });
+
+  it("a late logout of the same account does not sweep that account's newer list", () => {
+    const storage = memory();
+    const tokens = new Map<string, string | null>();
+    const stale = setup(storage, tokens);
+    stale.hub.follow("home alice");
+    stale.hub.add(A, "alice", "ta");
+    const fresh = setup(storage, tokens); // logged out and in again as alice
+    fresh.hub.follow("home alice");
+    fresh.hub.restore();
+    fresh.hub.remove(A);
+    fresh.hub.add(B, "alice", "tb2");
+    stale.login(null);
+    stale.hub.follow(null);
+    expect(tokens.get(B)).toBe("tb2");
+    expect(loadServers(storage, "home alice")).toEqual([{ origin: B, name: "alice" }]);
+  });
+
+  it("remove from a stale tab does not touch another login's token or list", () => {
+    const storage = memory();
+    const tokens = new Map<string, string | null>();
+    const stale = setup(storage, tokens);
+    stale.hub.follow("home alice");
+    stale.hub.add(A, "alice", "ta");
+    const fresh = setup(storage, tokens);
+    fresh.login("home bob");
+    fresh.hub.follow("home bob");
+    fresh.hub.add(A, "bob", "tb");
+    stale.hub.remove(A);
+    expect(tokens.get(A)).toBe("tb");
+    expect(loadServers(storage, "home bob")).toEqual([{ origin: A, name: "bob" }]);
   });
 
   it("close (the app goes away) closes the sessions and keeps list and tokens", () => {
