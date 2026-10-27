@@ -179,8 +179,6 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     });
   });
 
-  // Untracked: callers save from their effects, which must not run again
-  // when the credentials change.
   const begin = async (c: Credentials, fresh: boolean) => {
     if (disposed) return;
     credentials = c;
@@ -207,6 +205,8 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     disposeEffects();
   };
 
+  // Untracked: callers save from their effects, which must not run again
+  // when the credentials change.
   const keepPlace = (p: Place | null, left = false) => {
     place = p;
     const c = untrack(() => credentials);

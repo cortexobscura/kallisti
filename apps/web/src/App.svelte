@@ -62,6 +62,10 @@
   // must not undo a login. The desktop app asks its server when one is
   // chosen (see chooseServer).
   let checking = $state(true);
+  // The home login is known for sure (a check answered, or the user logged
+  // in or out): only then may another owner end the added servers (see
+  // lib/serverHub follow). A failed check knows nothing.
+  let ownerKnown = $state(false);
   const autoLogin = (acc: Account | null) => {
     if (!acc || connection || account !== null) return void (checking = false);
     account = acc;
@@ -71,7 +75,11 @@
   // An account connection failed (for example an expired session): ask the
   // server again, so the login form comes back instead of a dead end.
   $effect(() => {
-    if (session.error && connection?.account) void api.me().then((acc) => (account = acc));
+    // Unknown (the server or the network failed): no change.
+    if (session.error && connection?.account)
+      void api.check().then((acc) => {
+        if (acc !== "unknown") account = acc;
+      });
   });
 
 
@@ -87,8 +95,12 @@
   let reopenSettings = $state(fediBack?.kind === "reauth");
   if (!isDesktop())
     void untrack(() => api)
-      .me()
-      .then((acc) => {
+      .check()
+      .then((answer) => {
+        // Unknown (the server or the network failed): the login form, but
+        // nothing of the last login ends (see ownerKnown).
+        if (answer !== "unknown") ownerKnown = true;
+        const acc = answer === "unknown" ? null : answer;
         // Logged in: a notice over the app (and no name step); else errors
         // on the login screen.
         if (acc) fediSignup = false;
@@ -200,12 +212,14 @@
     kallisti = found ? origin : null;
     if (found) {
       api = createAccountsApi(origin!, fetch, sessionStore(origin!));
-      const acc = await api.me();
+      const answer = await api.check();
       if (mine !== choices) return;
       desktopKind = "kallisti";
-      return autoLogin(acc);
+      if (answer !== "unknown") ownerKnown = true;
+      return autoLogin(answer === "unknown" ? null : answer);
     }
     desktopKind = "mumble";
+    ownerKnown = true; // a Mumble server: no account, no added servers
     checking = false;
   };
   const changeServer = () => {
@@ -284,7 +298,7 @@
   const owner = $derived(account && !account.temporary ? `${homeOrigin()} ${account.name}` : null);
   $effect(() => {
     const now = owner;
-    if (!checking) untrack(() => hub.follow(now));
+    if (ownerKnown) untrack(() => hub.follow(now));
   });
   let addingServer = $state(false);
   // The add dialog's logins: the token stays in memory until the hub
@@ -445,6 +459,7 @@
       // home login too.
       if (!acc) hub.endAll();
       account = acc;
+      ownerKnown = true;
     }}
     onConnect={start}
     {fediSignup}

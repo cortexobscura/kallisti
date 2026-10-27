@@ -143,12 +143,17 @@ describe("a server session", () => {
     made[0]!.drop("kicked");
     session.drafts.value = new Map([["3", "half a message"]]);
     const files = session.pendingFiles;
+    const place = { text: 3 } as unknown as Parameters<typeof session.keepPlace>[0];
+    session.keepPlace(place);
+    const streams = session.streams;
     await session.retry();
     await settle();
     expect(made).toHaveLength(2);
     expect(session.connection).toBe(made[1]);
     expect(session.drafts.value.get("3")).toBe("half a message");
     expect(session.pendingFiles).toBe(files);
+    expect(session.place).toEqual(place);
+    expect(session.streams).toBe(streams);
     session.dispose();
   });
 
