@@ -806,3 +806,30 @@ func TestUnknownNamesFromOtherSitesDoNotFillTheTable(t *testing.T) {
 		}
 	}
 }
+
+// /api/me names the session by a short fingerprint (not its key): the
+// same login gives the same one, another login of the account another.
+func TestMeNamesTheSession(t *testing.T) {
+	_, srv := setup(t)
+	resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	first := sessionCookie(resp)
+	resp, _ = post(t, srv, "/api/login", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	second := sessionCookie(resp)
+	me := func(c *http.Cookie) string {
+		req, _ := http.NewRequest("GET", srv.URL+"/api/me", nil)
+		req.AddCookie(c)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var v map[string]any
+		json.NewDecoder(resp.Body).Decode(&v)
+		s, _ := v["session"].(string)
+		return s
+	}
+	a, b := me(first), me(second)
+	if a == "" || len(a) != 16 || a != me(first) || a == b || strings.Contains(tokenHash(first.Value), a) {
+		t.Fatalf("sessions %q %q", a, b)
+	}
+}

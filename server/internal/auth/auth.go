@@ -278,7 +278,7 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.streamKey(w, r)
 	case r.URL.Path == "/api/me" && r.Method == http.MethodGet:
 		if acc, ok := a.AccountFor(r); ok {
-			me := map[string]any{"name": acc.Name, "temporary": acc.Temporary, "password": acc.PasswordHash != ""}
+			me := map[string]any{"name": acc.Name, "temporary": acc.Temporary, "password": acc.PasswordHash != "", "session": sessionID(a.SessionKey(r))}
 			if f := a.fediMe(acc); f != nil {
 				me["fedi"] = f
 			}
@@ -745,6 +745,13 @@ func (a *Service) cors(w http.ResponseWriter, r *http.Request) {
 
 func (a *Service) allow(r *http.Request) bool {
 	return a.logins.allow(clientip.Of(r, a.TrustForwardedFor), rate.Limit(perMinute)/60, burst)
+}
+
+// sessionID: a short name of a session for the web client (whose added
+// servers belong to one login), derived from its key, not the key.
+func sessionID(key string) string {
+	sum := sha256.Sum256([]byte("session-id:" + key))
+	return hex.EncodeToString(sum[:8])
 }
 
 func tokenHash(token string) string {
