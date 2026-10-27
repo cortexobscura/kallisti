@@ -165,7 +165,9 @@ func (f *failures) take(name string, now time.Time) bool {
 	key := failureKey(name)
 	b := f.m[key]
 	if b == nil {
-		f.evict(now)
+		if !f.room(now) {
+			return false
+		}
 		b = &bucket{tokens: burst, at: now}
 		f.m[key] = b
 	}
@@ -186,23 +188,20 @@ func (f *failures) refund(name string) {
 	}
 }
 
-// evict keeps the map bounded: names that are full again first, then any
-// (a reset limit costs an attacker thousands of other names first).
-func (f *failures) evict(now time.Time) {
+// room keeps the map bounded: only names that are full again go (one
+// still counting is never dropped, or many other names could reset a
+// blocked account). False: every name is counting; a new one waits (only
+// logins from other sites, so nobody is locked out of our own).
+func (f *failures) room(now time.Time) bool {
 	if len(f.m) < maxFailureNames {
-		return
+		return true
 	}
 	for k, b := range f.m {
 		if b.refill(now); b.tokens >= burst {
 			delete(f.m, k)
 		}
 	}
-	for k := range f.m {
-		if len(f.m) < maxFailureNames*9/10 {
-			break
-		}
-		delete(f.m, k)
-	}
+	return len(f.m) < maxFailureNames
 }
 
 // ownSite: new accounts and guests only on our own pages and in the apps,

@@ -751,3 +751,30 @@ func TestHostOnlyCookiesOverHTTPS(t *testing.T) {
 		t.Fatal("a plain-named cookie counted over HTTPS")
 	}
 }
+
+// A full table never drops a name that is still counting: a blocked
+// account cannot be reset by many other names; new names wait instead.
+func TestFailuresKeepActiveNamesWhenFull(t *testing.T) {
+	var f failures
+	now := time.Now()
+	for range burst {
+		f.take("alice", now)
+	}
+	if f.take("alice", now) {
+		t.Fatal("alice not blocked")
+	}
+	for i := range maxFailureNames {
+		f.take(fmt.Sprintf("junk%d", i), now)
+	}
+	if f.take("alice", now) {
+		t.Fatal("alice reset by a full table")
+	}
+	if f.take("newcomer", now) {
+		t.Fatal("a new name got in while every name is counting")
+	}
+	// Later, names that are full again make room.
+	later := now.Add(time.Hour)
+	if !f.take("newcomer", later) {
+		t.Fatal("no room after an hour")
+	}
+}
