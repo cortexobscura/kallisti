@@ -102,7 +102,7 @@ func TestProviderCodesAndTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, _ := client.RegisterApp(ctx, inst, "C", "https://c.example/cb", "")
+	other, _ := client.RegisterApp(ctx, inst, "C", "https://c.example/api/fedi/callback", "")
 	acc, _ := p.Store.CreateAccount(store.Account{Name: "lain", PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, time.Now())
 	code := func(c fedi.App, uri, verifier string) string {
 		return p.Provider.issue(acc.ID, c.ClientID, uri, "read:accounts", fedi.Challenge(verifier), time.Now())
@@ -126,13 +126,13 @@ func TestProviderCodesAndTokens(t *testing.T) {
 	if _, err := client.Token(ctx, inst, app, redirect, code(app, redirect, v), fedi.NewVerifier()); err == nil {
 		t.Error("a wrong verifier worked")
 	}
-	if _, err := client.Token(ctx, inst, app, "https://evil.example/cb", code(app, redirect, v), v); err == nil {
+	if _, err := client.Token(ctx, inst, app, "https://evil.example/api/fedi/callback", code(app, redirect, v), v); err == nil {
 		t.Error("another redirect worked")
 	}
 	if _, err := client.Token(ctx, inst, other, redirect, code(app, redirect, v), v); err == nil {
 		t.Error("another client's code worked")
 	}
-	if _, err := client.Token(ctx, inst, fedi.App{ClientID: other.ClientID, ClientSecret: "x"}, "https://c.example/cb", code(app, redirect, v), v); err == nil {
+	if _, err := client.Token(ctx, inst, fedi.App{ClientID: other.ClientID, ClientSecret: "x"}, "https://c.example/api/fedi/callback", code(app, redirect, v), v); err == nil {
 		t.Error("another app with its own redirect took the code")
 	}
 	if _, err := client.VerifyCredentials(ctx, inst, "not-a-token"); err == nil {
@@ -151,8 +151,8 @@ func TestAuthorizeRefusesBadRequests(t *testing.T) {
 	ctx := context.Background()
 	client := fedi.NewClient(func(netip.AddrPort) bool { return true }, pSrv.Client().Transport.(*http.Transport).TLSClientConfig, false)
 	inst := fedi.Instance{Host: strings.TrimPrefix(pSrv.URL, "https://"), Base: pSrv.URL}
-	app, _ := client.RegisterApp(ctx, inst, "B", "https://b.example/cb", "")
-	good := url.Values{"client_id": {app.ClientID}, "redirect_uri": {"https://b.example/cb"}, "response_type": {"code"}, "scope": {"read:accounts"}, "state": {"s"}, "code_challenge": {fedi.Challenge(fedi.NewVerifier())}, "code_challenge_method": {"S256"}}
+	app, _ := client.RegisterApp(ctx, inst, "B", "https://b.example/api/fedi/callback", "")
+	good := url.Values{"client_id": {app.ClientID}, "redirect_uri": {"https://b.example/api/fedi/callback"}, "response_type": {"code"}, "scope": {"read:accounts"}, "state": {"s"}, "code_challenge": {fedi.Challenge(fedi.NewVerifier())}, "code_challenge_method": {"S256"}}
 	c := &http.Client{Transport: pSrv.Client().Transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	try := func(change func(url.Values)) int {
 		q := url.Values{}
@@ -171,8 +171,16 @@ func TestAuthorizeRefusesBadRequests(t *testing.T) {
 		t.Fatalf("good: %d", code)
 	}
 	for name, change := range map[string]func(url.Values){
-		"another client":  func(q url.Values) { q.Set("client_id", clientIDFor("https://c.example/cb")) },
-		"other redirect":  func(q url.Values) { q.Set("redirect_uri", "https://evil.example/cb") },
+		"another client": func(q url.Values) { q.Set("client_id", clientIDFor("https://c.example/api/fedi/callback")) },
+		"another path": func(q url.Values) {
+			q.Set("redirect_uri", "https://b.example/open-redirect")
+			q.Set("client_id", clientIDFor("https://b.example/open-redirect"))
+		},
+		"this server": func(q url.Values) {
+			q.Set("redirect_uri", pSrv.URL+"/api/fedi/callback")
+			q.Set("client_id", clientIDFor(pSrv.URL+"/api/fedi/callback"))
+		},
+		"other redirect":  func(q url.Values) { q.Set("redirect_uri", "https://evil.example/api/fedi/callback") },
 		"no PKCE":         func(q url.Values) { q.Del("code_challenge") },
 		"plain PKCE":      func(q url.Values) { q.Set("code_challenge_method", "plain") },
 		"another scope":   func(q url.Values) { q.Set("scope", "write") },
@@ -191,8 +199,8 @@ func TestProviderRefusals(t *testing.T) {
 	ctx := context.Background()
 	client := fedi.NewClient(func(netip.AddrPort) bool { return true }, pSrv.Client().Transport.(*http.Transport).TLSClientConfig, false)
 	inst := fedi.Instance{Host: strings.TrimPrefix(pSrv.URL, "https://"), Base: pSrv.URL}
-	app, _ := client.RegisterApp(ctx, inst, "B", "https://b.example/cb", "")
-	query := url.Values{"client_id": {app.ClientID}, "redirect_uri": {"https://b.example/cb"}, "response_type": {"code"}, "state": {"s"}, "code_challenge": {fedi.Challenge(fedi.NewVerifier())}, "code_challenge_method": {"S256"}}.Encode()
+	app, _ := client.RegisterApp(ctx, inst, "B", "https://b.example/api/fedi/callback", "")
+	query := url.Values{"client_id": {app.ClientID}, "redirect_uri": {"https://b.example/api/fedi/callback"}, "response_type": {"code"}, "state": {"s"}, "code_challenge": {fedi.Challenge(fedi.NewVerifier())}, "code_challenge_method": {"S256"}}.Encode()
 	ask := func(name string, temporary bool) int {
 		acc, err := p.Store.CreateAccount(store.Account{Name: name, PasswordHash: "h", Temporary: temporary, CertPEM: []byte("c"), KeyPEM: []byte("k")}, time.Now())
 		if err != nil {

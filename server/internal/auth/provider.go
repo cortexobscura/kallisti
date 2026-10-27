@@ -57,7 +57,7 @@ type Provider struct {
 }
 
 type oauthCode struct {
-	account                           int64
+	account                            int64
 	client, redirect, scopes, pkceS256 string
 }
 
@@ -115,7 +115,7 @@ func (a *Service) parseAuthorize(q url.Values) (authRequest, error) {
 		}
 	}
 	r := authRequest{client: q.Get("client_id"), redirect: q.Get("redirect_uri"), scopes: strings.Join(scopes, " "), state: q.Get("state"), pkce: q.Get("code_challenge")}
-	if !validRedirect(r.redirect) || r.client != clientIDFor(r.redirect) || q.Get("response_type") != "code" ||
+	if !validRedirect(r.redirect) || originOf(r.redirect) == originOf(a.Provider.Public) || r.client != clientIDFor(r.redirect) || q.Get("response_type") != "code" ||
 		q.Get("code_challenge_method") != "S256" || len(r.pkce) != 43 || len(r.state) > 512 {
 		return authRequest{}, errBadRequest
 	}
@@ -216,11 +216,14 @@ func (a *Service) registerClient(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": name, "website": website, "redirect_uri": redirect, "client_id": id, "client_secret": randomHex(32)})
 }
 
-// validRedirect: one absolute https URL (http only on this computer, for
-// development), without a fragment or credentials.
+// validRedirect: another Kallisti server's fediverse login callback
+// (https, http only on this computer for development): that fixed path
+// only, so no other page of a site (an open redirect, an address that
+// leaks) can take codes in its name; the consent names the site.
 func validRedirect(raw string) bool {
 	u, err := url.Parse(raw)
-	if err != nil || len(raw) > 2000 || u.Host == "" || u.Fragment != "" || u.User != nil || strings.ContainsAny(raw, " \n") {
+	if err != nil || len(raw) > 2000 || u.Host == "" || u.Path != "/api/fedi/callback" || u.RawQuery != "" || u.Fragment != "" ||
+		u.User != nil || u.Opaque != "" {
 		return false
 	}
 	return u.Scheme == "https" || u.Scheme == "http" && config.IsLocalhost(u.Scheme+"://"+u.Host)
