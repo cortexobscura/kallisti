@@ -66,6 +66,9 @@
   // in or out): only then may another owner end the added servers (see
   // lib/serverHub follow). A failed check knows nothing.
   let ownerKnown = $state(false);
+  // Each login, logout and server change: older account checks count for
+  // nothing (see the check after an error).
+  let authGeneration = 0;
   const autoLogin = (acc: Account | null) => {
     if (!acc || connection || account !== null) return void (checking = false);
     account = acc;
@@ -75,11 +78,14 @@
   // An account connection failed (for example an expired session): ask the
   // server again, so the login form comes back instead of a dead end.
   $effect(() => {
-    // Unknown (the server or the network failed): no change.
-    if (session.error && connection?.account)
+    // Unknown (the server or the network failed): no change; an answer
+    // from before a login, logout or server change counts for nothing.
+    if (session.error && connection?.account) {
+      const mine = authGeneration;
       void api.check().then((acc) => {
-        if (acc !== "unknown") account = acc;
+        if (acc !== "unknown" && mine === authGeneration) account = acc;
       });
+    }
   });
 
 
@@ -113,8 +119,9 @@
   // endAdded: the home login ends, and the added servers with it (see
   // lib/serverHub); not for a refused certificate (no login ended).
   const leave = (note: string | null, endAdded = true) => {
+    authGeneration++;
     loginNote = note;
-    addingServer = false;
+    addingFor = null;
     if (endAdded) hub.endAll();
     session.leave();
     closeAudio(audio);
@@ -223,6 +230,7 @@
     checking = false;
   };
   const changeServer = () => {
+    authGeneration++;
     hub.endAll(); // another home server: not with this one's added servers
     choices++;
     desktopKind = null;
@@ -300,7 +308,10 @@
     const now = owner;
     if (ownerKnown) untrack(() => hub.follow(now));
   });
-  let addingServer = $state(false);
+  // The add dialog, for the home login that opened it (another login
+  // closes it, and a login there that ends later is not taken).
+  let addingFor = $state<string | null>(null);
+  const addingServer = $derived(addingFor !== null && addingFor === owner);
   // The add dialog's logins: the token stays in memory until the hub
   // takes it.
   const dialogApi = (origin: string) => {
@@ -457,6 +468,7 @@
     onAccountChange={(acc) => {
       // A logout from the login screen (after a kick or refusal) ends the
       // home login too.
+      authGeneration++;
       if (!acc) hub.endAll();
       account = acc;
       ownerKnown = true;
@@ -471,7 +483,7 @@
     {#if a.session.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
     <div class="client" inert={a.session.lost}>
       {#key a.session.connection}
-        <Client connection={a.session.connection} account={addedActions(a.origin)} push={false} resume={a.session.place} onPlace={(p) => a.session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={a.session.drafts} pendingFiles={a.session.pendingFiles} streams={a.session.streams} servers={rail} onSelectServer={selectServer} onAddServer={canAdd ? () => (addingServer = true) : undefined} />
+        <Client connection={a.session.connection} account={addedActions(a.origin)} push={false} resume={a.session.place} onPlace={(p) => a.session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={a.session.drafts} pendingFiles={a.session.pendingFiles} streams={a.session.streams} servers={rail} onSelectServer={selectServer} onAddServer={canAdd ? () => (addingFor = owner) : undefined} />
       {/key}
     </div>
   {:else}
@@ -500,7 +512,7 @@
   <!-- While lost, the old view stays readable but takes no input (it would be lost). -->
   <div class="client" inert={session.lost}>
     {#key connection}
-      <Client {connection} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} servers={rail} onSelectServer={selectServer} onAddServer={canAdd ? () => (addingServer = true) : undefined} />
+      <Client {connection} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} servers={rail} onSelectServer={selectServer} onAddServer={canAdd ? () => (addingFor = owner) : undefined} />
     {/key}
   </div>
 {:else}
@@ -517,8 +529,8 @@
     homeCookie={!desktop}
     taken={hub.servers.map((a) => a.origin)}
     apiFor={dialogApi}
-    onAdded={(origin, acc, token) => hub.add(origin, acc.name, token)}
-    onClose={() => (addingServer = false)}
+    onAdded={(origin, acc, token) => addingFor === owner && hub.add(origin, acc.name, token)}
+    onClose={() => (addingFor = null)}
   />
 {/if}
 
