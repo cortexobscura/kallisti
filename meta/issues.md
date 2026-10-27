@@ -17,3 +17,5 @@
 - [ ] [Voice CI: Safari fails now and then](issues/voice-ci-flaky-safari.md)
 - [ ] [Stream sound drifts after lost packets (Chrome)](issues/stream-sound-drift-after-loss.md)
 - [ ] [Firefox: no stream controls on hover](issues/firefox-stream-controls.md)
+- [ ] [Message HTML: forms](issues/message-forms.md)
+- [ ] [Mentions of names with emoji](issues/mention-emoji-names.md)
