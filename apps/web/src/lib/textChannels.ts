@@ -204,6 +204,9 @@ export type ServerEvent =
   // Admins changed whether guests may only read.
   | { type: "guests-read-only"; on: boolean }
   | { type: "captcha"; level: CaptchaLevel }
+  // Admins renamed the server (the state has it as the root channel's
+  // name: the confirmation only).
+  | { type: "server-name"; name: string }
   // Every connection (admins, asked for: see lib/connections).
   | { type: "connections"; connections: Connection[] }
   // The message rules (admins, asked for or saved: see lib/messageRules).
@@ -645,6 +648,8 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
       return typeof v.on === "boolean" ? { type: "guests-read-only", on: v.on } : null;
     case "captcha":
       return isCaptchaLevel(v.level) ? { type: "captcha", level: v.level } : null;
+    case "server-name":
+      return typeof v.name === "string" ? { type: "server-name", name: v.name } : null;
     case "connections": {
       const connections = parseConnections(v.connections);
       return connections && { type: "connections", connections };
@@ -872,6 +877,8 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
       return { ...state, guestsReadOnly: event.on };
     case "captcha":
       return { ...state, captcha: event.level };
+    case "server-name":
+      return state; // the root channel's name (Mumble)
     case "connections":
       return { ...state, connections: event.connections };
     case "message-rules":
@@ -1140,6 +1147,7 @@ export type ManageAction =
   | { deleteMessages: UserTarget; seconds: number }
   | { guestsReadOnly: boolean }
   | { captcha: CaptchaLevel }
+  | { serverName: string }
   // Every connection (admins).
   | { connections: true }
   // The message rules (admins): ask for them, or save new ones.
@@ -1180,6 +1188,7 @@ const manageBody = (a: ManageAction) => {
   if ("deleteMessages" in a) return { type: "delete-messages", ...a.deleteMessages, seconds: a.seconds };
   if ("guestsReadOnly" in a) return { type: "set-guests-read-only", on: a.guestsReadOnly };
   if ("captcha" in a) return { type: "set-captcha", level: a.captcha };
+  if ("serverName" in a) return { type: "set-server-name", name: a.serverName };
   if ("connections" in a) return { type: "connections" };
   if ("messageRules" in a) return { type: "message-rules" };
   if ("setMessageRules" in a) return { type: "set-message-rules", rules: a.setMessageRules };

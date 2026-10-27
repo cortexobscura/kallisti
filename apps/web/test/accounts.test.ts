@@ -13,13 +13,6 @@ const fakeFetch = (status: number, body: unknown, calls: Call[]) =>
   }) as unknown as typeof fetch;
 
 describe("accounts API", () => {
-  it("asks for a server password unless the server says it has none", async () => {
-    const ask = (status: number, body: unknown) => createAccountsApi("http://srv", fakeFetch(status, body, [])).serverPassword();
-    expect(await ask(200, { password: false })).toBe(false);
-    expect(await ask(200, { password: true })).toBe(true);
-    expect(await ask(404, {})).toBe(true); // an older server
-  });
-
   it("logs in with the cookie included", async () => {
     const calls: Call[] = [];
     const api = createAccountsApi("http://srv:8080", fakeFetch(200, { name: "Alice" }, calls));

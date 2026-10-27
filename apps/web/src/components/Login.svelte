@@ -122,8 +122,15 @@
   // once the server says guests may need one (most have none: no field
   // that comes and goes).
   let askServerPassword = $state(false);
+  // The server's name (admins set it), also as the tab's title.
+  let serverName = $state<string | null>(null);
   $effect(() => {
-    if (desktop?.kind !== "mumble") void api.serverPassword().then((ask) => (askServerPassword = ask));
+    if (desktop?.kind === "mumble") return;
+    void api.serverInfo().then((info) => {
+      askServerPassword = info.password;
+      serverName = info.name;
+      document.title = info.name ?? "Kallisti";
+    });
   });
 
   // Fediverse logins: the server's switch; the instance from last time.
@@ -253,7 +260,7 @@
     </form>
     {:else}
     <form class="card" onsubmit={submit}>
-      <h1>Welcome to Kallisti</h1>
+      <h1>Welcome to {serverName ?? "Kallisti"}</h1>
       {@render serverLine()}
       {#if !mumbleOnly}
       <div class="tabs" role="group" aria-label="How to join">

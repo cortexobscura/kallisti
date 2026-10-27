@@ -1087,8 +1087,9 @@
   // The tab title: mentions and direct messages not read (see lib/title).
   $effect(() => {
     const sum = (r: Record<string | number, number>) => Object.values(r).reduce((a, n) => a + n, 0);
-    document.title = tabTitle(serverName, sum(mentions) + sum(unread));
-    return () => (document.title = "Kallisti");
+    const name = serverName;
+    document.title = tabTitle(name, sum(mentions) + sum(unread));
+    return () => (document.title = name);
   });
   $effect(() => {
     if (dm === null) return;
@@ -1741,6 +1742,8 @@
     onAddSticker={connection.uploadSticker}
     onEditSticker={connection.renameSticker}
     onDeleteSticker={connection.deleteSticker}
+    {serverName}
+    onServerName={mayChangeGuests(server, text) ? (name) => connection.request({ serverName: name }) : undefined}
     guestsReadOnly={mayChangeGuests(server, text) ? text.guestsReadOnly : null}
     onGuestsReadOnly={(on) => connection.request({ guestsReadOnly: on })}
     captcha={text.captcha}

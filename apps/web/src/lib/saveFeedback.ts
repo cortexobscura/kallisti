@@ -71,6 +71,7 @@ export const confirmsManage = (a: ManageAction): ((ev: ServerEvent) => boolean) 
   const is = (type: ServerEvent["type"]) => (ev: ServerEvent) => ev.type === type;
   if ("guestsReadOnly" in a) return (ev) => ev.type === "guests-read-only" && ev.on === a.guestsReadOnly;
   if ("captcha" in a) return (ev) => ev.type === "captcha" && ev.level === a.captcha;
+  if ("serverName" in a) return (ev) => ev.type === "server-name" && ev.name === a.serverName.trim();
   if ("setMessageRules" in a || "messageRules" in a) return is("message-rules");
   if ("setPrivate" in a) return (ev) => ev.type === "private" && ev.channels.some((c) => c.channel === a.setPrivate) === a.on;
   if ("createPrivateVoice" in a) return is("private");

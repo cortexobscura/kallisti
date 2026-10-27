@@ -99,9 +99,13 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     removeStreamKey: async () => {
       await call("/api/stream-key", undefined, "DELETE");
     },
+    // Whether guests may need the server password, and the server's name
+    // (null: not known, with Murmur or an older server).
+    serverInfo: async () => {
+      const v = await call("/api/server").catch(() => ({}) as Answer & { password?: boolean; name?: unknown });
+      return { password: v.password !== false, name: typeof v.name === "string" ? v.name : null };
+    },
     // Fediverse logins (see lib/fedi): on for this server?
-    // Guests may need the server's password (also when the server does not say).
-    serverPassword: async () => (await call("/api/server").catch(() => ({}) as Answer & { password?: boolean })).password !== false,
     fediEnabled: async () => (await call("/api/fedi").catch(() => ({}) as Answer & { enabled?: boolean })).enabled === true,
     // The instance's page to go to, for a login (or a link: with the
     // account's password, "" for one without).

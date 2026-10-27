@@ -51,6 +51,8 @@
     onAddSticker,
     onEditSticker,
     onDeleteSticker,
+    serverName = "",
+    onServerName,
     guestsReadOnly = null,
     onGuestsReadOnly,
     captcha = "off",
@@ -83,6 +85,9 @@
     onAddSticker: (fields: StickerFields, file: File) => Promise<void>;
     onEditSticker: (id: number, fields: StickerFields) => Promise<void>;
     onDeleteSticker: (id: number) => Promise<void>;
+    // Admins: the server's name; without onServerName, no tab.
+    serverName?: string;
+    onServerName?: (name: string) => Promise<void>;
     // Admins: whether guests may only read (null: not ours to change).
     guestsReadOnly?: boolean | null;
     onGuestsReadOnly?: (on: boolean) => Promise<void>;
@@ -113,7 +118,7 @@
   } = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
-  let tab = $state<"bans" | "users" | "emoji" | "stickers" | "guests" | "threads" | "rules" | "connections" | "recordings">(
+  let tab = $state<"server" | "bans" | "users" | "emoji" | "stickers" | "guests" | "threads" | "rules" | "connections" | "recordings">(
     untrack(() => (rights.bans ? "bans" : rights.users ? "users" : rights.emoji ? "emoji" : "guests")),
   );
   let renaming = $state<{ id: number; name: string } | null>(null);
@@ -123,6 +128,7 @@
   const saves = {
     bans: createSave(),
     users: createSave(),
+    name: createSave(),
     guests: createSave(),
     captcha: createSave(),
     archive: createSave(),
@@ -134,6 +140,11 @@
     onCaptcha && saves.captcha.run(() => onCaptcha(el.value as CaptchaLevel), () => (el.value = captcha));
   const setArchive = (el: HTMLSelectElement) =>
     onThreadArchive && saves.archive.run(() => onThreadArchive(Number(el.value)), () => (el.value = String(threadArchive)));
+  let nameDraft = $state(untrack(() => serverName));
+  const saveName = (e: SubmitEvent) => {
+    e.preventDefault();
+    if (onServerName) saves.name.run(() => onServerName(nameDraft));
+  };
   $effect(() => dialog?.showModal());
   $effect(() => {
     if (tab === "bans" || tab === "users") onLoad(tab);
@@ -200,6 +211,9 @@
     <button type="button" class="close" onclick={() => (dialog?.close(), onClose())} aria-label="Close">×</button>
   </header>
   <div class="tabs" role="tablist">
+    {#if onServerName}
+      <button role="tab" aria-selected={tab === "server"} onclick={() => (tab = "server")}>Server</button>
+    {/if}
     {#if rights.bans}
       <button role="tab" aria-selected={tab === "bans"} onclick={() => (tab = "bans")}>Bans</button>
     {/if}
@@ -254,6 +268,16 @@
       <SaveStatus save={saves.bans.state} done="Removed" />
       {#if !rights.editBans}<p class="note">Only admins change the ban list.</p>{/if}
     {/if}
+  {:else if tab === "server"}
+    <form class="rules" onsubmit={saveName}>
+      <label>
+        Name
+        <input bind:value={nameDraft} required maxlength="100" />
+      </label>
+      <button type="submit" disabled={saves.name.busy || !nameDraft.trim()}>{busyLabel(saves.name.state, "Save")}</button>
+      <SaveStatus save={saves.name.state} />
+    </form>
+    <p class="note">In the top left, as the tab's title and on the login page. Mumble clients see it as the name of the root channel.</p>
   {:else if tab === "guests"}
     <label class="check">
       <input type="checkbox" checked={guestsReadOnly === true} disabled={saves.guests.busy} onchange={(e) => setGuests(e.currentTarget)} />
