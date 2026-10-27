@@ -181,6 +181,25 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
 
   // Untracked: callers save from their effects, which must not run again
   // when the credentials change.
+  const begin = async (c: Credentials, fresh: boolean) => {
+    if (disposed) return;
+    credentials = c;
+    const mine = ++starts;
+    stopReconnecting();
+    if (fresh) {
+      // After a refresh: back where this tab was (see lib/place).
+      place = loadPlace(deps.tabStorage(), placeKeyOf(c));
+      drafts = { value: new Map() };
+      streams = { watching: [], lost: loadLost(deps.tabStorage(), streamsKeyOf(c), Date.now()) };
+      // Per server and user: another account here does not get the files.
+      pendingFiles = createPendingFiles(indexedDbStore(), [deps.site(), c.server ?? "", c.username].join(" "));
+    }
+    connection?.close();
+    const target = await deps.urlFor(c);
+    if (mine !== starts) return;
+    connection = connectTo(target, c);
+  };
+
   const dispose = () => {
     disposed = true;
     starts++;
@@ -229,23 +248,14 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     get pendingFiles() {
       return pendingFiles;
     },
-    // Connects (again) with these credentials; a refusal of the address
-    // throws (for the login screen).
-    start: async (c: Credentials) => {
-      if (disposed) return;
-      credentials = c;
-      const mine = ++starts;
-      stopReconnecting();
-      // After a refresh: back where this tab was (see lib/place).
-      place = loadPlace(deps.tabStorage(), placeKeyOf(c));
-      drafts = { value: new Map() };
-      streams = { watching: [], lost: loadLost(deps.tabStorage(), streamsKeyOf(c), Date.now()) };
-      // Per server and user: another account here does not get the files.
-      pendingFiles = createPendingFiles(indexedDbStore(), [deps.site(), c.server ?? "", c.username].join(" "));
-      connection?.close();
-      const target = await deps.urlFor(c);
-      if (mine !== starts) return;
-      connection = connectTo(target, c);
+    // Connects with these credentials (a login: fresh drafts and files);
+    // a refusal of the address throws (for the login screen).
+    start: (c: Credentials) => begin(c, true),
+    // Connects again with the same credentials, keeping drafts, files,
+    // place and streams ("Try again" after a refusal or a failed start).
+    retry: async () => {
+      const c = untrack(() => credentials);
+      if (c) await begin(c, false);
     },
     // Ends it: no connection, nothing to come back to.
     leave: () => {

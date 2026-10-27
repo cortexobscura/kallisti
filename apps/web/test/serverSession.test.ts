@@ -136,6 +136,22 @@ describe("a server session", () => {
     session.dispose();
   });
 
+  it("retry connects again and keeps drafts, files and the place", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.drop("kicked");
+    session.drafts.value = new Map([["3", "half a message"]]);
+    const files = session.pendingFiles;
+    await session.retry();
+    await settle();
+    expect(made).toHaveLength(2);
+    expect(session.connection).toBe(made[1]);
+    expect(session.drafts.value.get("3")).toBe("half a message");
+    expect(session.pendingFiles).toBe(files);
+    session.dispose();
+  });
+
   it("close ends everything and closes the connection", async () => {
     const { session, made } = setup();
     await session.start(credentials);
