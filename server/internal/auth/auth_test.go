@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -337,14 +338,26 @@ func TestOtherSitesUseTokens(t *testing.T) {
 	if w.Header().Get("Access-Control-Allow-Origin") != "https://other-kallisti.example" || w.Header().Get("Access-Control-Allow-Credentials") != "" {
 		t.Fatalf("cors %v", w.Header())
 	}
-	req, _ := http.NewRequest("POST", srv.URL+"/api/guest", strings.NewReader(`{}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "https://other-kallisti.example")
-	req.Header.Set("Sec-Fetch-Site", "cross-site")
-	resp, _ := http.DefaultClient.Do(req)
-	resp.Body.Close()
-	if resp.StatusCode == http.StatusForbidden {
-		t.Fatal("a token request from another site was refused")
+	post := func(path, origin string) int {
+		req, _ := http.NewRequest("POST", srv.URL+path, strings.NewReader(`{"name":"x","password":"y"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if post("/api/login", "https://other-kallisti.example") == http.StatusForbidden {
+		t.Fatal("a token login from another site was refused")
+	}
+	// Guest accounts only on our own pages and in the apps: else any site
+	// could make its visitors fill the server with guests.
+	a.GuestAccounts = true
+	if got := post("/api/guest", "https://other-kallisti.example"); got != http.StatusForbidden {
+		t.Fatalf("a guest from another site: %d, want 403", got)
+	}
+	if got := post("/api/guest", "tauri://localhost"); got == http.StatusForbidden {
+		t.Fatalf("a guest in the app: %d", got)
 	}
 	// The cookie counts only without an origin or from our own: not from a
 	// sibling subdomain (same site: the browser sends the cookie), nor from
@@ -583,5 +596,35 @@ func TestServerSaysItsNameAndLogo(t *testing.T) {
 	}
 	if v := get(); v["logo"] != version {
 		t.Fatalf("with a logo %v", v)
+	}
+}
+
+// Password guessing spread over many addresses (another site's visitors)
+// stops at a limit per account.
+func TestLoginsPerAccountAreLimited(t *testing.T) {
+	a, srv := setup(t)
+	a.TrustForwardedFor = true
+	status := 0
+	for i := range 40 {
+		req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(`{"name":"alice","password":"guess"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("203.0.113.%d", i+1))
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		if status = resp.StatusCode; status == http.StatusTooManyRequests {
+			break
+		}
+	}
+	if status != http.StatusTooManyRequests {
+		t.Fatalf("40 guesses from 40 addresses: %d", status)
+	}
+	// Other accounts are not held up.
+	req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(`{"name":"bob","password":"guess"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-For", "198.51.100.1")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bob: %d", resp.StatusCode)
 	}
 }

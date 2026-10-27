@@ -35,6 +35,9 @@ const (
 	// Account creation and login attempts per client IP.
 	perMinute = 10
 	burst     = 10
+	// Per account name, whatever the address (guesses spread over another
+	// site's visitors): 30 an hour after a burst of 10.
+	accountPerHour = 30
 	// Guest accounts per client IP: a few at once, then one per 10 minutes.
 	guestBurst = 5
 	guestEvery = 10 * time.Minute
@@ -89,8 +92,8 @@ type Service struct {
 	// if it has none if onlyIfNone. Nil: none.
 	SetAvatar func(acc store.Account, avatar []byte, onlyIfNone bool)
 
-	logins, guests limiter
-	challenges     challenges
+	logins, guests, accounts limiter
+	challenges               challenges
 }
 
 // limiter keeps a rate limiter per client IP.
@@ -307,6 +310,10 @@ func (a *Service) create(w http.ResponseWriter, r *http.Request) {
 // guest makes a temporary account: no password, kept by its session
 // cookie, deleted after a day without a visit.
 func (a *Service) guest(w http.ResponseWriter, r *http.Request) {
+	if !config.OwnSite(a.AllowedOrigins, r.Header.Get("Origin")) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "join as a guest on the server's own site"})
+		return
+	}
 	if !a.allow(r) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 		return
@@ -389,6 +396,10 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 	var c credentials
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&c) != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if !a.accounts.allow(names.Key(c.Name), rate.Limit(accountPerHour)/3600, burst) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts for this name, try again later"})
 		return
 	}
 	acc, err := a.Store.AccountByName(c.Name)

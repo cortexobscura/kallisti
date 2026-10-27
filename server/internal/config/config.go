@@ -261,6 +261,17 @@ func CookieOrigin(allowed []string, origin string) bool {
 	return origin == "" || slices.Contains(allowed, origin) || slices.Contains(allowed, "*") && IsLocalhost(origin)
 }
 
+// appOrigins are the Kallisti desktop and mobile apps' pages (Tauri). A
+// website cannot send them (browsers set Origin); a local page can (see
+// auth: guests only).
+var appOrigins = []string{"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
+
+// OwnSite: our own pages or the apps: where guest accounts are made (not
+// another site, which could make its visitors fill the server with guests).
+func OwnSite(allowed []string, origin string) bool {
+	return CookieOrigin(allowed, origin) || slices.Contains(appOrigins, origin)
+}
+
 // IsLocalhost: a development page on this computer.
 func IsLocalhost(origin string) bool {
 	u, err := url.Parse(origin)

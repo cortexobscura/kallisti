@@ -218,6 +218,12 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(MaxPayload)
 
 	acc, isAccount := b.lookup(ws, r)
+	// Guests only on our own pages and in the apps: else any site could
+	// make its visitors join (other sites connect with an account's token).
+	if !isAccount && !config.OwnSite(b.opts.AllowedOrigins, r.Header.Get("Origin")) {
+		ws.Close(websocket.StatusPolicyViolation, "join as a guest on the server's own site")
+		return
+	}
 	if isAccount {
 		defer func() {
 			b.mu.Lock()
