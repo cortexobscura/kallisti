@@ -264,9 +264,7 @@
       }
     },
     home: homeOrigin,
-    // An account at home (not a guest, not a Mumble server in the desktop
-    // app): nothing of a guest's survives on a shared device.
-    owner: () => (account && !account.temporary ? `${homeOrigin()} ${account.name}` : null),
+    owner: () => owner,
     tokens: addedStore,
     open: (origin, name) => {
       const s = createServerSession<Connection>({
@@ -279,6 +277,14 @@
       return s;
     },
     revoke: async (origin, token) => void (await createAccountsApi(origin, fetch, memoryStore(token)).logout()),
+  });
+  // Whose the added servers are: an account at home (not a guest, not a
+  // Mumble server in the desktop app). Once the first check is done, every
+  // change goes to the hub (another login ends the previous one's).
+  const owner = $derived(account && !account.temporary ? `${homeOrigin()} ${account.name}` : null);
+  $effect(() => {
+    const now = owner;
+    if (!checking) untrack(() => hub.follow(now));
   });
   let addingServer = $state(false);
   // The add dialog's logins: the token stays in memory until the hub
@@ -305,7 +311,7 @@
     ...hub.servers.map((a) => railEntry(a.origin, a.session.connection, new URL(a.origin).host)),
   ]);
   const selectServer = (id: string) => hub.show(id || null);
-  const canAdd = $derived(!!account && !account.temporary);
+  const canAdd = $derived(owner !== null);
   // An added server's account in its settings: logging out takes it out
   // of the rail; no fediverse link from here (that is its own site's).
   const addedActions = (origin: string): AccountActions => {
@@ -411,7 +417,7 @@
     // Created here: a login is a user gesture.
     audio = voiceSupported() ? makeAudio() : null;
     if (!audio) audioState = null;
-    else for (const a of hub.servers) a.session.setAudio(audio, false);
+    else for (const a of hub.servers) a.session.setAudio(audio, true); // their microphones stay
     try {
       await started;
     } catch (err) {
@@ -458,9 +464,8 @@
       <p>{a.session.error ? `${new URL(a.origin).host}: ${a.session.error}` : `Connecting to ${new URL(a.origin).host}…`}</p>
       <p class="actions">
         <button type="button" onclick={() => hub.show(null)}>Back</button>
-        {#if a.session.credentials}
-          {@const c = a.session.credentials}
-          <button type="button" onclick={() => void a.session.start(c).catch(() => {})}>Try again</button>
+        {#if a.session.error}
+          <button type="button" onclick={() => void a.session.retry().catch(() => {})}>Try again</button>
         {/if}
         <button type="button" onclick={() => hub.remove(a.origin)}>Remove this server</button>
       </p>
