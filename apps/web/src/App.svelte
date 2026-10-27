@@ -206,9 +206,6 @@
   const desktop = isDesktop();
   let desktopServer = $state(safeGet(localStorage, "server") ?? "");
   let desktopKind = $state<"kallisti" | "mumble" | null>(null);
-  // Why the connection failed, for the login screen (null: it is fine, or
-  // it comes back by itself).
-  const error = $derived(connection && !lost ? connectionError(connection.state, connection.closed, connection.closeReason, desktopKind === "mumble") : null);
   let kallisti = $state<string | null>(null); // the Kallisti server's origin
   const sessionStore = (origin: string) => {
     const key = `session:${origin}`;
@@ -249,13 +246,25 @@
   };
   // A server from last time: looked at again at once.
   untrack(() => desktop && (desktopServer ? void chooseServer(desktopServer) : (checking = false)));
-  const urlFor = async (credentials: Credentials): Promise<{ url: string; protocols?: string[] }> => {
+  // local: through the desktop app's own bridge (a Mumble server).
+  const urlFor = async (credentials: Credentials): Promise<{ url: string; protocols?: string[]; local?: boolean }> => {
     if (!desktop) return { url: PROXY_URL };
     if (kallisti) return kallistiSocket(kallisti, sessionStore(kallisti).get());
     const server = parseAddress(credentials.server ?? "");
     if (!server) throw new Error("Enter a server address, for example voice.example.org or voice.example.org:64738");
-    return { url: bridgeUrl(await getBridge(), server) };
+    return { url: bridgeUrl(await getBridge(), server), local: true };
   };
+  // Connections through the desktop app's own bridge: only its reasons
+  // are shown as they are (see connectionError).
+  const viaBridge = new WeakSet<Connection>();
+  const connectTo = (target: Awaited<ReturnType<typeof urlFor>>, credentials: Credentials) => {
+    const c = connect(target.url, credentials, audio, target.protocols);
+    if (target.local) viaBridge.add(c);
+    return c;
+  };
+  // Why the connection failed, for the login screen (null: it is fine, or
+  // it comes back by itself).
+  const error = $derived(connection && !lost ? connectionError(connection.state, connection.closed, connection.closeReason, viaBridge.has(connection)) : null);
 
   // A new version on the server (web app only: the desktop app carries its
   // own): checked now, every 15 minutes, when the tab shows again, and
@@ -350,9 +359,9 @@
     audio = voiceSupported() ? makeAudio() : null;
     if (!audio) audioState = null;
     try {
-      const { url, protocols } = await urlFor(credentials);
+      const target = await urlFor(credentials);
       if (mine !== starts) return;
-      connection = connect(url, credentials, audio, protocols);
+      connection = connectTo(target, credentials);
     } catch (err) {
       loginNote = err instanceof Error ? err.message : String(err);
     }
@@ -411,9 +420,9 @@
     starting = true;
     const mine = generation;
     try {
-      const { url, protocols } = await urlFor(lastCredentials);
+      const target = await urlFor(lastCredentials);
       if (mine !== generation || !lost) return;
-      const next = connect(url, lastCredentials, audio, protocols);
+      const next = connectTo(target, lastCredentials);
       attempt = next;
       // A connection that never gets anywhere: give up on it, try again.
       setTimeout(() => {
