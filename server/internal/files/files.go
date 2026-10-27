@@ -71,6 +71,10 @@ type Handler struct {
 	// The same for stickers: the sticker a token adds (with its author).
 	RedeemSticker func(token string) (store.Sticker, bool)
 	OnSticker     func()
+	// RedeemLogo checks a logo upload token (admins): who uploads it.
+	// OnLogo: the logo changed.
+	RedeemLogo func(token string) (author string, ok bool)
+	OnLogo     func()
 	// Previews makes previews (nil: none, see previews.go); OnPreview: an
 	// upload got one.
 	Previews  *thumbs.Maker
@@ -91,6 +95,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.post(w, r, h.uploadUserEmoji)
 	case r.URL.Path == "/api/stickers" && h.RedeemSticker != nil:
 		h.post(w, r, h.uploadSticker)
+	case r.URL.Path == "/api/logo" && h.RedeemLogo != nil:
+		h.post(w, r, h.uploadLogo)
+	case strings.HasPrefix(r.URL.Path, "/api/logo/") && get:
+		h.serveLogo(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/stickers/") && get:
 		h.serveSticker(w, r)
 	case strings.HasPrefix(r.URL.Path, "/files/") && get:

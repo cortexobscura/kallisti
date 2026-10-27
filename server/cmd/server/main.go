@@ -118,6 +118,8 @@ func run() error {
 		OnUserEmoji:     hub.UserEmojiChanged,
 		RedeemSticker:   hub.RedeemStickerToken,
 		OnSticker:       hub.StickersChanged,
+		RedeemLogo:      hub.RedeemLogoToken,
+		OnLogo:          hub.LogoChanged,
 		OnPreview:       hub.UploadPreview,
 	}
 	// Once: uploads from before sizes were kept.
@@ -233,6 +235,8 @@ func run() error {
 	mux.Handle("/api/emoji/", fileHandler)
 	mux.Handle("/api/stickers", fileHandler)
 	mux.Handle("/api/stickers/", fileHandler)
+	mux.Handle("/api/logo", fileHandler)
+	mux.Handle("/api/logo/", fileHandler)
 	mux.Handle("/api/avatars/", avatars)
 	mux.Handle("/api/link-image/", linkImages)
 	mux.Handle("/api/push", pushes)
@@ -258,7 +262,17 @@ func run() error {
 	}
 	// WebSocket upgrades (the client uses /ws) go to the bridge, everything
 	// else to the web app.
-	mux.Handle("/", site.New(b, cfg.WebDir))
+	// The page and the manifest with the server's name and logo (admins
+	// set them; with Murmur: Kallisti's).
+	brand := func() site.Brand {
+		var out site.Brand
+		if builtinServer != nil {
+			out.Name = builtinServer.srv.ServerName()
+		}
+		out.Logo, _ = db.LogoVersion()
+		return out
+	}
+	mux.Handle("/", site.New(b, cfg.WebDir, brand))
 
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.ListenPort))
 	if err != nil {

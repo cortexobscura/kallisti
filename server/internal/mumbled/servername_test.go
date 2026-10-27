@@ -16,6 +16,9 @@ func TestServerName(t *testing.T) {
 	s, addr := startServerAndListen(t, "127.0.0.1", Config{DB: db, RootName: "From env"}, nil)
 	su := superUser(t, addr)
 	alice, _ := registered(t, addr, "alice")
+	if !s.IsAdmin(su.session) || s.IsAdmin(alice.session) {
+		t.Fatal("IsAdmin")
+	}
 	if s.ServerName() != "From env" {
 		t.Fatalf("default %q", s.ServerName())
 	}

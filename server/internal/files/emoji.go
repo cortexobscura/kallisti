@@ -154,14 +154,19 @@ func (h *Handler) serveEmoji(w http.ResponseWriter, r *http.Request) {
 // serveInline serves an emoji's or a sticker's image: ids are never used
 // again and an image never changes. public: shared caches may keep it.
 func serveInline(w http.ResponseWriter, r *http.Request, ctype string, data []byte, at time.Time, public bool) {
-	hd := w.Header()
-	hd.Set("Content-Type", ctype)
-	hd.Set("X-Content-Type-Options", "nosniff")
-	hd.Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	cache := "private"
 	if public {
 		cache = "public"
 	}
-	hd.Set("Cache-Control", cache+", max-age=31536000, immutable")
+	serveImage(w, r, ctype, data, at, cache+", max-age=31536000, immutable")
+}
+
+// serveImage serves an image that cannot run anything, with this caching.
+func serveImage(w http.ResponseWriter, r *http.Request, ctype string, data []byte, at time.Time, cache string) {
+	hd := w.Header()
+	hd.Set("Content-Type", ctype)
+	hd.Set("X-Content-Type-Options", "nosniff")
+	hd.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	hd.Set("Cache-Control", cache)
 	http.ServeContent(w, r, "", at, bytes.NewReader(data))
 }

@@ -516,7 +516,7 @@ func TestServerSaysIfGuestsNeedAServerPassword(t *testing.T) {
 	}
 }
 
-func TestServerSaysItsName(t *testing.T) {
+func TestServerSaysItsNameAndLogo(t *testing.T) {
 	a, srv := setup(t)
 	get := func() map[string]any {
 		resp, err := http.Get(srv.URL + "/api/server")
@@ -532,7 +532,14 @@ func TestServerSaysItsName(t *testing.T) {
 		t.Fatalf("no name known: %v", v)
 	}
 	a.ServerName = func() string { return "Our place" }
-	if v := get(); v["name"] != "Our place" {
+	if v := get(); v["name"] != "Our place" || v["logo"] != nil {
 		t.Fatalf("got %v", v)
+	}
+	version, err := a.Store.SetLogo(map[int][]byte{32: []byte("png")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := get(); v["logo"] != version {
+		t.Fatalf("with a logo %v", v)
 	}
 }

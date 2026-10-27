@@ -1,6 +1,6 @@
 // Package avatarimg makes avatars from pictures (a fediverse account's):
 // the same square JPEG as the web client's avatarEncode, so all avatars
-// look alike.
+// look alike. Also the server's logo as icons (Icons).
 package avatarimg
 
 import (
@@ -9,7 +9,7 @@ import (
 	"image/color"
 	_ "image/gif" // the first frame
 	"image/jpeg"
-	_ "image/png"
+	"image/png"
 
 	"golang.org/x/image/draw"
 	_ "golang.org/x/image/webp"
@@ -29,14 +29,40 @@ var ErrTooLarge = imagesize.ErrTooLarge
 // background: the web client's, under transparent parts.
 var background = color.RGBA{0x2b, 0x2d, 0x31, 0xff}
 
-// Make turns a picture (JPEG, PNG, GIF or WebP) into an avatar: its middle
-// square, Size pixels a side, on the background, as JPEG. The size in the
-// header is checked before the picture is decoded.
-func Make(data []byte) ([]byte, error) {
+// decode checks the size in the header, then decodes.
+func decode(data []byte) (image.Image, error) {
 	if err := imagesize.Check(bytes.NewReader(data), MaxSide, MaxPixels); err != nil {
 		return nil, err
 	}
 	src, _, err := image.Decode(bytes.NewReader(data))
+	return src, err
+}
+
+// Icons turns a picture into square PNGs of these sizes (pixels a side):
+// its middle square, transparency kept.
+func Icons(data []byte, sizes []int) (map[int][]byte, error) {
+	src, err := decode(data)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int][]byte{}
+	for _, size := range sizes {
+		dst := image.NewNRGBA(image.Rect(0, 0, size, size))
+		draw.CatmullRom.Scale(dst, dst.Bounds(), src, squareCrop(src.Bounds()), draw.Src, nil)
+		var b bytes.Buffer
+		if err := png.Encode(&b, dst); err != nil {
+			return nil, err
+		}
+		out[size] = b.Bytes()
+	}
+	return out, nil
+}
+
+// Make turns a picture (JPEG, PNG, GIF or WebP) into an avatar: its middle
+// square, Size pixels a side, on the background, as JPEG. The size in the
+// header is checked before the picture is decoded.
+func Make(data []byte) ([]byte, error) {
+	src, err := decode(data)
 	if err != nil {
 		return nil, err
 	}

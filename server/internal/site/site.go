@@ -19,8 +19,9 @@ const csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src '
 	"object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 
 // New returns the site handler. Without webDir, everything goes to the
-// bridge (development: the web app runs on Vite).
-func New(bridge http.Handler, webDir string) http.Handler {
+// bridge (development: the web app runs on Vite). brand: the server's
+// name and logo in the page and the manifest (nil: as built).
+func New(bridge http.Handler, webDir string, brand func() Brand) http.Handler {
 	if webDir == "" {
 		return bridge
 	}
@@ -45,13 +46,19 @@ func New(bridge http.Handler, webDir string) http.Handler {
 			files.ServeHTTP(w, r)
 			return
 		}
+		if clean == "/manifest.json" && serveBranded(w, r, webDir, brand, false) {
+			return
+		}
 		// Real files (favicon, ...) as they are; any other path is an app
 		// route and gets index.html.
-		if clean != "/" {
+		if clean != "/" && clean != "/index.html" {
 			if info, err := os.Stat(filepath.Join(webDir, filepath.FromSlash(clean))); err == nil && !info.IsDir() {
 				files.ServeHTTP(w, r)
 				return
 			}
+		}
+		if serveBranded(w, r, webDir, brand, true) {
+			return
 		}
 		h.Set("Cache-Control", "no-cache")
 		http.ServeFile(w, r, filepath.Join(webDir, "index.html"))

@@ -165,6 +165,9 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if a.ServerName != nil {
 			info["name"] = a.ServerName()
 		}
+		if v, err := a.Store.LogoVersion(); err == nil && v != "" {
+			info["logo"] = v // at /api/logo/<size>.png?v=<version>
+		}
 		writeJSON(w, http.StatusOK, info)
 	case r.URL.Path == "/api/challenge" && r.Method == http.MethodGet:
 		a.challenge(w)

@@ -142,6 +142,8 @@ type Voice interface {
 	// SetServerName: admins rename the server (the root channel: clients
 	// see it as a Mumble channel rename).
 	SetServerName(session uint32, name string) (string, error)
+	// IsAdmin: the session's user is an admin (the logo, see logo.go).
+	IsAdmin(session uint32) bool
 	// Connections: every connection over the recent window (admins).
 	Connections(session uint32) ([]Connection, error)
 	// CheckMessage: a session's message to post (with the word
@@ -288,6 +290,7 @@ type uploadToken struct {
 	user     uint32
 	personal bool
 	sticker  *store.Sticker // a token for adding this sticker
+	logo     bool           // for the server's logo
 	expires  time.Time
 }
 
@@ -829,6 +832,12 @@ func (c *Conn) Handle(raw []byte) {
 			c.hub.broadcast(map[string]any{"type": "server-name", "name": name})
 		}
 		return
+	case "logo-token":
+		c.logoToken(*id)
+		return
+	case "remove-logo":
+		c.removeLogo(*id)
+		return
 	case "connections":
 		c.connections(id.Session)
 		return
@@ -1340,7 +1349,7 @@ func (h *Hub) issueToken(t uploadToken) string {
 // RedeemUploadToken returns the author a file upload token was issued to.
 func (h *Hub) RedeemUploadToken(token string) (string, bool) {
 	t, ok := h.redeem(token)
-	if !ok || t.emoji != "" || t.personal || t.sticker != nil {
+	if !ok || t.emoji != "" || t.personal || t.sticker != nil || t.logo {
 		return "", false
 	}
 	return t.author, true

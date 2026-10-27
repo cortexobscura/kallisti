@@ -61,3 +61,11 @@ func validServerName(name string) error {
 	}
 	return nil
 }
+
+// IsAdmin: the session's user is an admin.
+func (s *Server) IsAdmin(session uint32) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := s.state.Users[session]
+	return u != nil && s.isAdmin(u)
+}
