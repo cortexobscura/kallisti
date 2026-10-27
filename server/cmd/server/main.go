@@ -241,7 +241,7 @@ func run() error {
 	}()
 	mux := http.NewServeMux()
 	mux.Handle("/api/upload", fileHandler)
-	for _, path := range []string{"/api/server", "/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/stream-key", "/api/fedi", "/api/fedi/"} {
+	for _, path := range auth.Paths {
 		mux.Handle(path, accounts)
 	}
 	mux.Handle("/files/", fileHandler)

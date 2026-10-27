@@ -224,11 +224,17 @@ type credentials struct {
 	Nonce     string `json:"nonce"`
 }
 
+// Paths: what ServeHTTP answers (for the server's router).
+var Paths = []string{"/api/server", "/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/servers", "/api/stream-key", "/api/fedi", "/api/fedi/"}
+
 func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	a.cors(w, r)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
+	}
+	if r.Method == http.MethodDelete {
+		config.LimitBody(w)
 	}
 	if r.Method == http.MethodPost {
 		config.LimitBody(w)
@@ -274,6 +280,8 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.logoutAll(w, r)
 	case r.URL.Path == "/api/password" && r.Method == http.MethodPost:
 		a.changePassword(w, r)
+	case r.URL.Path == "/api/servers":
+		a.servers(w, r)
 	case r.URL.Path == "/api/stream-key":
 		a.streamKey(w, r)
 	case r.URL.Path == "/api/me" && r.Method == http.MethodGet:
