@@ -229,17 +229,17 @@ describe("the added servers", () => {
     const fresh = setup(storage, tokens);
     fresh.hub.follow("home alice");
     fresh.hub.restore();
-    // There: logged out, and in again as alice (a new login).
+    // There: logged out, and in again as alice (a new login: another session).
     fresh.login(null);
     fresh.hub.follow(null);
-    fresh.login("home alice");
-    fresh.hub.follow("home alice");
+    fresh.login("home alice 2");
+    fresh.hub.follow("home alice 2");
     fresh.hub.restore();
     fresh.hub.add(B, "alice", "tb2");
     stale.login(null);
     stale.hub.follow(null);
     expect(tokens.get(B)).toBe("tb2");
-    expect(loadServers(storage, "home alice")).toEqual([{ origin: B, name: "alice" }]);
+    expect(loadServers(storage, "home alice 2")).toEqual([{ origin: B, name: "alice" }]);
   });
 
   it("remove from a stale tab does not touch another login's token or list", () => {
@@ -308,12 +308,59 @@ describe("the added servers", () => {
     fresh.hub.restore();
     fresh.login(null);
     fresh.hub.follow(null);
-    fresh.login("home alice");
-    fresh.hub.follow("home alice");
+    fresh.login("home alice 2");
+    fresh.hub.follow("home alice 2");
     fresh.hub.restore();
     fresh.hub.add(B, "alice", "tb");
     expect(old.hub.add(C, "alice", "tc")).toBe(false);
-    expect(loadServers(storage, "home alice")).toEqual([{ origin: B, name: "alice" }]);
+    expect(loadServers(storage, "home alice 2")).toEqual([{ origin: B, name: "alice" }]);
+  });
+
+  it("a tab that never restored ends this login's list at logout, also a newer one of this login", () => {
+    const storage = memory();
+    const tokens = new Map<string, string | null>();
+    const a = setup(storage, tokens);
+    a.hub.follow("home alice"); // its home never synced
+    const c = setup(storage, tokens);
+    c.hub.follow("home alice");
+    c.hub.add(A, "alice", "ta");
+    a.hub.endAll(); // alice logs out in tab a
+    expect(tokens.get(A)).toBeNull();
+    expect(loadServers(storage)).toEqual([]);
+  });
+
+  it("after a login ends, the next login in that tab adds again", () => {
+    const storage = memory();
+    const tokens = new Map<string, string | null>();
+    const a = setup(storage, tokens);
+    const b = setup(storage, tokens);
+    a.hub.follow("home alice");
+    a.hub.add(A, "alice", "ta");
+    b.hub.follow("home alice");
+    b.hub.restore();
+    a.hub.endAll(); // logged out in a: b learns it too
+    b.login(null);
+    b.hub.follow(null);
+    b.login("home alice 2"); // the new login (one cookie: both tabs)
+    b.hub.follow("home alice 2");
+    b.hub.restore();
+    a.login("home alice 2");
+    a.hub.follow("home alice 2");
+    a.hub.restore();
+    a.hub.add(A, "alice", "ta2");
+    expect(b.hub.add(B, "alice", "tb")).toBe(true);
+  });
+
+  it("a server another tab of this login added cannot be added again (its token would be lost)", () => {
+    const storage = memory();
+    const tokens = new Map<string, string | null>();
+    const a = setup(storage, tokens);
+    const b = setup(storage, tokens);
+    a.hub.follow("home alice");
+    b.hub.follow("home alice");
+    a.hub.add(A, "alice", "ta");
+    expect(b.hub.add(A, "alice", "tb")).toBe(false);
+    expect(tokens.get(A)).toBe("ta");
   });
 
   it("close (the app goes away) closes the sessions and keeps list and tokens", () => {

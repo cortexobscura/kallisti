@@ -30,19 +30,17 @@ export const addServer = (list: readonly SavedServer[], server: SavedServer, hom
 
 export const removeServer = (list: readonly SavedServer[], origin: string) => list.filter((s) => s.origin !== origin);
 
-// id: the login that keeps the list (one per login, shared by its tabs;
-// see lib/serverHub); at: when it was saved.
-type Stored = { owner: string; id: string; at: number; servers: SavedServer[] };
+// at: when it was saved (see lib/serverHub).
+type Stored = { owner: string; at: number; servers: SavedServer[] };
 const read = (storage: Storage | undefined): Stored => {
   try {
-    const v = JSON.parse(safeGet(storage, KEY) ?? "null") as { owner?: unknown; id?: unknown; at?: unknown; servers?: unknown } | unknown[] | null;
+    const v = JSON.parse(safeGet(storage, KEY) ?? "null") as { owner?: unknown; at?: unknown; servers?: unknown } | unknown[] | null;
     // Before owners: an array (no owner: ended, never restored).
-    if (Array.isArray(v)) return { owner: "", id: "", at: 0, servers: v.map((x) => (typeof x === "string" ? { origin: x, name: "?" } : x)).filter(isSaved) };
-    const text = (x: unknown) => (typeof x === "string" ? x : "");
+    if (Array.isArray(v)) return { owner: "", at: 0, servers: v.map((x) => (typeof x === "string" ? { origin: x, name: "?" } : x)).filter(isSaved) };
     const servers = Array.isArray(v?.servers) ? v.servers.filter(isSaved).map(({ origin, name }) => ({ origin, name })) : [];
-    return { owner: text(v?.owner), id: text(v?.id), at: typeof v?.at === "number" ? v.at : 0, servers };
+    return { owner: typeof v?.owner === "string" ? v.owner : "", at: typeof v?.at === "number" ? v.at : 0, servers };
   } catch {
-    return { owner: "", id: "", at: 0, servers: [] };
+    return { owner: "", at: 0, servers: [] };
   }
 };
 
@@ -53,11 +51,10 @@ export const loadServers = (storage: Storage | undefined, owner?: string): Saved
 };
 
 export const storedOwner = (storage: Storage | undefined) => read(storage).owner;
-export const storedId = (storage: Storage | undefined) => read(storage).id;
 export const storedAt = (storage: Storage | undefined) => read(storage).at;
 
-export const saveServers = (storage: Storage | undefined, owner: string, list: readonly SavedServer[], at = Date.now(), id = "") =>
-  void safeSet(storage, KEY, JSON.stringify({ owner, id, at, servers: list }));
+export const saveServers = (storage: Storage | undefined, owner: string, list: readonly SavedServer[], at = Date.now()) =>
+  void safeSet(storage, KEY, JSON.stringify({ owner, at, servers: list }));
 
 const local = (host: string) => host === "localhost" || host === "127.0.0.1" || host === "[::1]";
 

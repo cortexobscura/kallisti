@@ -1,4 +1,4 @@
-import { addServer, loadServers, removeServer, saveServers, storedAt, storedId, storedOwner } from "./serverList";
+import { addServer, loadServers, removeServer, saveServers, storedAt, storedOwner } from "./serverList";
 
 // What the hub needs of a server's session (see lib/serverSession).
 type Closable = { leave: () => void; dispose: () => void; close: () => void };
@@ -8,8 +8,10 @@ export type HubDeps<S extends Closable> = {
   storage: () => Storage | undefined;
   // The home server's origin (this site, or the desktop app's choice).
   home: () => string;
-  // Whose they are: the home login (server and account); null: none, or a
-  // guest (who adds none: nothing of theirs survives on a shared device).
+  // Whose they are: the home login (server, account and session: tabs of
+  // one browser share it, a new login of the account is another); null:
+  // none, or a guest (who adds none: nothing of theirs survives on a
+  // shared device).
   owner: () => string | null;
   // A server's session token on this device.
   tokens: (origin: string) => { get: () => string | null; set: (token: string | null) => void };
@@ -35,28 +37,14 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
   // Whose the open ones are (see follow); first: no follow yet.
   let live: string | null = null;
   let first = true;
-  // Tabs share the list. It names the login that keeps it (an id, shared
-  // by that login's tabs; a new login of the same account gets another):
-  // a login ends only its own list, not one of a later login. A list saved
-  // after this tab started is not a stale one to end at its start.
+  // Tabs share the list, and its owner names the login (with its session).
+  // A list saved after this tab started is not a stale one to end at its
+  // start (a late answer of an older login).
   const now = deps.now ?? Date.now;
   const startedAt = now();
-  let loginId: string | null = null;
-  const newId = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
 
-  // The list of this owner keeps its login's id; another (or an empty
-  // owner) starts a new one.
-  const save = (owner: string, list: ReturnType<typeof loadServers>) => {
-    const id = owner === "" ? "" : storedOwner(deps.storage()) === owner && storedId(deps.storage()) ? storedId(deps.storage()) : newId();
-    loginId = id || null;
-    saveServers(deps.storage(), owner, list, now(), id);
-  };
-  // This login's list: its id, or (a tab that never restored) one of this
-  // owner from before the tab started.
-  const ours = (owner: string | null) =>
-    owner !== null &&
-    storedOwner(deps.storage()) === owner &&
-    (loginId !== null ? storedId(deps.storage()) === loginId : storedAt(deps.storage()) < startedAt);
+  const save = (owner: string, list: ReturnType<typeof loadServers>) => saveServers(deps.storage(), owner, list, now());
+  const ours = (owner: string | null) => owner !== null && storedOwner(deps.storage()) === owner;
   const stale = () => storedAt(deps.storage()) < startedAt;
   // Forgets the token at once; logs out there with it afterwards, so a
   // slow answer cannot touch a later login's token.
@@ -85,11 +73,12 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     servers = [];
     shown = null;
     restored = false;
+    const wasOurs = ours(owner);
     for (const s of all) {
       end(s);
       release(s);
     }
-    if (ours(owner)) {
+    if (wasOurs) {
       for (const { origin } of loadServers(deps.storage())) forget(origin);
       save("", []);
     }
@@ -121,11 +110,11 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     add: (origin: string, name: string, token: string) => {
       const owner = deps.owner();
       if (owner === null || origin === deps.home() || servers.some((s) => s.origin === origin)) return false;
-      // Another login's list (a stale tab: another tab logged in since, also
-      // as the same account).
+      // Another login's list (a stale tab: another tab logged in since).
       const stored = storedOwner(deps.storage());
       if (stored !== "" && stored !== owner && loadServers(deps.storage()).length > 0) return false;
-      if (stored === owner && loginId !== null && storedId(deps.storage()) !== "" && storedId(deps.storage()) !== loginId) return false;
+      // Another tab of this login added it: its token is that tab's.
+      if (loadServers(deps.storage(), owner).some((s) => s.origin === origin)) return false;
       deps.tokens(origin).set(token);
       live = owner;
       servers = [...servers, opened(origin, name)];
@@ -155,7 +144,6 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
       if (restored || owner === null) return;
       restored = true;
       if (storedOwner(deps.storage()) !== owner) return void (stale() && endForeign());
-      loginId = storedId(deps.storage()) || null;
       live = owner;
       const open = new Set(servers.map((s) => s.origin));
       const fresh = loadServers(deps.storage(), owner).filter((s) => s.origin !== deps.home() && !open.has(s.origin));
