@@ -4,6 +4,7 @@
   - [ ] [Desktop: overlay of who is talking](issues/desktop-overlay.md)
   - [ ] [Activity status: game and music](issues/activity-status.md)
 - [ ] [Join other servers with your account](issues/join-other-servers.md) (design decided, not started)
+  - [ ] [Status of the branch multi-server](issues/multi-server-status.md)
   - [ ] [Several servers in one client](issues/multiple-servers.md)
   - [ ] [Kallisti as a login provider](issues/kallisti-login-provider.md)
   - [ ] [The server list on the home account](issues/home-server-list.md)
