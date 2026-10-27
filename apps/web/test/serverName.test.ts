@@ -42,3 +42,28 @@ describe("the login check", () => {
     expect(await api("offline").check()).toBe("unknown");
   });
 });
+
+describe("the session token", () => {
+  it("is cleared by a late answer only if it is still the one that request used", async () => {
+    let stored: string | null = "t1";
+    const store = { get: () => stored, set: (t: string | null) => void (stored = t) };
+    let release!: () => void;
+    const fetchFn = (async () => {
+      await new Promise<void>((r) => (release = r));
+      return new Response(JSON.stringify({ error: "not logged in" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const api = createAccountsApi("http://srv", fetchFn, store);
+    const late = api.check();
+    await Promise.resolve();
+    stored = "t2"; // a new login meanwhile
+    release();
+    expect(await late).toBeNull();
+    expect(stored).toBe("t2");
+    const out = api.logout();
+    await Promise.resolve();
+    stored = "t3";
+    release();
+    await out;
+    expect(stored).toBe("t3");
+  });
+});

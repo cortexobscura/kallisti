@@ -27,6 +27,9 @@ export type SessionStore = { get: () => string | null; set: (token: string | nul
 export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, session?: SessionStore) => {
   type Answer = { name?: string; mumble?: boolean; temporary?: boolean; token?: string } & Partial<Challenge> &
     Partial<StreamKey> & { key?: string; url?: string; handle?: string; password?: boolean; fedi?: FediLink };
+  const clearIf = (token: string | null | undefined) => {
+    if (session && session.get() === token) session.set(null);
+  };
   const call = async (path: string, body?: unknown, method = body === undefined ? "GET" : "POST"): Promise<Answer> => {
     const token = session?.get();
     const headers: Record<string, string> = {
@@ -42,8 +45,9 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       ...(body !== undefined && { body: JSON.stringify(body) }),
     });
     const data = (await res.json().catch(() => ({}))) as Answer & { error?: string; code?: string };
-    // The server no longer knows the token (not: a wrong password).
-    if (res.status === 401 && path === "/api/me") session?.set(null);
+    // The server no longer knows the token (not: a wrong password); only
+    // if it is still the one sent (a new login may have come meanwhile).
+    if (res.status === 401 && path === "/api/me") clearIf(token);
     if (!res.ok) throw new ApiError(data.error ?? `request failed (${res.status})`, res.status, data.code);
     if (data.token) session?.set(data.token);
     return data;
@@ -85,14 +89,18 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       }
     },
     // false: the server did not confirm (the session cookie may remain).
-    logout: async () =>
-      call("/api/logout", {}).then(
-        () => (session?.set(null), true),
+    // The token goes only if it is still the one logged out.
+    logout: async () => {
+      const token = session?.get();
+      return call("/api/logout", {}).then(
+        () => (clearIf(token), true),
         () => false,
-      ),
+      );
+    },
     logoutAll: async () => {
+      const token = session?.get();
       await call("/api/logout-all", {});
-      session?.set(null);
+      clearIf(token);
     },
     changePassword: async (old: string, next: string) => {
       await call("/api/password", { old, new: next });
