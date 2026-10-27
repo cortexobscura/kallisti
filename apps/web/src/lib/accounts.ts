@@ -9,7 +9,8 @@ import type { FediLink } from "./fedi";
 // server deletes it after a day without a visit). password false: made
 // with a fediverse login, no password yet (undefined: not known). fedi:
 // the linked fediverse account.
-export type Account = { name: string; temporary: boolean; password?: boolean; fedi?: FediLink | null };
+// session: a short name of this login (see the server's sessionID).
+export type Account = { name: string; temporary: boolean; password?: boolean; fedi?: FediLink | null; session?: string };
 
 // An answer the server refused, with its status.
 class ApiError extends Error {
@@ -26,7 +27,7 @@ export type SessionStore = { get: () => string | null; set: (token: string | nul
 
 export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, session?: SessionStore) => {
   type Answer = { name?: string; mumble?: boolean; temporary?: boolean; token?: string } & Partial<Challenge> &
-    Partial<StreamKey> & { key?: string; url?: string; handle?: string; password?: boolean; fedi?: FediLink };
+    Partial<StreamKey> & { key?: string; url?: string; handle?: string; password?: boolean; fedi?: FediLink; session?: string };
   const clearIf = (token: string | null | undefined) => {
     if (session && session.get() === token) session.set(null);
   };
@@ -55,7 +56,7 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
   const check = async (): Promise<Account | null | "unknown"> => {
     try {
       const data = await call("/api/me");
-      return data.name ? { name: data.name, temporary: data.temporary === true, password: data.password, fedi: data.fedi } : null;
+      return data.name ? { name: data.name, temporary: data.temporary === true, password: data.password, fedi: data.fedi, session: data.session } : null;
     } catch (err) {
       return err instanceof ApiError && err.status === 401 ? null : "unknown";
     }

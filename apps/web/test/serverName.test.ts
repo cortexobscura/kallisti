@@ -34,7 +34,7 @@ describe("the login check", () => {
       }) as unknown as typeof fetch,
     );
   it("tells an account, no login, and unknown (a server or network error) apart", async () => {
-    expect(await api(200, { name: "alice" }).check()).toMatchObject({ name: "alice" });
+    expect(await api(200, { name: "alice", session: "0123456789abcdef" }).check()).toMatchObject({ name: "alice", session: "0123456789abcdef" });
     expect(await api(401, { error: "not logged in" }).check()).toBeNull();
     expect(await api(200, {}).check()).toBeNull();
     expect(await api(502).check()).toBe("unknown");
