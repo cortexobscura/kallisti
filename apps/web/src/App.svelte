@@ -2,7 +2,7 @@
   import Client from "./components/Client.svelte";
   import Login from "./components/Login.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
-  import type { RailServer } from "./components/ServerRail.svelte";
+  import ServerRail, { type RailServer } from "./components/ServerRail.svelte";
   import { createAccountsApi, type Account, type AccountActions } from "./lib/accounts";
   import { connect, type Connection, type Credentials } from "./lib/connection.svelte";
   import { createServerSession, type ServerSession, type Target } from "./lib/serverSession.svelte";
@@ -24,7 +24,7 @@
   import { safeGet, safeSet } from "./lib/storage";
   import { proxyUrl } from "./lib/status";
   import { loggedOut } from "./lib/reconnect";
-  import { untrack } from "svelte";
+  import { untrack, type Snippet } from "svelte";
   import { checkForUpdate } from "./lib/update";
   import { browserPushSupport, turnOffPush } from "./lib/push";
   import { voiceSupported } from "./lib/voice/support";
@@ -363,7 +363,7 @@
     logo: c?.text.logo ? iconHref(c.httpBase, 192, c.text.logo) : null,
     active: hub.shown === (id || null),
   });
-  const rail = $derived<RailServer[]>([
+  const railServers = $derived<RailServer[]>([
     railEntry("", connection, "Home"),
     ...hub.servers.map((a) => railEntry(a.origin, a.session?.connection ?? null, new URL(a.origin).host)),
   ]);
@@ -488,54 +488,71 @@
 <svelte:window ononline={wakeAll} onpagehide={() => allSessions().forEach((s) => (s.place && s.keepPlace(s.place, true), s.keepStreams()))} onpointerdowncapture={wakeSound} onkeydowncapture={wakeSound} />
 <svelte:document onvisibilitychange={wakeAll} />
 
+<!-- The rail of servers: the same while a server connects, fails or
+     reconnects (in the client's drawer on phones; beside these screens). -->
+{#snippet rail()}
+  <ServerRail servers={railServers} onSelect={selectServer} onAdd={owner !== null ? () => (addingFor = { owner: owner! }) : undefined} />
+{/snippet}
+<!-- A screen without the client, with the rail if there are servers to switch to. -->
+{#snippet withRail(content: Snippet)}
+  {#if hub.servers.length}
+    <div class="shell">{@render rail()}<div class="shell-main">{@render content()}</div></div>
+  {:else}
+    {@render content()}
+  {/if}
+{/snippet}
+
 {#if checking}
   <div class="connecting" aria-busy="true"></div>
-{:else if !connection || session.error}
-  <Login
-    error={session.certificate ? null : (session.error ?? loginNote)}
-    certificate={session.certificate}
-    onTrust={trustAndConnect}
-    onCancelTrust={() => leave(null, false)}
-    {api}
-    {account}
-    desktop={desktop ? { server: desktopServer, kind: desktopKind, onServer: chooseServer, onChangeServer: changeServer } : null}
-    onAccountChange={(acc) => {
-      // A logout from the login screen (after a kick or refusal) ends the
-      // home login too.
-      authGeneration++;
-      if (!acc) hub.endAll();
-      account = acc;
-      ownerKnown = true;
-    }}
-    onConnect={start}
-    {fediSignup}
-    onFediSignupDone={() => (fediSignup = false)}
-  />
 {:else if shownAdded}
   {@const a = shownAdded}
   {@const s = a.session}
   {#if s?.connection?.state.status === "synced" && !s.error}
     {#if s.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
-    <div class="client" inert={s.lost}>
-      {#key s.connection}
-        <Client connection={s.connection} account={addedActions(a.origin)} push={false} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} servers={rail} onSelectServer={selectServer} onAddServer={owner !== null ? () => (addingFor = { owner: owner! }) : undefined} />
-      {/key}
-    </div>
+    {#key s.connection}
+      <Client connection={s.connection} lost={s.lost} {rail} account={addedActions(a.origin)} push={false} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
+    {/key}
   {:else}
-    {@const host = new URL(a.origin).host}
-    <div class="connecting">
-      <p>{!s ? `Log in to ${host} on this device.` : s.error ? `${host}: ${s.error}` : `Connecting to ${host}…`}</p>
-      <p class="actions">
-        <button type="button" onclick={() => hub.show(null)}>Back</button>
-        {#if !s && owner !== null}
-          <button type="button" onclick={() => (addingFor = { owner: owner!, server: { origin: a.origin, name: a.name } })}>Log in</button>
-        {:else if s?.error}
-          <button type="button" onclick={() => void s.retry().catch(() => {})}>Try again</button>
-        {/if}
-        <button type="button" onclick={() => hub.remove(a.origin)}>Remove this server</button>
-      </p>
-    </div>
+    {#snippet added()}
+      {@const host = new URL(a.origin).host}
+      <div class="connecting">
+        <p>{!s ? `Log in to ${host} on this device.` : s.error ? `${host}: ${s.error}` : `Connecting to ${host}…`}</p>
+        <p class="actions">
+          {#if !s && owner !== null}
+            <button type="button" onclick={() => (addingFor = { owner: owner!, server: { origin: a.origin, name: a.name } })}>Log in</button>
+          {:else if s?.error}
+            <button type="button" onclick={() => void s.retry().catch(() => {})}>Try again</button>
+          {/if}
+          <button type="button" onclick={() => hub.remove(a.origin)}>Remove this server</button>
+        </p>
+      </div>
+    {/snippet}
+    {@render withRail(added)}
   {/if}
+{:else if !connection || session.error}
+  {#snippet login()}
+    <Login
+      error={session.certificate ? null : (session.error ?? loginNote)}
+      certificate={session.certificate}
+      onTrust={trustAndConnect}
+      onCancelTrust={() => leave(null, false)}
+      {api}
+      {account}
+      desktop={desktop ? { server: desktopServer, kind: desktopKind, onServer: chooseServer, onChangeServer: changeServer } : null}
+      onAccountChange={(acc) => {
+        // A logout from the login screen (after a kick or refusal) ends the
+        // home login too.
+        authGeneration++;
+        if (!acc) hub.endAll();
+        account = acc;
+        ownerKnown = true;
+      }}
+      onConnect={start}
+      {fediSignup}
+      onFediSignupDone={() => (fediSignup = false)}
+    />
+  {/snippet}
+  {@render withRail(login)}
 {:else if connection.state.status === "synced"}
   <!-- Quiet first (the server is usually back within seconds): a small
        sign, then the banner (see lossNotice). -->
@@ -547,14 +564,15 @@
   {:else if session.lost && session.notice === "sign"}
     <div class="reconnecting quiet" role="status">Reconnecting…</div>
   {/if}
-  <!-- While lost, the old view stays readable but takes no input (it would be lost). -->
-  <div class="client" inert={session.lost}>
-    {#key connection}
-      <Client {connection} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} servers={rail} onSelectServer={selectServer} onAddServer={owner !== null ? () => (addingFor = { owner: owner! }) : undefined} />
-    {/key}
-  </div>
+  <!-- While lost, the old view stays readable but takes no input (it would be lost); the rail does. -->
+  {#key connection}
+    <Client {connection} lost={session.lost} {rail} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
+  {/key}
 {:else}
-  <div class="connecting">Connecting…</div>
+  {#snippet connectingHome()}
+    <div class="connecting">Connecting…</div>
+  {/snippet}
+  {@render withRail(connectingHome)}
 {/if}
 
 <div class="status-bar" aria-hidden="true"></div>
@@ -668,14 +686,35 @@
     background: var(--bg-active);
     color: var(--text);
   }
-  .client {
-    display: contents;
+  /* A screen without the client, beside the rail. */
+  .shell {
+    display: grid;
+    grid-template-columns: calc(72px + var(--safe-left)) 1fr;
+    height: 100%;
+  }
+  .shell > :global(nav) {
+    border-top: var(--safe-top) solid transparent;
+    border-bottom: var(--safe-bottom) solid transparent;
+    border-left: var(--safe-left) solid transparent;
+  }
+  .shell-main {
+    min-width: 0;
+    height: 100%;
+    overflow: auto;
   }
   .connecting {
-    display: grid;
-    place-items: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
     height: 100%;
+    padding: 16px;
     color: var(--text-muted);
+    text-align: center;
+  }
+  .connecting p {
+    margin: 0;
   }
   .connecting .actions {
     display: flex;

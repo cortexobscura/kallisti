@@ -25,11 +25,12 @@ rest. test.kallisti.chat runs this branch.
   gone; a failed check ends nothing.
 - The list on the home account (/api/servers); the device keeps only the
   tokens; a new device shows the servers and asks for a login there.
+- The rail outside the client: the same beside the connecting, error and
+  login screens; while a connection is lost the rail (on phones the menu
+  to the drawer) still takes input.
 
 ## Still to do (decided)
 
-- The rail outside the client (usable while a server connects, fails or
-  reconnects; on phones in the channel drawer).
 - Voice continues while another server is on screen: voice bar, mute,
   deafen and push-to-talk follow the voice connection; joining voice
   elsewhere leaves it.

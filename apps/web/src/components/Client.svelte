@@ -20,7 +20,7 @@
     setSelfState,
     voiceElsewhere,
   } from "@kallisti/protocol";
-  import { tick, untrack, type ComponentProps } from "svelte";
+  import { tick, untrack, type ComponentProps, type Snippet } from "svelte";
   import type { AccountActions } from "../lib/accounts";
   import { createChannelManagement } from "../lib/channelManagement.svelte";
   import { canManageText, canModerate } from "../lib/channelManagement";
@@ -101,7 +101,7 @@
   import ModerationDialog from "./ModerationDialog.svelte";
   import MembersDialog from "./MembersDialog.svelte";
   import Icon from "./Icon.svelte";
-  import ServerRail, { type RailServer } from "./ServerRail.svelte";
+  import ServerRail from "./ServerRail.svelte";
   import SettingsDialog from "./SettingsDialog.svelte";
   import Toast from "./Toast.svelte";
   import UserMenu from "./UserMenu.svelte";
@@ -133,9 +133,8 @@
     streams = { watching: [], lost: [] },
     openSettings = false,
     onSettingsOpened,
-    servers,
-    onSelectServer,
-    onAddServer,
+    rail,
+    lost = false,
     push = true,
   }: {
     connection: Connection;
@@ -161,17 +160,21 @@
     // Open the settings at once (back from a fediverse login for them).
     openSettings?: boolean;
     onSettingsOpened?: () => void;
-    // The rail's servers (several servers in one client): without them,
-    // this one only.
-    servers?: readonly RailServer[];
-    onSelectServer?: (id: string) => void;
-    onAddServer?: () => void;
+    // The rail of servers (several servers in one client; the caller's, so
+    // that it is the same while a server connects): without it, this one.
+    rail?: Snippet;
+    // The connection is lost: all but the rail takes no input (it would be
+    // lost).
+    lost?: boolean;
     // Push notifications belong to this server (the home server; added
     // servers have none yet: the browser has one subscription).
     push?: boolean;
   } = $props();
 
   const server = $derived(connection.state);
+  // A side panel that takes no input: lost, or not the one shown on a
+  // phone (the chat takes care of lost itself: its menu leads to the rail).
+  const noInput = (p: Panel) => lost || (phone && panel !== p);
   const me = $derived(server.session === null ? undefined : server.users[server.session]);
   // A text-only session (our account is in voice elsewhere) is in no
   // channel: it shows root.
@@ -336,6 +339,7 @@
 
   const paneCommon = $derived({
     menuOpen: panel === "channels",
+    lost,
     talking: capture?.transmitting ?? false,
     membersOpen: phone ? panel === "members" : membersOpen,
     onToggleMembers: () => {
@@ -1512,6 +1516,8 @@
 <svelte:window onkeydown={onKey} onkeyup={onKey} onblur={() => capture?.setPttDown(false)} />
 <svelte:document ontouchstart={touchStart} ontouchend={touchEnd} onvisibilitychange={() => (pageVisible = document.visibilityState === "visible")} />
 
+<!-- Menus and dialogs act on the connection: none while it is lost. -->
+<div class="overlays" inert={lost}>
 {#if channels.menu}
   {@const m = channels.menu}
   <ChannelMenu
@@ -1829,6 +1835,7 @@
     onClose={() => (showSettings = false)}
   />
 {/if}
+</div>
 
 <div
   class="layout"
@@ -1838,12 +1845,12 @@
   data-panel={phone ? panel : undefined}
 >
   <div class="left" bind:this={leftEl} inert={phone && panel !== "channels"}>
-  <ServerRail
-    servers={servers ?? [{ id: "", name: serverName, logo: text.logo ? iconHref(connection.httpBase, 192, text.logo) : null, active: true }]}
-    onSelect={onSelectServer}
-    onAdd={onAddServer}
-  />
-  <div class="sidebar">
+  {#if rail}
+    {@render rail()}
+  {:else}
+    <ServerRail servers={[{ id: "", name: serverName, logo: text.logo ? iconHref(connection.httpBase, 192, text.logo) : null, active: true }]} />
+  {/if}
+  <div class="sidebar" inert={lost}>
     <header>
       <span class="ellipsis">{serverName}</span>
       {#if moderation.any || moderation.emoji}
@@ -2057,11 +2064,11 @@
     {/if}
   </div>
   {#if threadAside && thread}
-    <aside class="thread-pane">{@render threadPane(thread)}</aside>
+    <aside class="thread-pane" inert={lost}>{@render threadPane(thread)}</aside>
   {:else if side === "threads" && textId !== null}
     {@const list = text.archived[textId]}
     <ThreadList
-      inert={phone && panel !== "members"}
+      inert={noInput("members")}
       channel={textChannel?.name ?? ""}
       threads={threadList(text.threads, list?.threads ?? [], textId)}
       more={!list || archivedAsked !== null ? null : list.more}
@@ -2073,7 +2080,7 @@
     />
   {:else if side === "search"}
     <SearchPanel
-      inert={phone && panel !== "members"}
+      inert={noInput("members")}
       text={text.search ? searchQuery : null}
       messages={(text.search?.messages ?? []).filter((m) => !blockedUsers.has(m.author))}
       where={whereOf}
@@ -2086,7 +2093,7 @@
     />
   {:else if side === "pins" && chatId !== null}
     <SearchPanel
-      inert={phone && panel !== "members"}
+      inert={noInput("members")}
       text={text.pins[chatId] ? "" : null /* null: loading */}
       heading="Pinned messages"
       label="Pinned messages"
@@ -2102,7 +2109,7 @@
     />
   {:else if membersOpen || phone}
     <MemberList
-      inert={phone && panel !== "members"}
+      inert={noInput("members")}
       {channelName}
       {unread}
       {speaking}
@@ -2189,6 +2196,9 @@
     text-align: left;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  .overlays {
+    display: contents;
   }
   /* Desktop: the wrapper does not exist for the grid. Phone: left drawer. */
   .left,
