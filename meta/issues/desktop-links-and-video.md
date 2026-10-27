@@ -21,3 +21,5 @@ its name does nothing.
   xdg-open logs it).
 - Video: in podman, the real AppImage plays an H.264/AAC MP4 (canplay,
   currentTime advances); the AppImage size change is noted.
+
+Closed 2026-10-27: implemented (see git log); not every platform was checked on a real device.

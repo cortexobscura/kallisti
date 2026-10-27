@@ -30,3 +30,5 @@ In steps; iOS first (user's choice): issues/ios-background-voice.md.
 - Until then: the PWA with the Android media-session keepalive and the
   2-minute server grace; Mumla (Android) and Mumble iOS clients work with
   Kallisti accounts for voice in the background.
+
+Closed 2026-10-27: implemented (see git log); not every platform was checked on a real device.

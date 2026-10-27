@@ -20,3 +20,5 @@ tell a client that it is minimised, so the hidden state may never be set.
 - Measured before and after (painting stops while minimised), or a clear
   answer with the reason.
 - A reply on GitHub #3, text approved by the user.
+
+Closed 2026-10-27: implemented (see git log); not every platform was checked on a real device.

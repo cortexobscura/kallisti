@@ -16,3 +16,5 @@ Part of [Desktop app (Tauri)](desktop-app-tauri.md). Browsers only see keys whil
 
 - Implemented: tauri-plugin-global-shortcut, registered only in push-to-talk mode, released on unregister. Unit tests for the registration logic; the app builds.
 - Not verified: the development sandbox cannot run the app window. Needs a manual test: app in the background, hold the key, voice goes out.
+
+Closed 2026-10-27: implemented (see git log); not every platform was checked on a real device.

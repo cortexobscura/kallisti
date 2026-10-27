@@ -13,3 +13,5 @@ app reads it there on a paste without files or text.
 - Pure function for the pasted files (files, else file items), tests.
 - Desktop fallback: the clipboard API (no native plugin needed).
 - Check by a Linux user.
+
+Closed 2026-10-27: implemented (see git log); not every platform was checked on a real device.

@@ -16,3 +16,5 @@ input has two channels. Voice activity still works; push-to-talk too.
 - The switch in the settings; a small note in the voice panel while on.
 - Manual check: music through the web client sounds clean on the other
   side (no pumping, no cut notes); the server accepts the bitrate.
+
+Closed 2026-10-27: implemented (see git log); not every platform was checked on a real device.

@@ -11,3 +11,5 @@ links do not work for others. Use the Kallisti server's address there.
 - In the desktop app, "Copy link to message" and new invite links start
   with the server's address; message links to that server open in the app.
 - The web app does not change.
+
+Closed 2026-10-27: implemented (see git log); not every platform was checked on a real device.

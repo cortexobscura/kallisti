@@ -27,3 +27,5 @@ actions as buttons). Use a PNG file path for the icon; give the action a
 label or leave it out where it shows as a button. Check with real
 notification servers in podman (e.g. dunst, xfce4-notifyd, GNOME Shell if
 feasible) under Xvfb, with screenshots.
+
+Closed 2026-10-27: implemented (see git log); not every platform was checked on a real device.
