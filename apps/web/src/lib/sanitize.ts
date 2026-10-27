@@ -10,14 +10,22 @@ import { addCustomEmojiImages, type EmojiImages } from "./customEmoji";
 // data-channel) stays in the tab; Mumble HTML could carry the attribute too.
 export const isChannelLink = (a: Element) => a.getAttribute("href") === "#" && /^\d+$/.test(a.getAttribute("data-channel") ?? "");
 
+// Nothing remote may load: the page may load pictures and media from other
+// servers (several servers in one client), so its CSP no longer stops it.
+// Styles that could name an address (url(), image-set(), CSS escapes,
+// @import) go whole.
+const REMOTE_STYLE = /\\|url|image|src|@/i;
+const REMOTE_ATTRS = ["srcset", "poster", "background", "xlink:href", "lowsrc", "dynsrc", "longdesc"];
+
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName === "A" && !isChannelLink(node)) {
     node.setAttribute("target", "_blank");
     node.setAttribute("rel", "noopener noreferrer");
   }
-  if (node.tagName === "IMG" && !node.getAttribute("src")?.startsWith("data:image/")) {
-    node.removeAttribute("src");
-  }
+  for (const name of REMOTE_ATTRS) node.removeAttribute(name);
+  if (node.tagName !== "A") node.removeAttribute("href");
+  if (!(node.tagName === "IMG" && node.getAttribute("src")?.startsWith("data:image/"))) node.removeAttribute("src");
+  if (REMOTE_STYLE.test(node.getAttribute("style") ?? "")) node.removeAttribute("style");
 });
 
 // emoji: emoji become Twemoji images, added after sanitizing (into text
