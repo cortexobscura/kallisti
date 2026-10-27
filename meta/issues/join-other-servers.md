@@ -78,7 +78,7 @@ domain or public address, not for accounts.
 3. [Kallisti as a login provider](kallisti-login-provider.md): the
    Mastodon OAuth subset and webfinger, a consent page, approval at once
    after the first time; "Continue with your Kallisti account" on the
-   login and invite pages; the admin switch and block list.
+   login and invite pages; the block and allow lists.
 4. [The server list on the home account](home-server-list.md): stored at
    home, read and updated server to server, the rail on every site.
 5. [Tokens without typing](seamless-tokens.md): the popup per new browser,
