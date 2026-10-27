@@ -219,14 +219,16 @@
     kallisti = found ? origin : null;
     if (found) {
       api = createAccountsApi(origin!, fetch, sessionStore(origin!));
+      const generation = authGeneration;
       const answer = await api.check();
-      if (mine !== choices) return;
+      if (mine !== choices || generation !== authGeneration) return;
       desktopKind = "kallisti";
       if (answer !== "unknown") ownerKnown = true;
       return autoLogin(answer === "unknown" ? null : answer);
     }
+    // A Mumble server (or a Kallisti server that failed: the app cannot
+    // tell): not a sure answer about the home login (see ownerKnown).
     desktopKind = "mumble";
-    ownerKnown = true; // a Mumble server: no account, no added servers
     checking = false;
   };
   const changeServer = () => {
@@ -288,10 +290,11 @@
     home: homeOrigin,
     owner: () => owner,
     tokens: addedStore,
-    open: (origin, name) => {
+    open: (origin, name, token) => {
       const s = createServerSession<Connection>({
         site: () => origin,
-        urlFor: async () => kallistiSocket(origin, addedStore(origin).get()),
+        // Its own token (another tab may store another login's).
+        urlFor: async () => kallistiSocket(origin, token),
         connect: (target, c) => connect(target.url, c, audio, target.protocols),
         tabStorage,
       });
@@ -312,6 +315,10 @@
   // closes it, and a login there that ends later is not taken).
   let addingFor = $state<string | null>(null);
   const addingServer = $derived(addingFor !== null && addingFor === owner);
+  // Closed by another login: forgotten (it must not open again later).
+  $effect(() => {
+    if (addingFor !== null && addingFor !== owner) addingFor = null;
+  });
   // The add dialog's logins: the token stays in memory until the hub
   // takes it.
   const dialogApi = (origin: string) => {
