@@ -21,6 +21,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"kallisti.chat/server/internal/cryptstate"
+	"kallisti.chat/server/internal/homes"
 	"kallisti.chat/server/internal/msgrules"
 	"kallisti.chat/server/internal/mumble"
 	"kallisti.chat/server/internal/recording"
@@ -189,6 +190,7 @@ type Server struct {
 	// Message rules, and limited users' last messages (see
 	// messagerules.go). Under mu.
 	rules    msgrules.Rules
+	homes    homes.Rules // see homes.go
 	lastPost map[timeoutKey]time.Time
 	now      func() time.Time
 	pick     func(n int) int // a random number below n: word replacements
@@ -262,8 +264,12 @@ func New(cfg Config) (*Server, error) {
 	state := NewState(cfg.RootName, saved)
 	state.SetLastChannelID(lastID)
 	var rules msgrules.Rules
+	var homeRules homes.Rules
 	if cfg.DB != nil {
 		var err error
+		if _, err = cfg.DB.setting("home_servers", &homeRules); err != nil {
+			return nil, err
+		}
 		if state.GuestsReadOnly, err = cfg.DB.GuestsReadOnly(); err != nil {
 			return nil, err
 		}
@@ -285,6 +291,7 @@ func New(cfg Config) (*Server, error) {
 		byHost:   map[netip.Addr]map[*client]bool{},
 		streams:  map[uint32]*streamUser{},
 		rules:    rules,
+		homes:    homeRules,
 		lastPost: map[timeoutKey]time.Time{},
 		now:      time.Now,
 		pick:     rand.IntN,

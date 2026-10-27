@@ -23,6 +23,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"kallisti.chat/server/internal/emoji"
+	"kallisti.chat/server/internal/homes"
 	"kallisti.chat/server/internal/msgrules"
 	"kallisti.chat/server/internal/mumble"
 	"kallisti.chat/server/internal/push"
@@ -152,6 +153,10 @@ type Voice interface {
 	CheckMessage(session uint32, m msgrules.Message) (string, error)
 	MessageRules(session uint32) (msgrules.Rules, error)
 	SetMessageRules(session uint32, r msgrules.Rules) (msgrules.Rules, error)
+	// HomeServers, SetHomeServers: which other servers' accounts log in
+	// here (admins).
+	HomeServers(session uint32) (homes.Rules, error)
+	SetHomeServers(session uint32, r homes.Rules) (homes.Rules, error)
 }
 
 // LiveStream is a screen share or camera in a voice channel, by its id
@@ -609,6 +614,7 @@ type request struct {
 	Invite      int64            `json:"invite"`      // delete-invite
 	Token       string           `json:"token"`       // redeem-invite
 	Rules       *msgrules.Rules  `json:"rules"`       // set-message-rules
+	Homes       *homes.Rules     `json:"homes"`       // set-home-servers
 }
 
 // Handle answers one request from the browser.
@@ -843,6 +849,9 @@ func (c *Conn) Handle(raw []byte) {
 		return
 	case "message-rules", "set-message-rules":
 		c.messageRules(*id, req)
+		return
+	case "home-servers", "set-home-servers":
+		c.homeServers(*id, req)
 		return
 	case "set-listen-only":
 		// The voice server reports the change (ListenOnlyChanged).

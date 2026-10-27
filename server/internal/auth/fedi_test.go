@@ -616,3 +616,29 @@ func TestFediStartRemovesOldPathCookies(t *testing.T) {
 		t.Fatalf("cookies %v", resp.Cookies())
 	}
 }
+
+// An admin's lists (see package homes): a blocked home server's accounts
+// cannot start a login, nor finish one started before the block.
+func TestFediLoginFromABlockedServer(t *testing.T) {
+	f := &fedifake.Instance{}
+	a, srv, instURL := fediSetup(t, f)
+	host := strings.TrimPrefix(instURL, "https://")
+	blocked := true
+	a.Fedi.AllowsHome = func(h string) bool { return !(blocked && h == host) }
+	b := newBrowser(t, srv)
+	if resp, v := b.do("POST", "/api/fedi/start", map[string]any{"instance": host}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("start: %d %v", resp.StatusCode, v)
+	}
+	blocked = false
+	resp, v := b.do("POST", "/api/fedi/start", map[string]any{"instance": host})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("start: %d %v", resp.StatusCode, v)
+	}
+	blocked = true
+	callback, err := f.Approve(v["url"].(string), "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, _ = b.do("GET", callback, nil)
+	wantRedirect(t, resp, srv.URL+"/?fedi=error&reason=blocked")
+}

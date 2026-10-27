@@ -183,6 +183,9 @@ func run() error {
 		accounts.MumbleLogin = mumble.srv.CheckPassword
 		accounts.GuestAccounts = true // the built-in server can remove their registrations
 		accounts.Captcha = mumble.srv.Captcha
+		if accounts.Fedi != nil {
+			accounts.Fedi.AllowsHome = mumble.srv.AllowsHome // the admins' lists
+		}
 		accounts.ServerName = mumble.srv.ServerName
 		accounts.EndPasswordLogins = func(acc store.Account) { mumble.srv.EndPasswordLogins(accountCertHash(acc)) }
 		accounts.SetAvatar = func(acc store.Account, avatar []byte, onlyIfNone bool) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"kallisti.chat/server/internal/homes"
 	"kallisti.chat/server/internal/msgrules"
 	"kallisti.chat/server/internal/mumble"
 	"kallisti.chat/server/internal/store"
@@ -96,4 +97,31 @@ func (c *Conn) messageRules(id mumble.Identity, req request) {
 		r.Replacements = []msgrules.Replacement{}
 	}
 	c.send(map[string]any{"type": "message-rules", "rules": r})
+}
+
+// homeServers answers an admin: which other servers' accounts log in here,
+// or new lists saved.
+func (c *Conn) homeServers(id mumble.Identity, req request) {
+	if c.hub.voice == nil {
+		c.manageError("this setting needs the built-in Mumble server")
+		return
+	}
+	var r homes.Rules
+	var err error
+	if req.Type == "set-home-servers" && req.Homes != nil {
+		r, err = c.hub.voice.SetHomeServers(id.Session, *req.Homes)
+	} else {
+		r, err = c.hub.voice.HomeServers(id.Session)
+	}
+	if err != nil {
+		c.manageError(err.Error())
+		return
+	}
+	if r.Hosts == nil { // a list, not null
+		r.Hosts = []string{}
+	}
+	if r.Mode == "" {
+		r.Mode = "all"
+	}
+	c.send(map[string]any{"type": "home-servers", "homes": r})
 }

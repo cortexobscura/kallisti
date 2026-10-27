@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,6 +58,9 @@ type FediLogin struct {
 	// Dev: instances may be local and plain HTTP (FEDI_INSECURE_DEV_INSTANCES;
 	// the Client must allow it too).
 	Dev bool
+	// AllowsHome: accounts from this home server (an instance's host) may
+	// log in (an admin's lists, see package homes); nil: all.
+	AllowsHome func(host string) bool
 
 	flows   pending[fediFlow]   // by state
 	signups pending[fediSignup] // by the signup cookie
@@ -161,6 +165,8 @@ func (p *pending[T]) get(key string, now time.Time, take bool) (T, bool) {
 }
 
 func (f *FediLogin) redirectURI() string { return f.Public + fediPath + "/callback" }
+
+func (f *FediLogin) allowsHome(host string) bool { return f.AllowsHome == nil || f.AllowsHome(host) }
 
 // home is the web app with a result for it ("fedi" and "reason").
 func (f *FediLogin) home(result, reason string) string {
@@ -295,6 +301,10 @@ func (a *Service) fediStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	flow.inst = inst
+	if !a.Fedi.allowsHome(inst.Host) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this server does not take logins from " + inst.Host})
+		return
+	}
 	if flow.app, err = a.fediApp(r.Context(), inst); err != nil {
 		slog.Info("fediverse app registration", "instance", inst.Host, "err", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "cannot reach " + inst.Host + ", or it does not offer logins for apps"})
@@ -397,6 +407,11 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 		back("error", "denied")
 		return
 	}
+	// Blocked since the start.
+	if !a.Fedi.allowsHome(flow.inst.Host) {
+		back("error", "blocked")
+		return
+	}
 	// A link: still the same session in this browser.
 	linkTo, ok := a.AccountFor(r)
 	if flow.link != 0 && (!ok || linkTo.ID != flow.link || a.SessionKey(r) != flow.session) {
@@ -410,6 +425,11 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	handle := a.Fedi.displayHandle(r.Context(), flow.inst, remote)
+	// The handle's domain counts too (an account may be served elsewhere).
+	if !a.Fedi.allowsHome(handle[strings.LastIndex(handle, "@")+1:]) {
+		back("error", "blocked")
+		return
+	}
 	id := store.FediIdentity{Host: flow.inst.Host, RemoteID: remote.ID, Handle: handle}
 	if flow.reauth {
 		back(a.fediReauth(linkTo, flow.session, id))
