@@ -62,14 +62,10 @@ domain or public address, not for accounts.
   click; invite links clicked inside a Kallisti app are handled directly.
 - **Servers allow:** token requests and WebSockets from any origin (safe
   with tokens: no cookies, no cross-site forgery); pages may connect to
-  other servers (looser CSP). A switch "Accept accounts from other Kallisti
-  servers" with a block list.
+  other servers (looser CSP).
+- **Other home servers are accepted by default.** Admins can set a block
+  list, or an allow list (then only those), in the server settings.
 - **Mumble clients:** nothing changes; remote users are registered users.
-
-## Open
-
-- Should servers accept accounts from other Kallisti servers by default
-  (with a block list), or only once admins turn it on?
 
 ## Steps
 
