@@ -6,15 +6,18 @@ import { fakeConnection, type FakeConnection } from "./helpers/fakeConnection.sv
 
 const credentials = { username: "alice" };
 
-// urlFor answers when the test says (the desktop app's bridge is slow).
+// urlFor answers (or fails) when the test says (the desktop app's bridge
+// is slow).
 const setup = (local = false, deferred = false) => {
   const made: FakeConnection[] = [];
-  const pending: (() => void)[] = [];
+  const pending: ((fail?: boolean) => void)[] = [];
   const session = createServerSession<FakeConnection>({
     site: () => "https://chat.example",
     urlFor: (c) =>
       deferred
-        ? new Promise((resolve) => pending.push(() => resolve({ url: `wss://chat.example/ws?${c.username}`, local })))
+        ? new Promise((resolve, reject) =>
+            pending.push((fail) => (fail ? reject(new Error("no bridge")) : resolve({ url: `wss://chat.example/ws?${c.username}`, local }))),
+          )
         : Promise.resolve({ url: `wss://chat.example/ws?${c.username}`, local }),
     connect: (target) => {
       const c = fakeConnection(target.url);
@@ -75,6 +78,59 @@ describe("a server session", () => {
     session.dispose();
   });
 
+  it("dispose ends everything: a failed lookup after it schedules nothing, starts do nothing", async () => {
+    const { session, made, pending } = setup(false, true);
+    void session.start(credentials);
+    pending[0]!();
+    await settle();
+    made[0]!.sync();
+    made[0]!.drop();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(1000); // an attempt asks for its address
+    session.dispose();
+    pending[1]!(true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    void session.start(credentials);
+    session.wake();
+    void session.tryNow();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(pending).toHaveLength(2);
+    expect(made).toHaveLength(1);
+  });
+
+  it("dispose drops a start that still waits for its address", async () => {
+    const { session, made, pending } = setup(false, true);
+    void session.start(credentials);
+    session.dispose();
+    pending[0]!();
+    await settle();
+    expect(made).toHaveLength(0);
+  });
+
+  it("an old attempt still looking up its address does not hold up the next loss", async () => {
+    const { session, made, pending } = setup(false, true);
+    void session.start(credentials);
+    pending[0]!();
+    await settle();
+    made[0]!.sync();
+    made[0]!.drop();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(1000); // attempt 1 waits for its address
+    void session.start(credentials); // a new login meanwhile
+    pending[2]!();
+    await settle();
+    made[1]!.sync();
+    made[1]!.drop();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(pending.length).toBe(4); // the new loss asked again
+    pending[1]!(); // the old lookup ends late: nothing comes of it
+    pending[3]!();
+    await settle();
+    expect(made.map((c) => c.url)).toHaveLength(3);
+    session.dispose();
+  });
+
   it("dispose ends everything: no attempt later", async () => {
     const { session, made } = setup();
     await session.start(credentials);
@@ -96,7 +152,9 @@ describe("a server session", () => {
     flushSync();
     await vi.advanceTimersByTimeAsync(1000);
     expect(made).toHaveLength(2);
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(made[1]!.closeRequests).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
     expect(made[1]!.closeRequests).toBe(1);
     session.dispose();
   });

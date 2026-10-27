@@ -100,6 +100,7 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
   let busyTries = 0;
   let starting = false;
   let generation = 0;
+  let disposed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const stopReconnecting = () => {
     generation++;
@@ -108,11 +109,12 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     attempt?.close();
     attempt = null;
     attempts = busyTries = 0;
+    starting = false; // an older attempt's lookup must not hold up the next
   };
   const tryNow = async () => {
     clearTimeout(timer);
     timer = undefined;
-    if (attempt || starting || !credentials || !lost) return;
+    if (disposed || attempt || starting || !credentials || !lost) return;
     starting = true;
     const mine = generation;
     try {
@@ -125,9 +127,9 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
         if (attempt === next && next.state.status !== "synced") next.close();
       }, ATTEMPT_TIMEOUT_MS);
     } catch {
-      schedule();
+      if (mine === generation) schedule();
     } finally {
-      starting = false;
+      if (mine === generation) starting = false;
     }
   };
   // Each second while quiet; the growing waits count only after it.
@@ -223,6 +225,7 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     // Connects (again) with these credentials; a refusal of the address
     // throws (for the login screen).
     start: async (c: Credentials) => {
+      if (disposed) return;
       credentials = c;
       const mine = ++starts;
       stopReconnecting();
@@ -263,6 +266,7 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     // Into voice, or a new output device (see lib/voice/restart).
     setAudio: (ctx: AudioContext, keepMic: boolean) => [connection, attempt].forEach((c) => c?.setAudio(ctx, keepMic)),
     dispose: () => {
+      disposed = true;
       starts++;
       stopReconnecting();
       disposeEffects();
