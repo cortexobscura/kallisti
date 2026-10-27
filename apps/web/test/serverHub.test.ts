@@ -327,4 +327,16 @@ describe("the added servers", () => {
     hub.follow(null); // this page's late first answer: not logged in
     expect(revoked).toEqual([]);
   });
+
+  it("loaded only when the list came (a failed load is listed, not loaded)", async () => {
+    const api = account([{ origin: A, name: "alice" }]);
+    api.load.mockImplementationOnce(async () => {
+      throw new Error("down");
+    });
+    const { hub } = setup(api);
+    await hub.sync();
+    expect([hub.listed, hub.loaded]).toEqual([true, false]);
+    await hub.sync();
+    expect([hub.listed, hub.loaded]).toEqual([true, true]);
+  });
 });

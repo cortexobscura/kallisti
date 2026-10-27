@@ -463,7 +463,7 @@
   // Only once the list is known (before it, all would look gone).
   $effect(() => {
     const keep = hub.servers.filter((s) => s.token).map((s) => s.origin);
-    if (browserPushSupport() === "ok" && (hub.listed || (ownerKnown && owner === null))) untrack(() => void dropServerPushes(keep));
+    if (browserPushSupport() === "ok" && (hub.loaded || (ownerKnown && owner === null))) untrack(() => void dropServerPushes(keep));
   });
 
   // Invites (see lib/invites): a link to a server, clicked in a client or
@@ -509,7 +509,7 @@
   if (openUrl) history.replaceState(history.state, "", location.pathname);
   // Once the added servers are there (restored after the home connects).
   $effect(() => {
-    if (openUrl && (hub.listed || owner === null) && (connection?.state.status === "synced" || hub.servers.some((s) => openUrl!.startsWith(`${s.origin}/`) && s.session?.connection)))
+    if (openUrl && (hub.loaded || owner === null) && (connection?.state.status === "synced" || hub.servers.some((s) => openUrl!.startsWith(`${s.origin}/`) && s.session?.connection)))
       untrack(() => {
         openMessageLink(openUrl!);
         openUrl = null;
