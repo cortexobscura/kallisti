@@ -234,6 +234,7 @@ describe("push from added servers", () => {
     });
     const { dropServerPushes, syncServerPush } = await import("../src/lib/push");
     const prefs = { quiet: [], loud: [], blocked: [] };
+    storage.set("pushOwner", pushOwner(HOME, "lain")); // the home server's push is on
     const scope = serverPushScope(B, HOME);
     await syncServerPush({ origin: B, token: "tb", name: "lain" }, true, prefs);
     expect([...regs.keys()]).toEqual([scope]);
@@ -243,6 +244,11 @@ describe("push from added servers", () => {
     await syncServerPush({ origin: B, token: "tb", name: "lain" }, false, prefs);
     expect(requests).toContain(`DELETE ${B}/api/push/subscriptions Bearer tb omit`);
     expect(regs.has(scope)).toBe(false);
+    // Off in another tab (its key gone): nothing new here.
+    storage.set("pushOwner", "");
+    await syncServerPush({ origin: B, token: "tb", name: "lain" }, true, prefs);
+    expect(regs.size).toBe(0);
+    storage.set("pushOwner", pushOwner(HOME, "lain"));
     // On again; then the server is removed.
     await syncServerPush({ origin: B, token: "tb", name: "lain" }, true, prefs);
     await dropServerPushes([]);

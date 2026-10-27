@@ -152,7 +152,9 @@
   // back without a result in the address): used by the next page, once.
   const keptInvite = safeGet(popupLogin.tab, "kallisti-invite");
   if (keptInvite) safeSet(popupLogin.tab, "kallisti-invite", "");
-  const restore = keptInvite?.startsWith("/invite/") || keptInvite?.startsWith("/?join=") ? keptInvite : null;
+  // A link in the address wins (a newer one).
+  const explicit = /^\/invite\//.test(location.pathname) || /[?&](join|open)=/.test(location.search);
+  const restore = !explicit && (keptInvite?.startsWith("/invite/") || keptInvite?.startsWith("/?join=")) ? keptInvite : null;
   if (restore) history.replaceState(history.state, "", restore);
   else if (fediBack) history.replaceState(history.state, "", withoutFediResult(location.pathname + location.search + location.hash));
   let fediSignup = $state(fediBack?.kind === "register" || popupLogin.resumed);
@@ -515,14 +517,12 @@
   });
   // ?join=<an invite link> (another server's invite page sends people to
   // their home): once the home login is known and connected.
-  let joinUrl = new URLSearchParams(location.search).get("join");
-  if (joinUrl) history.replaceState(history.state, "", location.pathname);
-  // Kept over a login through another server (see keptInvite).
-  if (joinUrl) safeSet(tabStorage(), "kallisti-invite", `/?join=${encodeURIComponent(joinUrl)}`);
+  const joinAsked = new URLSearchParams(location.search).get("join");
+  if (joinAsked) history.replaceState(history.state, "", location.pathname);
+  let joinUrl = $state(joinAsked);
   $effect(() => {
     if (joinUrl && connection?.state.status === "synced" && ownerKnown && (hub.listed || owner === null))
       untrack(() => {
-        safeSet(tabStorage(), "kallisti-invite", "");
         if (!openInvite(joinUrl!)) fediNotice = inviteOf(joinUrl!) ? "Log in with an account (not as a guest) to join other servers." : "This is not an invite link.";
         joinUrl = null;
       });
@@ -794,6 +794,7 @@
         {fediSignup}
         onFediSignupDone={() => (connectHome ? window.close() : (fediSignup = false))}
         onHandoff={() => (connectPhase = "deliver")}
+        keep={joinUrl ? `/?join=${encodeURIComponent(joinUrl)}` : undefined}
       />
     {/snippet}
     {@render withRail(login)}

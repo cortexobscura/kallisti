@@ -53,12 +53,13 @@ export const windowFor = <W extends { url: string; focused: boolean }>(windows: 
 // worker registration each (a subscription is per registration, and each
 // server has its own key), at <home>/push/<origin>/ (see lib/push).
 
-// The server a registration is for (its scope; anything else: home).
+// The server a registration is for (its scope, see lib/push
+// serverPushScope; anything else: home).
 export const serverOfScope = (scope: string, home: string): string => {
-  const m = new RegExp(`^${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/push/([^/]+)/$`).exec(scope);
-  if (!m) return home;
+  const prefix = `${home}/push/`;
+  if (!scope.startsWith(prefix) || !scope.endsWith("/")) return home;
   try {
-    const server = decodeURIComponent(m[1]!);
+    const server = atob(scope.slice(prefix.length, -1).replaceAll("-", "+").replaceAll("_", "/"));
     return new URL(server).origin === server ? server : home;
   } catch {
     return home;

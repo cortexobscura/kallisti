@@ -7,11 +7,13 @@ const B = "https://b.example";
 
 describe("push for added servers", () => {
   it("has a service worker scope per server, and reads the server back", () => {
-    expect(serverPushScope(B, HOME)).toBe(`${HOME}/push/${encodeURIComponent(B)}/`);
+    expect(serverPushScope(B, HOME)).not.toMatch(/%2f|%5c/i); // browsers refuse such scopes
+    expect(serverPushScope(B, HOME).startsWith(`${HOME}/push/`)).toBe(true);
     expect(serverOfScope(`${HOME}/`, HOME)).toBe(HOME);
     expect(serverOfScope(serverPushScope(B, HOME), HOME)).toBe(B); // the page's scope, the worker's reading
     // Anything else counts as the home server.
-    expect(serverOfScope(`${HOME}/push/not%20an%20origin/`, HOME)).toBe(HOME);
+    expect(serverOfScope(`${HOME}/push/not-base64!/`, HOME)).toBe(HOME);
+    expect(serverOfScope(`${HOME}/push/${btoa("not an origin")}/`, HOME)).toBe(HOME);
   });
 
   it("links and icons of a notice come from its own server only", () => {

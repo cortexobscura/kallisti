@@ -18,6 +18,7 @@
     fediSignup = false,
     onFediSignupDone,
     onHandoff,
+    keep,
     desktop = null,
     certificate = null,
     onTrust,
@@ -43,6 +44,8 @@
     onFediSignupDone?: () => void;
     // A handoff's account was made (see Connect): its token waits.
     onHandoff?: () => void;
+    // An address to come back to after a login through another server.
+    keep?: string;
   } = $props();
 
   // An answer counts only for the server it was asked of, while this
@@ -170,8 +173,9 @@
     try {
       const url = await api.fediStart(instance.trim());
       safeSet(localStorage, "fediInstance", instance.trim());
-      // An invite in the address: kept over the login's pages (see App).
-      if (invite) safeSet(tabStorage(), "kallisti-invite", location.pathname);
+      // A link to come back to (an invite here, a ?join): kept over the
+      // login's pages (see App keptInvite); none: none.
+      safeSet(tabStorage(), "kallisti-invite", keep ?? (invite ? location.pathname : ""));
       location.assign(url); // to the instance, and back to the server
     } catch (err) {
       apiError = err instanceof Error ? err.message : String(err);

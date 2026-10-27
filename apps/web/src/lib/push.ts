@@ -65,7 +65,9 @@ const home = (base: string): Target => ({ base, scope: "/" });
 // An added server's registration scope: the service worker's pushScope
 // (not imported: the worker must stay one file, a shared module would be a
 // chunk of its own).
-export const serverPushScope = (server: string, home: string) => `${home}/push/${encodeURIComponent(server)}/`;
+// base64url: a scope's path must not hold an encoded "/" (%2F).
+export const serverPushScope = (server: string, home: string) =>
+  `${home}/push/${btoa(server).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}/`;
 
 // Whose the home server's push is (an added server's follows it).
 const OWNER_KEY = "pushOwner";
@@ -189,7 +191,9 @@ export const syncPush = async (base: string, name: string, prefs: PushPrefs) => 
 // server does (on: its push is on), with that server's token.
 export const syncServerPush = async (server: { origin: string; token: string; name: string }, on: boolean, prefs: PushPrefs) => {
   const t: Target = { base: server.origin, scope: serverPushScope(server.origin, location.origin), token: server.token };
-  if (on && Notification.permission === "granted") await subscribe(t, pushOwner(server.origin, server.name), prefs).catch((err) => console.warn("push", err));
+  // on, and still on in this browser (another tab may have turned it off).
+  if (on && safeGet(localStorage, OWNER_KEY) && Notification.permission === "granted")
+    await subscribe(t, pushOwner(server.origin, server.name), prefs).catch((err) => console.warn("push", err));
   else if (await registration(t.scope).catch(() => undefined)) await stopPush(t).catch(() => {});
 };
 
