@@ -141,7 +141,7 @@
   import { mirrorIds } from "../lib/mirrors";
   import { railBadge, tabTitle, type RailBadge } from "../lib/title";
   import { channelLink, messageLink, parseMessageLink } from "../lib/messageLink";
-  import { inviteLink, invitePlace, parseInviteLink } from "../lib/invites";
+  import { inviteLink, inviteOf, invitePlace, parseInviteLink } from "../lib/invites";
   import UserPanel from "./UserPanel.svelte";
   import VoiceBar from "./VoiceBar.svelte";
   import ObsDialog from "./ObsDialog.svelte";
@@ -170,6 +170,9 @@
     remoteVoice = null,
     onShow,
     onBadge,
+    invite = null,
+    onInviteUsed,
+    onInvite,
   }: {
     connection: Connection;
     account?: AccountActions;
@@ -215,6 +218,12 @@
     onShow?: () => void;
     // Its mark in the rail, on each change.
     onBadge?: (badge: RailBadge) => void;
+    // An invite to redeem here, from elsewhere (a link clicked on another
+    // server, ?join=); onInviteUsed once asked for.
+    invite?: string | null;
+    onInviteUsed?: () => void;
+    // An invite link clicked here (any server's): true, the caller takes it.
+    onInvite?: (url: string) => boolean;
   } = $props();
 
   const server = $derived(connection.state);
@@ -773,6 +782,14 @@
     untrack(() => connection.manage({ redeemInvite: token }));
     invited = null;
   });
+  $effect(() => {
+    const token = invite;
+    if (!token || !text.available) return;
+    untrack(() => {
+      connection.manage({ redeemInvite: token });
+      onInviteUsed?.();
+    });
+  });
   // A link made in the members dialog: shown there once. A redeemed link
   // to a voice channel joins it, unless that would leave a call.
   let newInvite = $state<{ voice: number; token: string } | null>(null);
@@ -1242,7 +1259,8 @@
     channelNames: text.channels.map((c) => c.name),
     onLink: (href: string) => {
       const link = parseMessageLink(href, site);
-      return link && (openMessage(link) ? "opened" : "unavailable");
+      if (link) return openMessage(link) ? "opened" : "unavailable";
+      return inviteOf(href) && onInvite?.(href) ? "opened" : null;
     },
     onReact: readOnly ? undefined : connection.react,
     onVote: readOnly ? undefined : connection.vote,

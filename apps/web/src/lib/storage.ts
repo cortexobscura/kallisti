@@ -19,3 +19,12 @@ export const safeSet = (storage: Storage | undefined, key: string, value: string
     return false;
   }
 };
+
+// This tab's storage (sessionStorage), or undefined where it is blocked.
+export const tabStorage = (): globalThis.Storage | undefined => {
+  try {
+    return sessionStorage;
+  } catch {
+    return undefined;
+  }
+};

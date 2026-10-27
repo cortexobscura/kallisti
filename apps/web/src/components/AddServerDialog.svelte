@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import type { Account, AccountsApi } from "../lib/accounts";
   import { isKallisti } from "../lib/desktop";
   import { serverOrigin } from "../lib/serverList";
@@ -13,6 +14,7 @@
     homeCookie = true,
     taken,
     server,
+    address: startAddress = "",
     apiFor,
     onAdded,
     onClose,
@@ -25,6 +27,8 @@
     // A server of the list without a login on this device: straight to its
     // login, with the name it had.
     server?: { origin: string; name: string };
+    // An address to check at once (an invite link's server).
+    address?: string;
     // A server's account API whose token stays in memory (see token()),
     // starting with this one.
     apiFor: (origin: string, token?: string) => { api: AccountsApi; token: () => string | null };
@@ -36,7 +40,8 @@
   let dialog: HTMLDialogElement | undefined = $state();
   // svelte-ignore state_referenced_locally
   const preset = server;
-  let address = $state("");
+  // svelte-ignore state_referenced_locally
+  let address = $state(startAddress);
   let found = $state<{ origin: string } | null>(preset ? { origin: preset.origin } : null);
   let name = $state(preset?.name ?? "");
   let password = $state("");
@@ -53,6 +58,10 @@
     holding = null;
   };
   $effect(() => dialog?.showModal());
+  // Once, after the setup (check is below).
+  $effect(() => {
+    if (startAddress && !preset) untrack(() => void check());
+  });
   $effect(() => cancel);
 
   const back = () => {
@@ -63,8 +72,8 @@
     busy = false;
   };
 
-  const check = async (event: SubmitEvent) => {
-    event.preventDefault();
+  const check = async (event?: SubmitEvent) => {
+    event?.preventDefault();
     error = null;
     const parsed = serverOrigin(address, home, homeCookie);
     if ("error" in parsed) return void (error = parsed.error);

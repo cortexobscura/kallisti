@@ -1,11 +1,13 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { parseInviteLink } from "../lib/invites";
+  import { serverOrigin } from "../lib/serverList";
   import { modeForError, type Account, type AccountsApi } from "../lib/accounts";
   import { solveInWorker } from "../lib/captcha";
-  import { formatFingerprint, type CertificateProblem } from "../lib/desktop";
+  import { formatFingerprint, isDesktop, type CertificateProblem } from "../lib/desktop";
   import type { Credentials } from "../lib/connection.svelte";
   import { iconHref, showIcons } from "../lib/serverLogo";
-  import { safeGet, safeSet } from "../lib/storage";
+  import { safeGet, safeSet, tabStorage } from "../lib/storage";
 
   let {
     error,
@@ -168,11 +170,27 @@
     try {
       const url = await api.fediStart(instance.trim());
       safeSet(localStorage, "fediInstance", instance.trim());
+      // An invite in the address: kept over the login's pages (see App).
+      if (invite) safeSet(tabStorage(), "kallisti-invite", location.pathname);
       location.assign(url); // to the instance, and back to the server
     } catch (err) {
       apiError = err instanceof Error ? err.message : String(err);
       busy = false;
     }
+  };
+  // An invite to this server (the address /invite/...): people with an
+  // account on another Kallisti server open it there, at their home (its
+  // address remembered by this site).
+  const invite = !isDesktop() && !!parseInviteLink(location.href, location.origin);
+  let homeAddress = $state(safeGet(localStorage, "kallisti-home") ?? "");
+  let homeError = $state<string | null>(null);
+  const openAtHome = (event: SubmitEvent) => {
+    event.preventDefault();
+    const parsed = serverOrigin(homeAddress, "", false);
+    if ("error" in parsed) return void (homeError = parsed.error);
+    if (parsed.origin === location.origin) return void (homeError = "That is this server.");
+    safeSet(localStorage, "kallisti-home", homeAddress.trim());
+    location.assign(`${parsed.origin}/?join=${encodeURIComponent(location.href)}`);
   };
   // The name step: the server suggests the fediverse user name.
   let signup = $state<{ name: string; handle: string } | null | undefined>(undefined);
@@ -346,6 +364,17 @@
         {mumbleOnly ? "Connect" : mode === "guest" ? "Join as guest" : mode === "login" ? "Log in" : "Create account"}
       </button>
     </form>
+    {/if}
+    {#if invite}
+      <form class="card fedi" onsubmit={openAtHome}>
+        <label>
+          Have an account on another Kallisti server?
+          <input bind:value={homeAddress} placeholder="chat.example.org" autocomplete="url" aria-describedby="home-hint" oninput={() => (homeError = null)} />
+        </label>
+        <p class="hint" id="home-hint">Open this invite there: this server joins your server list.</p>
+        {#if homeError}<p class="error" role="alert">{homeError}</p>{/if}
+        <button class="secondary" type="submit" disabled={!homeAddress.trim()}>Open in my Kallisti</button>
+      </form>
     {/if}
     {#if fediOn && !desktop}
       <form class="card fedi" onsubmit={fediLogin}>
