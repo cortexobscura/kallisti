@@ -572,7 +572,7 @@ func (a *Service) logout(w http.ResponseWriter, r *http.Request) {
 		Session string `json:"session"`
 	}
 	json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
-	if body.Session != "" && body.Session != sessionID(a.SessionKey(r)) {
+	if key := a.SessionKey(r); body.Session != "" && key != "" && body.Session != sessionID(key) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "another login is active here now"})
 		return
 	}

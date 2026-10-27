@@ -855,3 +855,11 @@ func TestLogoutOfAnotherSessionIsRefused(t *testing.T) {
 		t.Fatal("still logged in")
 	}
 }
+
+// Without any session (already logged out) a named logout is no conflict.
+func TestLogoutNamingASessionWithoutOne(t *testing.T) {
+	_, srv := setup(t)
+	if resp, _ := post(t, srv, "/api/logout", map[string]string{"session": "0123456789abcdef"}, nil); resp.StatusCode == http.StatusConflict {
+		t.Fatal("409 without a session")
+	}
+}
