@@ -40,6 +40,12 @@
     onFediSignupDone?: () => void;
   } = $props();
 
+  // An answer counts only for the server it was asked of, while this
+  // screen is open (the desktop app may change the server meanwhile).
+  let open = true;
+  $effect(() => () => void (open = false));
+  const current = (used: AccountsApi) => open && used === api;
+
   type Mode = "guest" | "login" | "create";
   const MODES: [Mode, string][] = [
     ["login", "Log in"],
@@ -93,24 +99,29 @@
     try {
       // A guest gets a temporary account where the server has them (its
       // name is kept, and it can keep the account with a password).
+      const used = api;
       if (mode === "guest") {
         // A browser that cannot do the check joins as a classic guest (as
         // Mumble clients do).
         const proof = await prove().catch(() => null);
-        const guest = proof === null ? null : await api.guest(name, proof);
+        const guest = proof === null ? null : await used.guest(name, proof);
+        if (!current(used)) return;
         if (!guest) return connectAs(name, false);
         onAccountChange(guest);
         return connectAs(guest.name, true);
       }
       const result =
-        mode === "login" ? await api.login(name, password) : { name: await api.create(name, password, await prove()), mumble: false };
+        mode === "login" ? await used.login(name, password) : { name: await used.create(name, password, await prove()), mumble: false };
+      if (!current(used)) return;
       const pw = password;
       password = "";
       // A Mumble registration (SuperUser, for example) logs in to Mumble with
       // its password.
       if (result.mumble) return connectAs(result.name, false, pw);
       // With its password state and fediverse link, for the settings.
-      onAccountChange((await api.me()) ?? { name: result.name, temporary: false });
+      const account = (await used.me()) ?? { name: result.name, temporary: false };
+      if (!current(used)) return;
+      onAccountChange(account);
       connectAs(result.name, true);
     } catch (err) {
       apiError = err instanceof Error ? err.message : String(err);
@@ -185,7 +196,10 @@
   };
 
   const logout = async () => {
-    if (await api.logout()) onAccountChange(null);
+    const used = api;
+    const ok = await used.logout();
+    if (!current(used)) return;
+    if (ok) onAccountChange(null);
     else apiError = "Logging out did not finish: you may still be logged in. Try again.";
   };
 </script>

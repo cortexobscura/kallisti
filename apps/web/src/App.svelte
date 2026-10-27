@@ -309,9 +309,10 @@
     revoke: async (origin, token) => void (await createAccountsApi(origin, fetch, memoryStore(token)).logout()),
   });
   // Whose the added servers are: an account at home (not a guest, not a
-  // Mumble server in the desktop app). Once the first check is done, every
+  // Mumble server in the desktop app), in this login (its session: tabs of
+  // one browser share it, a new login is another). Once the first check is done, every
   // change goes to the hub (another login ends the previous one's).
-  const owner = $derived(account && !account.temporary ? `${homeOrigin()} ${account.name}` : null);
+  const owner = $derived(account && !account.temporary ? `${homeOrigin()} ${account.name} ${account.session ?? ""}` : null);
   $effect(() => {
     const now = owner;
     if (ownerKnown) untrack(() => hub.follow(now));
