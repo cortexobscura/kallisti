@@ -62,7 +62,7 @@ func TestKallistiAsALoginProvider(t *testing.T) {
 	}
 	query, _ := url.QueryUnescape(strings.TrimPrefix(consent, "/?authorize="))
 	resp, v := br.do("GET", pSrv.URL+"/api/oauth/request?"+query, nil)
-	if resp.StatusCode != http.StatusOK || v["account"] != "lain" || v["site"] != bURL || v["app"] != "B" {
+	if resp.StatusCode != http.StatusOK || v["account"] != "lain" || v["site"] != bURL {
 		t.Fatalf("request: %d %v", resp.StatusCode, v)
 	}
 	resp, v = br.do("POST", pSrv.URL+"/api/oauth/approve", map[string]string{"query": query})
@@ -105,7 +105,11 @@ func TestProviderCodesAndTokens(t *testing.T) {
 	other, _ := client.RegisterApp(ctx, inst, "C", "https://c.example/cb", "")
 	acc, _ := p.Store.CreateAccount(store.Account{Name: "lain", PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, time.Now())
 	code := func(c fedi.App, uri, verifier string) string {
-		return p.Provider.issue(acc.ID, mustClient(t, p, c.ClientID), uri, "read:accounts", fedi.Challenge(verifier), time.Now())
+		return p.Provider.issue(acc.ID, c.ClientID, uri, "read:accounts", fedi.Challenge(verifier), time.Now())
+	}
+	// Registering again gives the same app (it is its redirect URI).
+	if again, _ := client.RegisterApp(ctx, inst, "B again", redirect, ""); again.ClientID != app.ClientID {
+		t.Errorf("another app for the same redirect: %q, %q", again.ClientID, app.ClientID)
 	}
 	v := fedi.NewVerifier()
 	c1 := code(app, redirect, v)
@@ -128,8 +132,8 @@ func TestProviderCodesAndTokens(t *testing.T) {
 	if _, err := client.Token(ctx, inst, other, redirect, code(app, redirect, v), v); err == nil {
 		t.Error("another client's code worked")
 	}
-	if _, err := client.Token(ctx, inst, fedi.App{ClientID: app.ClientID, ClientSecret: "wrong"}, redirect, code(app, redirect, v), v); err == nil {
-		t.Error("a wrong secret worked")
+	if _, err := client.Token(ctx, inst, fedi.App{ClientID: other.ClientID, ClientSecret: "x"}, "https://c.example/cb", code(app, redirect, v), v); err == nil {
+		t.Error("another app with its own redirect took the code")
 	}
 	if _, err := client.VerifyCredentials(ctx, inst, "not-a-token"); err == nil {
 		t.Error("a made-up token worked")
@@ -138,15 +142,6 @@ func TestProviderCodesAndTokens(t *testing.T) {
 	if h, err := client.DiscoverHandle(ctx, inst, "lain", true); err != nil || h != "@lain@"+inst.Host {
 		t.Fatalf("webfinger: %q %v", h, err)
 	}
-}
-
-func mustClient(t *testing.T, p *Service, id string) store.OAuthClient {
-	t.Helper()
-	c, err := p.Store.OAuthClient(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
 }
 
 // The authorize page refuses what it cannot check, without redirecting
@@ -176,7 +171,7 @@ func TestAuthorizeRefusesBadRequests(t *testing.T) {
 		t.Fatalf("good: %d", code)
 	}
 	for name, change := range map[string]func(url.Values){
-		"unknown client":  func(q url.Values) { q.Set("client_id", "nope") },
+		"another client":  func(q url.Values) { q.Set("client_id", clientIDFor("https://c.example/cb")) },
 		"other redirect":  func(q url.Values) { q.Set("redirect_uri", "https://evil.example/cb") },
 		"no PKCE":         func(q url.Values) { q.Del("code_challenge") },
 		"plain PKCE":      func(q url.Values) { q.Set("code_challenge_method", "plain") },
@@ -229,8 +224,7 @@ func TestProviderRefusals(t *testing.T) {
 	if _, err := client.VerifyCredentials(ctx, inst, "session-token"); err == nil {
 		t.Error("a session token read the account as a provider token")
 	}
-	c, _ := p.Store.OAuthClient(app.ClientID)
-	p.Store.CreateOAuthToken(tokenHash("provider-token"), acc.ID, c.ID, "read", time.Now().Add(time.Hour))
+	p.Store.CreateOAuthToken(tokenHash("provider-token"), acc.ID, app.ClientID, "read", time.Now().Add(time.Hour))
 	req, _ := http.NewRequest("GET", pSrv.URL+"/api/me", nil)
 	req.Header.Set("Authorization", "Bearer provider-token")
 	resp, err := pSrv.Client().Do(req)

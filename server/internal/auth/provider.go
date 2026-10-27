@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
@@ -28,19 +27,24 @@ import (
 // Other servers register an app (/api/v1/apps); the browser comes to
 // /oauth/authorize, the user allows the site once (the web app shows the
 // question: /?authorize=...), then at once; the site trades the code
-// (single use, PKCE S256 only, its client secret) for a short token that
-// reads the account (verify_credentials). WebFinger finds name@host.
+// (single use, PKCE S256 only) for a short token that reads the account
+// (verify_credentials). WebFinger finds name@host.
+//
+// An app is its redirect URI: its client id comes from it, nothing is kept
+// (no table anyone could fill, no app anyone could take away: sites keep
+// the first app that worked). Its secret is not checked: as for public
+// clients, PKCE and the exact redirect protect the code.
 
 const (
 	codeLifetime  = 2 * time.Minute
 	tokenLifetime = 10 * time.Minute
-	// Apps anyone may register: without a login they go after a day,
-	// without one for a month too; at most this many (then the least
-	// recently used goes).
-	unusedClientLifetime = 24 * time.Hour
-	idleClientLifetime   = 30 * 24 * time.Hour
-	maxOAuthClients      = 10_000
 )
+
+// clientIDFor is the app of a redirect URI.
+func clientIDFor(redirect string) string {
+	sum := sha256.Sum256([]byte("kallisti oauth client " + redirect))
+	return hex.EncodeToString(sum[:16])
+}
 
 // The scopes we know: all read the account, nothing else.
 var providerScopes = []string{"read", "read:accounts", "profile"}
@@ -58,14 +62,13 @@ type oauthCode struct {
 }
 
 // issue keeps a code for the account (single use); "" when full.
-func (p *Provider) issue(account int64, c store.OAuthClient, redirect, scopes, challenge string, now time.Time) string {
-	return p.codes.put(oauthCode{account, c.ID, redirect, scopes, challenge}, now, now.Add(codeLifetime))
+func (p *Provider) issue(account int64, client, redirect, scopes, challenge string, now time.Time) string {
+	return p.codes.put(oauthCode{account, client, redirect, scopes, challenge}, now, now.Add(codeLifetime))
 }
 
 // authRequest is a checked /oauth/authorize request.
 type authRequest struct {
-	client                         store.OAuthClient
-	redirect, scopes, state, pkce string
+	client, redirect, scopes, state, pkce string
 }
 
 // site is who asks: the redirect's origin (consent is kept per redirect
@@ -98,27 +101,22 @@ var errBadRequest = errors.New("invalid request")
 // parseAuthorize checks an authorize request; an error never redirects
 // (the redirect URI may be anyone's).
 func (a *Service) parseAuthorize(q url.Values) (authRequest, error) {
-	c, err := a.Store.OAuthClient(q.Get("client_id"))
-	if err != nil {
-		return authRequest{}, errBadRequest
-	}
 	requested := strings.Fields(q.Get("scope"))
 	if len(requested) == 0 {
-		requested = strings.Fields(c.Scopes)
+		requested = []string{"read"}
 	}
-	allowed := strings.Fields(c.Scopes)
 	var scopes []string // known ones, once each: bounded
 	for _, s := range requested {
-		if !slices.Contains(allowed, s) {
+		if !slices.Contains(providerScopes, s) {
 			return authRequest{}, errBadRequest
 		}
 		if !slices.Contains(scopes, s) {
 			scopes = append(scopes, s)
 		}
 	}
-	r := authRequest{client: c, redirect: q.Get("redirect_uri"), scopes: strings.Join(scopes, " "), state: q.Get("state"), pkce: q.Get("code_challenge")}
-	if r.redirect != c.RedirectURI || q.Get("response_type") != "code" || q.Get("code_challenge_method") != "S256" ||
-		len(r.pkce) != 43 || len(r.state) > 512 {
+	r := authRequest{client: q.Get("client_id"), redirect: q.Get("redirect_uri"), scopes: strings.Join(scopes, " "), state: q.Get("state"), pkce: q.Get("code_challenge")}
+	if !validRedirect(r.redirect) || r.client != clientIDFor(r.redirect) || q.Get("response_type") != "code" ||
+		q.Get("code_challenge_method") != "S256" || len(r.pkce) != 43 || len(r.state) > 512 {
 		return authRequest{}, errBadRequest
 	}
 	return r, nil
@@ -202,16 +200,11 @@ func form(w http.ResponseWriter, r *http.Request) (url.Values, bool) {
 	return r.PostForm, r.ParseForm() == nil
 }
 
+// registerClient: an app is its redirect URI (see clientIDFor); the same
+// one for each registration.
 func (a *Service) registerClient(w http.ResponseWriter, r *http.Request) {
-	if !a.allow(r) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many requests"})
-		return
-	}
 	f, ok := form(w, r)
 	name, redirect, scopes, website := strings.TrimSpace(f.Get("client_name")), f.Get("redirect_uris"), f.Get("scopes"), f.Get("website")
-	if scopes == "" {
-		scopes = "read"
-	}
 	for _, s := range strings.Fields(scopes) {
 		ok = ok && slices.Contains(providerScopes, s)
 	}
@@ -219,25 +212,8 @@ func (a *Service) registerClient(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid app"})
 		return
 	}
-	now := a.Now()
-	if n, err := a.Store.CountOAuthClients(); err != nil || n >= maxOAuthClients {
-		a.DeleteUnusedOAuthClients()
-		if n, err = a.Store.CountOAuthClients(); err == nil && n >= maxOAuthClients {
-			err = a.Store.DeleteLeastUsedOAuthClient()
-		}
-		if err != nil {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "try again later"})
-			return
-		}
-	}
-	id, secret := randomHex(16), randomHex(32)
-	c := store.OAuthClient{ID: id, SecretHash: tokenHash(secret), Name: name, RedirectURI: redirect, Scopes: strings.Join(strings.Fields(scopes), " "), Website: website}
-	if err := a.Store.CreateOAuthClient(c, now); err != nil {
-		slog.Error("oauth app", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "try again later"})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": name, "website": website, "redirect_uri": redirect, "client_id": id, "client_secret": secret})
+	id := clientIDFor(redirect)
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": name, "website": website, "redirect_uri": redirect, "client_id": id, "client_secret": randomHex(32)})
 }
 
 // validRedirect: one absolute https URL (http only on this computer, for
@@ -311,7 +287,7 @@ func (a *Service) oauthRequest(w http.ResponseWriter, r *http.Request, approve b
 	}
 	if !approve {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"app": q.client.Name, "website": q.client.Website, "site": q.site(), "account": acc.Name,
+			"site": q.site(), "account": acc.Name,
 			"deny": withQuery(q.redirect, url.Values{"error": {"access_denied"}, "state": {q.state}}),
 		})
 		return
@@ -332,8 +308,8 @@ func tokenError(w http.ResponseWriter, code string) {
 	writeJSON(w, http.StatusBadRequest, map[string]string{"error": code})
 }
 
-// token trades a code for a short token (the client's secret, the same
-// redirect URI, the PKCE verifier).
+// token trades a code for a short token (the same app and redirect URI,
+// the PKCE verifier).
 func (a *Service) token(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	f, ok := form(w, r)
@@ -341,29 +317,23 @@ func (a *Service) token(w http.ResponseWriter, r *http.Request) {
 		tokenError(w, "unsupported_grant_type")
 		return
 	}
-	id, secret := f.Get("client_id"), f.Get("client_secret")
-	if u, p, ok := r.BasicAuth(); ok {
-		id, secret = u, p
-	}
-	c, err := a.Store.OAuthClient(id)
-	if err != nil || subtle.ConstantTimeCompare([]byte(tokenHash(secret)), []byte(c.SecretHash)) != 1 {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_client"})
-		return
+	id, redirect := f.Get("client_id"), f.Get("redirect_uri")
+	if u, _, ok := r.BasicAuth(); ok {
+		id = u
 	}
 	now := a.Now()
 	code, ok := a.Provider.codes.get(f.Get("code"), now, true)
 	sum := sha256.Sum256([]byte(f.Get("code_verifier")))
-	if !ok || code.client != c.ID || code.redirect != f.Get("redirect_uri") ||
+	if !ok || id != clientIDFor(redirect) || code.client != id || code.redirect != redirect ||
 		subtle.ConstantTimeCompare([]byte(base64.RawURLEncoding.EncodeToString(sum[:])), []byte(code.pkceS256)) != 1 {
 		tokenError(w, "invalid_grant")
 		return
 	}
 	token := randomHex(32)
-	if err := a.Store.CreateOAuthToken(tokenHash(token), code.account, c.ID, code.scopes, now.Add(tokenLifetime)); err != nil {
+	if err := a.Store.CreateOAuthToken(tokenHash(token), code.account, id, code.scopes, now.Add(tokenLifetime)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
 		return
 	}
-	a.Store.MarkOAuthClientUsed(c.ID, now)
 	writeJSON(w, http.StatusOK, map[string]any{"access_token": token, "token_type": "Bearer", "scope": code.scopes, "created_at": now.Unix(), "expires_in": int(tokenLifetime.Seconds())})
 }
 
@@ -398,15 +368,6 @@ func (a *Service) webFinger(w http.ResponseWriter, r *http.Request) {
 			{"rel": "self", "type": "application/activity+json", "href": a.Provider.Public + "/users/" + url.PathEscape(acc.Name)},
 		},
 	})
-}
-
-// DeleteUnusedOAuthClients: apps without a login for a day (a month after
-// the last one); with the expired sessions.
-func (a *Service) DeleteUnusedOAuthClients() {
-	now := a.Now()
-	if _, err := a.Store.DeleteUnusedOAuthClients(now.Add(-unusedClientLifetime), now.Add(-idleClientLifetime)); err != nil {
-		slog.Error("oauth apps", "err", err)
-	}
 }
 
 func randomHex(n int) string {

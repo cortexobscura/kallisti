@@ -372,7 +372,6 @@ func (a *Service) DeleteExpiredSessions() error {
 		if err := a.Store.DeleteExpiredOAuthTokens(a.Now()); err != nil {
 			return err
 		}
-		a.DeleteUnusedOAuthClients()
 	}
 	n, err := a.Store.DeleteExpiredSessions(a.Now())
 	if err != nil || n == 0 {
