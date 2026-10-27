@@ -3,7 +3,7 @@ import type { ServerState } from "@kallisti/protocol";
 // Null while the connection is healthy, otherwise a message for the user.
 // Close reasons meant for people (a guest refused on another site, the
 // desktop app's bridge): the others are technical.
-const shownReasons = [/^join as a guest /, /^cannot reach /];
+const shownReasons = [/^join as a guest /, /^cannot reach /]; // see reconnect.refusedForGood
 
 // closeReason: the server's reason for closing the socket, if it gave one.
 export const connectionError = (state: ServerState, closed: boolean, closeReason = ""): string | null => {

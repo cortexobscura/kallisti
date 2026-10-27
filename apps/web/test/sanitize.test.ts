@@ -46,6 +46,10 @@ describe("sanitize loads nothing remote", () => {
       '<table background="https://tracker.example/a"><tr><td>x</td></tr></table>',
       '<p>a</p><style>p{background:url(https://tracker.example/a)}</style>',
       '<svg><style>circle{fill:url(https://tracker.example/a)}</style><circle r="5"/></svg>',
+      '<div><style>body{background-image:url(https://tracker.example/a)}</style></div>',
+      '<svg width="20" height="20"><rect width="20" height="20" mask="url(https://tracker.example/a)"/></svg>',
+      '<svg><circle r="5" fill="url(https://tracker.example/a#g)"/></svg>',
+      '<math><mi href="https://tracker.example/a">x</mi></math>',
     ]) {
       expect(remote(html), html).toBeNull();
     }

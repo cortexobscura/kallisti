@@ -15,7 +15,10 @@ export const isChannelLink = (a: Element) => a.getAttribute("href") === "#" && /
 // Styles that could name an address (url(), image-set(), CSS escapes,
 // @import) go whole, and style elements altogether.
 const REMOTE_STYLE = /\\|@|(url|image|image-set|cross-fade|src)\(/i;
-const CONFIG = { FORBID_TAGS: ["style"] };
+// HTML only (no SVG, MathML: their attributes load resources too), and no
+// attribute naming url() at all (SVG mask, fill, filter ... in any form).
+const CONFIG = { USE_PROFILES: { html: true }, FORBID_TAGS: ["style"] };
+const NAMES_URL = /url\(/i;
 const REMOTE_ATTRS = ["srcset", "poster", "background", "xlink:href", "lowsrc", "dynsrc", "longdesc"];
 
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -27,6 +30,7 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName !== "A") node.removeAttribute("href");
   if (!(node.tagName === "IMG" && node.getAttribute("src")?.startsWith("data:image/"))) node.removeAttribute("src");
   if (REMOTE_STYLE.test(node.getAttribute("style") ?? "")) node.removeAttribute("style");
+  for (const { name, value } of [...node.attributes]) if (NAMES_URL.test(value)) node.removeAttribute(name);
 });
 
 // emoji: emoji become Twemoji images, added after sanitizing (into text

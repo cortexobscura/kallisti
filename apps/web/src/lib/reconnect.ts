@@ -7,6 +7,10 @@ import type { Place } from "./place";
 // the bridge's Revoke.
 export const loggedOut = (closeReason: string) => closeReason === "logged out";
 
+// Refused by the server's rules (a guest on another site): retrying cannot
+// help. The bridge's reason text.
+export const refusedForGood = (closeReason: string) => closeReason.startsWith("join as a guest ");
+
 // Coming back by itself after a lost connection (a background tab, the
 // network, a server restart): only for a connection that was in, and not
 // after a kick, a refusal, a logout or a certificate question (the user
@@ -19,6 +23,7 @@ export const shouldReconnect = (c: {
 }) =>
   c.closed && c.wasSynced && c.status !== "kicked" && c.status !== "rejected" &&
   !loggedOut(c.closeReason) &&
+  !refusedForGood(c.closeReason) &&
   certificateProblem(c.closeReason) === null;
 
 const DELAYS_MS = [1000, 2000, 5000, 10_000, 20_000, 30_000];

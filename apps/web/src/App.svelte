@@ -23,7 +23,7 @@
   import { loadPlace, placeKey, savePlace, type Place } from "./lib/place";
   import type { Drafts } from "./lib/composer";
   import { createPendingFiles, indexedDbStore } from "./lib/pendingFiles";
-  import { busyName, loggedOut, lossNotice, nextDelay, QUIET_MS, shouldReconnect } from "./lib/reconnect";
+  import { busyName, loggedOut, lossNotice, refusedForGood, nextDelay, QUIET_MS, shouldReconnect } from "./lib/reconnect";
   import { untrack } from "svelte";
   import { checkForUpdate } from "./lib/update";
   import { browserPushSupport, turnOffPush } from "./lib/push";
@@ -451,7 +451,7 @@
         // Refused now (for example banned meanwhile), logged out, or a
         // certificate question: show it; else try again.
         const refused = next.state.status === "rejected" || next.state.status === "kicked";
-        if (refused || loggedOut(next.closeReason) || certificateProblem(next.closeReason)) connection = next;
+        if (refused || loggedOut(next.closeReason) || refusedForGood(next.closeReason) || certificateProblem(next.closeReason)) connection = next;
         else schedule();
       });
     }
