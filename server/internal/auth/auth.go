@@ -566,6 +566,16 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 // without it: it ends too (the cleanup removes it at its next round), so
 // its name is free soon.
 func (a *Service) logout(w http.ResponseWriter, r *http.Request) {
+	// It may name the session it means (see sessionID): a login screen that
+	// still shows an older login must not end the one now in this browser.
+	var body struct {
+		Session string `json:"session"`
+	}
+	json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+	if body.Session != "" && body.Session != sessionID(a.SessionKey(r)) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "another login is active here now"})
+		return
+	}
 	if acc, ok := a.AccountFor(r); ok && acc.Temporary {
 		if err := a.Store.ExpireAccount(acc.ID); err != nil {
 			slog.Error("ending a guest account", "account", acc.Name, "err", err)

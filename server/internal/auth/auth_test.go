@@ -833,3 +833,25 @@ func TestMeNamesTheSession(t *testing.T) {
 		t.Fatalf("sessions %q %q", a, b)
 	}
 }
+
+// A logout can name the session it means (a login screen that shows an
+// older login): another one is not logged out.
+func TestLogoutOfAnotherSessionIsRefused(t *testing.T) {
+	a, srv := setup(t)
+	resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	c := sessionCookie(resp)
+	key := (&Service{}).SessionKey(requestWith(c))
+	resp, _ = post(t, srv, "/api/logout", map[string]string{"session": "0000000000000000"}, c)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("another session: %d, want 409", resp.StatusCode)
+	}
+	if _, ok := a.AccountFor(requestWith(c)); !ok {
+		t.Fatal("the session ended")
+	}
+	if resp, _ = post(t, srv, "/api/logout", map[string]string{"session": sessionID(key)}, c); resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		t.Fatalf("its own session: %d", resp.StatusCode)
+	}
+	if _, ok := a.AccountFor(requestWith(c)); ok {
+		t.Fatal("still logged in")
+	}
+}
