@@ -50,6 +50,9 @@ rest. test.kallisti.chat runs this branch.
   the apps, the desktop app (no popup: deep links).
 - [Push from added servers](push-from-added-servers.md) while the page is
   closed.
+- An account made through the popup has no password: the added server's
+  settings still ask for the current one when changing it (it fails;
+  better: set the first one on that server's own site).
 
 ## Accepted (2026-10-27)
 
