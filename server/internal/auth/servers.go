@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"kallisti.chat/server/internal/names"
 	"kallisti.chat/server/internal/store"
 )
 
@@ -34,9 +35,21 @@ func (a *Service) servers(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "set a password first: guest accounts keep no server list"})
 		return
 	}
-	var body store.AccountServer
+	// account: the one the client means (a stale window after another
+	// login in this browser must not change that one's list).
+	var body struct {
+		store.AccountServer
+		Account string `json:"account"`
+	}
 	if r.Method != http.MethodGet && json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	if r.Method == http.MethodGet {
+		body.Account = r.URL.Query().Get("account")
+	}
+	if body.Account != "" && names.Key(body.Account) != names.Key(acc.Name) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "another login is active here now"})
 		return
 	}
 	var err error
@@ -53,7 +66,7 @@ func (a *Service) servers(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a server's address and name"})
 			return
 		}
-		if err = a.Store.AddAccountServer(acc.ID, body, maxAccountServers); errors.Is(err, store.ErrTooManyServers) {
+		if err = a.Store.AddAccountServer(acc.ID, body.AccountServer, maxAccountServers); errors.Is(err, store.ErrTooManyServers) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "your list is full"})
 			return
 		} else if err == nil {

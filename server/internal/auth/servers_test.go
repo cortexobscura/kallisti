@@ -144,3 +144,24 @@ func TestTheRouterHasTheServerList(t *testing.T) {
 		t.Fatal("/api/servers is not in Paths")
 	}
 }
+
+// A request may name the account it means (a stale window after another
+// login in this browser): another one's list is not touched.
+func TestServerListOfAnotherAccountIsRefused(t *testing.T) {
+	_, srv := setup(t)
+	resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "bob", "password": "longpassword"}, nil)
+	c := sessionCookie(resp)
+	const own = "https://app.example"
+	if code, _ := call(t, srv, "POST", "/api/servers", own, map[string]string{"origin": "https://r.example", "name": "x", "account": "Bob"}, c); code != http.StatusOK {
+		t.Fatalf("own add: %d", code)
+	}
+	if code, _ := call(t, srv, "DELETE", "/api/servers", own, map[string]string{"origin": "https://r.example", "account": "alice"}, c); code != http.StatusConflict {
+		t.Fatalf("another's remove: %d", code)
+	}
+	if code, _ := call(t, srv, "GET", "/api/servers?account=alice", own, nil, c); code != http.StatusConflict {
+		t.Fatalf("another's list: %d", code)
+	}
+	if code, v := call(t, srv, "GET", "/api/servers?account=bob", own, nil, c); code != http.StatusOK || len(v.(map[string]any)["servers"].([]any)) != 1 {
+		t.Fatalf("own list: %d %v", code, v)
+	}
+}
