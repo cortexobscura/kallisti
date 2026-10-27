@@ -91,6 +91,9 @@ type Service struct {
 	StreamKeyChanged func(name string)
 	// Fedi: logins with fediverse accounts (see fedi.go). Nil: off.
 	Fedi *FediLogin
+	// Provider: other Kallisti servers log in with accounts here (see
+	// provider.go); nil: off.
+	Provider *Provider
 	// SetAvatar gives an account an avatar (a JPEG, see avatarimg), only
 	// if it has none if onlyIfNone. Nil: none.
 	SetAvatar func(acc store.Account, avatar []byte, onlyIfNone bool)
@@ -225,12 +228,17 @@ type credentials struct {
 }
 
 // Paths: what ServeHTTP answers (for the server's router).
-var Paths = []string{"/api/server", "/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/servers", "/api/stream-key", "/api/fedi", "/api/fedi/"}
+var Paths = []string{"/api/server", "/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/servers", "/api/stream-key", "/api/fedi", "/api/fedi/",
+	"/api/v1/", "/oauth/", "/.well-known/webfinger", "/api/oauth/"}
 
 func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	a.cors(w, r)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	// Other servers' requests: forms, no cookies (see provider.go).
+	if a.serveProvider(w, r) {
 		return
 	}
 	if r.Method == http.MethodDelete {
@@ -280,6 +288,10 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.logoutAll(w, r)
 	case r.URL.Path == "/api/password" && r.Method == http.MethodPost:
 		a.changePassword(w, r)
+	case r.URL.Path == "/api/oauth/request" && r.Method == http.MethodGet && a.Provider != nil:
+		a.oauthRequest(w, r, false)
+	case r.URL.Path == "/api/oauth/approve" && r.Method == http.MethodPost && a.Provider != nil:
+		a.oauthRequest(w, r, true)
 	case r.URL.Path == "/api/servers":
 		a.servers(w, r)
 	case r.URL.Path == "/api/stream-key":
@@ -356,6 +368,12 @@ func (a *Service) endPasswordLogins(acc store.Account) {
 
 // DeleteExpiredSessions ends the expired sessions and their connections.
 func (a *Service) DeleteExpiredSessions() error {
+	if a.Provider != nil {
+		if err := a.Store.DeleteExpiredOAuthTokens(a.Now()); err != nil {
+			return err
+		}
+		a.DeleteUnusedOAuthClients()
+	}
 	n, err := a.Store.DeleteExpiredSessions(a.Now())
 	if err != nil || n == 0 {
 		return err

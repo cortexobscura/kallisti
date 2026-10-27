@@ -358,7 +358,7 @@ func (c *Client) VerifyCredentials(ctx context.Context, inst Instance, token str
 	if json.Unmarshal(a.ID, &id) != nil && numericID.Match(a.ID) {
 		id = string(a.ID)
 	}
-	if !remoteID.MatchString(id) || !validUsername(a.Username) {
+	if !remoteID.MatchString(id) || !ValidUsername(a.Username) {
 		return Account{}, fmt.Errorf("%w: unexpected account", ErrUnreachable)
 	}
 	avatar := a.AvatarStatic
@@ -405,9 +405,9 @@ func (c *Client) Avatar(ctx context.Context, avatarURL string) ([]byte, error) {
 	return avatarimg.Make(body)
 }
 
-// validUsername: user names as instances make them (letters, digits, _ . -),
+// ValidUsername: user names as instances make them (letters, digits, _ . -),
 // nothing to mislead in a handle (spaces, @, control or format characters).
-func validUsername(s string) bool {
+func ValidUsername(s string) bool {
 	if s == "" || len(s) > 64 {
 		return false
 	}

@@ -101,6 +101,11 @@ func run() error {
 		ServerPassword:    cfg.Builtin == nil || cfg.Builtin.Password != "",
 	}
 	accounts.Fedi = fediLogin(cfg)
+	// Other Kallisti servers log in with accounts here (it needs the
+	// public address: the issuer).
+	if public := publicBase(cfg.AllowedOrigins); public != "" {
+		accounts.Provider = &auth.Provider{Public: public}
+	}
 	// Before the built-in server listens: Mumble messages may bring images.
 	if err := os.MkdirAll(cfg.UploadDir, 0o700); err != nil {
 		return fmt.Errorf("create upload directory: %w", err)

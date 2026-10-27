@@ -27,7 +27,7 @@ func (f finger) handle() string { return "@" + f.username + "@" + f.domain.Host 
 // parseHandle keeps the account domain separate from the API server.
 func parseHandle(input string, dev bool) (string, Instance, error) {
 	user, host, ok := strings.Cut(strings.TrimPrefix(input, "@"), "@")
-	if !ok || !validUsername(user) || strings.ContainsAny(host, "/@?#\\") || strings.TrimSpace(host) != host {
+	if !ok || !ValidUsername(user) || strings.ContainsAny(host, "/@?#\\") || strings.TrimSpace(host) != host {
 		return "", Instance{}, ErrInstance
 	}
 	inst, err := ParseInstance(host, dev)
