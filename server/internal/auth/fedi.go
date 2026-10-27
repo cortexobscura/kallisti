@@ -28,10 +28,13 @@ import (
 // host and their id there.
 
 const (
-	stateCookie  = "kallisti_fedi_state"
-	signupCookie = "kallisti_fedi_signup"
-	fediPath     = "/api/fedi"
-	flowLifetime = 10 * time.Minute
+	stateCookie   = "kallisti_fedi_state"
+	signupCookie  = "kallisti_fedi_signup"
+	handoffCookie = "kallisti_fedi_handoff"
+	// A handoff's token waits this long for the popup to take it.
+	handoffLifetime = 2 * time.Minute
+	fediPath        = "/api/fedi"
+	flowLifetime    = 10 * time.Minute
 	// A remote account without a Kallisti account: time to choose a name.
 	signupLifetime = 15 * time.Minute
 	// An app without a login yet is registered again after this: instances
@@ -62,8 +65,9 @@ type FediLogin struct {
 	// log in (an admin's lists, see package homes); nil: all.
 	AllowsHome func(host string) bool
 
-	flows   pending[fediFlow]   // by state
-	signups pending[fediSignup] // by the signup cookie
+	flows    pending[fediFlow]    // by state
+	signups  pending[fediSignup]  // by the signup cookie
+	handoffs pending[fediHandoff] // by the handoff cookie
 	// Fresh logins (reauth flows) by session key: the account's id.
 	proofMu sync.Mutex
 	proofs  map[string]pendingEntry[int64]
@@ -110,12 +114,25 @@ type fediFlow struct {
 	link    int64
 	session string
 	reauth  bool
+	// A handoff (see fediHandoff): another server's page adds this one.
+	handoff bool
 }
 
 type fediSignup struct {
-	id     store.FediIdentity
-	name   string // the suggestion
-	avatar string // its URL ("": none)
+	id      store.FediIdentity
+	name    string // the suggestion
+	avatar  string // its URL ("": none)
+	handoff string // a handoff's origin (see fediHandoff); "": none
+}
+
+// fediHandoff: the page of the account's home server adds this server (in
+// a popup, see the web app): no cookie here, a session token instead, once
+// (POST /api/fedi/handoff), for the provider's origin only (the popup
+// posts it there: the server that vouched for the account, which could act
+// as it anyway). Nobody can log this browser in here by opening the popup.
+type fediHandoff struct {
+	account store.Account
+	origin  string
 }
 
 // pending keeps short-lived entries by random keys, in bounded memory.
@@ -219,6 +236,8 @@ func (a *Service) serveFedi(w http.ResponseWriter, r *http.Request) bool {
 		if a.ownSite(w, r, "create an account on the server's own site") {
 			a.fediSignup(w, r)
 		}
+	case p == fediPath+"/handoff" && post:
+		a.takeHandoff(w, r)
 	case p == fediPath+"/unlink" && post:
 		a.fediUnlink(w, r)
 	case p == fediPath+"/public" && post:
@@ -250,14 +269,19 @@ func (a *Service) fediStart(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 		// "reauth": a fresh login with the linked account (see prove).
 		Purpose string `json:"purpose"`
+		Handoff bool   `json:"handoff"`
 	}
 	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&c) != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
+	if c.Handoff && (c.Link || c.Purpose != "") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
 	var inst fedi.Instance
 	var err error
-	flow := fediFlow{verifier: fedi.NewVerifier()}
+	flow := fediFlow{verifier: fedi.NewVerifier(), handoff: c.Handoff}
 	if c.Purpose == "reauth" {
 		acc, ok := a.AccountFor(r)
 		if !ok {
@@ -449,13 +473,25 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 		if known.Handle != id.Handle {
 			a.Store.UpdateFediHandle(id.Host, id.RemoteID, id.Handle)
 		}
+		if flow.handoff {
+			if a.handOff(w, r, acc, flow.inst.Base) {
+				back("connect", "")
+			} else {
+				back("error", "failed")
+			}
+			return
+		}
 		if _, ok := a.startSession(w, r, acc); !ok {
 			return
 		}
 		back("", "")
 	case errors.Is(err, store.ErrNotFound):
 		now := a.Now()
-		token := a.Fedi.signups.put(fediSignup{id: id, name: fedi.SuggestName(remote.Username), avatar: remote.Avatar}, now, now.Add(signupLifetime))
+		s := fediSignup{id: id, name: fedi.SuggestName(remote.Username), avatar: remote.Avatar}
+		if flow.handoff {
+			s.handoff = flow.inst.Base
+		}
+		token := a.Fedi.signups.put(s, now, now.Add(signupLifetime))
 		if token == "" {
 			back("error", "failed")
 			return
@@ -546,11 +582,17 @@ func (a *Service) fediSignup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "the fediverse login expired, please try again"})
 		return
 	}
+	// Blocked since the callback (a sign-up may wait 15 minutes).
+	if !a.Fedi.allowsHome(s.id.Host) || !a.Fedi.allowsHome(s.id.Handle[strings.LastIndex(s.id.Handle, "@")+1:]) {
+		a.Fedi.signups.get(key, a.Now(), true)
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this server does not take logins from " + s.id.Host})
+		return
+	}
 	name, ok := a.checkName(w, c.Name)
 	if !ok || !a.proven(w, c) {
 		return
 	}
-	acc, token, ok := a.newAccount(w, r, store.Account{Name: name}, func(acc store.Account) (store.Account, error) {
+	acc, token, ok := a.newAccount(w, r, store.Account{Name: name}, s.handoff == "", func(acc store.Account) (store.Account, error) {
 		return a.Store.CreateFediAccount(acc, s.id, a.Now())
 	})
 	if !ok {
@@ -558,7 +600,15 @@ func (a *Service) fediSignup(w http.ResponseWriter, r *http.Request) {
 	}
 	a.Fedi.signups.get(key, a.Now(), true)
 	a.setFediCookie(w, r, signupCookie, "", 0)
-	writeJSON(w, http.StatusCreated, withToken(map[string]any{"name": acc.Name}, token))
+	if s.handoff != "" {
+		if !a.handOff(w, r, acc, s.handoff) {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "please try again"})
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"name": acc.Name, "handoff": true})
+	} else {
+		writeJSON(w, http.StatusCreated, withToken(map[string]any{"name": acc.Name}, token))
+	}
 	a.fediAvatar(acc, s.avatar, false)
 }
 
@@ -628,4 +678,37 @@ func (a *Service) fediMe(acc store.Account) map[string]any {
 		return nil
 	}
 	return map[string]any{"handle": id.Handle, "public": id.Public}
+}
+
+// handOff keeps the account for the popup (see fediHandoff): its session
+// starts when the popup takes it.
+func (a *Service) handOff(w http.ResponseWriter, r *http.Request, acc store.Account, origin string) bool {
+	now := a.Now()
+	key := a.Fedi.handoffs.put(fediHandoff{account: acc, origin: origin}, now, now.Add(handoffLifetime))
+	if key == "" {
+		return false
+	}
+	a.setFediCookie(w, r, handoffCookie, key, handoffLifetime)
+	return true
+}
+
+// takeHandoff gives the popup a new session's token, once (from this
+// site's own page).
+func (a *Service) takeHandoff(w http.ResponseWriter, r *http.Request) {
+	if !a.ownSite(w, r, "only this server's own page takes it") {
+		return
+	}
+	h, ok := a.Fedi.handoffs.get(a.cookie(r, handoffCookie), a.Now(), true)
+	a.setFediCookie(w, r, handoffCookie, "", 0)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "the login expired, please try again"})
+		return
+	}
+	token, err := a.newSession(h.account)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "please try again"})
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"token": token, "name": h.account.Name, "origin": h.origin})
 }

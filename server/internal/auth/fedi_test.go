@@ -642,3 +642,58 @@ func TestFediLoginFromABlockedServer(t *testing.T) {
 	resp, _ = b.do("GET", callback, nil)
 	wantRedirect(t, resp, srv.URL+"/?fedi=error&reason=blocked")
 }
+
+// Handoff (another server's page adds this one, in a popup): no cookie
+// here; the token once, for the provider's origin only.
+func TestFediHandoff(t *testing.T) {
+	f := &fedifake.Instance{}
+	_, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	b := newBrowser(t, srv)
+	handoff := func() map[string]any {
+		resp, v := b.do("POST", "/api/fedi/handoff", map[string]any{})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("handoff: %d %v", resp.StatusCode, v)
+		}
+		return v
+	}
+	session := func() bool {
+		_, v := b.do("GET", "/api/me", nil)
+		return v["name"] != nil
+	}
+	// A new account: the name first, then the token.
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host, "handoff": true}, "Alice"), home+"?fedi=register")
+	resp, v := b.do("POST", "/api/fedi/signup", map[string]any{"name": "alice"})
+	if resp.StatusCode != http.StatusCreated || v["handoff"] != true {
+		t.Fatalf("signup: %d %v", resp.StatusCode, v)
+	}
+	if session() {
+		t.Fatal("a handoff signup set a session cookie")
+	}
+	v = handoff()
+	if v["name"] != "alice" || v["origin"] != inst || v["token"] == "" {
+		t.Fatalf("handoff: %v", v)
+	}
+	// Once only.
+	if resp, _ := b.do("POST", "/api/fedi/handoff", map[string]any{}); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("a second handoff: %d", resp.StatusCode)
+	}
+	// The token is a session here.
+	req, _ := http.NewRequest("GET", srv.URL+"/api/me", nil)
+	req.Header.Set("Authorization", "Bearer "+v["token"].(string))
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("the token: %v %v", resp, err)
+	}
+	// A known account: back with the token at once, still no cookie.
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host, "handoff": true}, "Alice"), home+"?fedi=connect")
+	if session() {
+		t.Fatal("a handoff login set a session cookie")
+	}
+	if v := handoff(); v["name"] != "alice" {
+		t.Fatalf("handoff again: %v", v)
+	}
+	// Not with a link or a reauth.
+	if resp, _ := b.do("POST", "/api/fedi/start", map[string]any{"instance": host, "handoff": true, "link": true}); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("handoff and link: %d", resp.StatusCode)
+	}
+}

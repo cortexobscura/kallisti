@@ -417,7 +417,7 @@ func (a *Service) create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot create the account"})
 		return
 	}
-	if acc, token, ok := a.newAccount(w, r, store.Account{Name: name, PasswordHash: hash}, a.createAccount); ok {
+	if acc, token, ok := a.newAccount(w, r, store.Account{Name: name, PasswordHash: hash}, true, a.createAccount); ok {
 		writeJSON(w, http.StatusCreated, withToken(map[string]any{"name": acc.Name}, token))
 	}
 }
@@ -450,7 +450,7 @@ func (a *Service) guest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many guests from your address, try again later"})
 		return
 	}
-	if acc, token, ok := a.newAccount(w, r, store.Account{Name: name, Temporary: true}, a.createAccount); ok {
+	if acc, token, ok := a.newAccount(w, r, store.Account{Name: name, Temporary: true}, true, a.createAccount); ok {
 		writeJSON(w, http.StatusCreated, withToken(map[string]any{"name": acc.Name, "temporary": true}, token))
 	}
 }
@@ -476,7 +476,9 @@ func (a *Service) createAccount(acc store.Account) (store.Account, error) {
 
 // newAccount stores an account with a new certificate (by create) and logs
 // it in; on failure it answers the request.
-func (a *Service) newAccount(w http.ResponseWriter, r *http.Request, acc store.Account, create func(store.Account) (store.Account, error)) (store.Account, string, bool) {
+// newAccount makes the account and logs in (session: with a session; a
+// handoff makes its own, see fediHandoff).
+func (a *Service) newAccount(w http.ResponseWriter, r *http.Request, acc store.Account, session bool, create func(store.Account) (store.Account, error)) (store.Account, string, bool) {
 	fail := func() (store.Account, string, bool) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot create the account"})
 		return store.Account{}, "", false
@@ -497,6 +499,9 @@ func (a *Service) newAccount(w http.ResponseWriter, r *http.Request, acc store.A
 	if err != nil {
 		slog.Error("create account", "err", err)
 		return fail()
+	}
+	if !session {
+		return acc, "", true
 	}
 	token, ok := a.startSession(w, r, acc)
 	return acc, token, ok
@@ -712,10 +717,8 @@ func (a *Service) changePassword(w http.ResponseWriter, r *http.Request) {
 // startSession sets the cookie; the token for clients that asked for it
 // (the desktop app, header X-Kallisti-Session: token), else "".
 func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store.Account) (string, bool) {
-	b := make([]byte, 32)
-	rand.Read(b)
-	token := hex.EncodeToString(b)
-	if err := a.Store.CreateSession(tokenHash(token), acc.ID, a.Now().Add(sessionLifetime)); err != nil {
+	token, err := a.newSession(acc)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot log in"})
 		return "", false
 	}
@@ -732,6 +735,14 @@ func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store
 		token = ""
 	}
 	return token, true
+}
+
+// newSession is a new session's token.
+func (a *Service) newSession(acc store.Account) (string, error) {
+	b := make([]byte, 32)
+	rand.Read(b)
+	token := hex.EncodeToString(b)
+	return token, a.Store.CreateSession(tokenHash(token), acc.ID, a.Now().Add(sessionLifetime))
 }
 
 // cookieName: with HTTPS the __Host- prefix: browsers take such a cookie
