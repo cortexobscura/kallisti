@@ -48,6 +48,14 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     if (data.token) session?.set(data.token);
     return data;
   };
+  const check = async (): Promise<Account | null | "unknown"> => {
+    try {
+      const data = await call("/api/me");
+      return data.name ? { name: data.name, temporary: data.temporary === true, password: data.password, fedi: data.fedi } : null;
+    } catch (err) {
+      return err instanceof ApiError && err.status === 401 ? null : "unknown";
+    }
+  };
   return {
     // The server's address (for pictures from it: see lib/serverLogo).
     base,
@@ -139,13 +147,12 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     },
     // The logged-in account, or null (also for servers without accounts).
     me: async (): Promise<Account | null> => {
-      try {
-        const data = await call("/api/me");
-        return data.name ? { name: data.name, temporary: data.temporary === true, password: data.password, fedi: data.fedi } : null;
-      } catch {
-        return null;
-      }
+      const result = await check();
+      return result === "unknown" ? null : result;
     },
+    // The same, telling "no login" (null) from "unknown" (the server or the
+    // network failed): only a sure answer may end what goes with a login.
+    check,
   };
 };
 

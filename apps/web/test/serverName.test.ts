@@ -23,3 +23,22 @@ describe("the server's name", () => {
     expect(await info(404, {})).toEqual({ password: true, name: null, logo: null }); // an older server
   });
 });
+
+describe("the login check", () => {
+  const api = (status: number | "offline", body: unknown = {}) =>
+    createAccountsApi(
+      "http://srv",
+      (async () => {
+        if (status === "offline") throw new TypeError("Failed to fetch");
+        return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+      }) as unknown as typeof fetch,
+    );
+  it("tells an account, no login, and unknown (a server or network error) apart", async () => {
+    expect(await api(200, { name: "alice" }).check()).toMatchObject({ name: "alice" });
+    expect(await api(401, { error: "not logged in" }).check()).toBeNull();
+    expect(await api(200, {}).check()).toBeNull();
+    expect(await api(502).check()).toBe("unknown");
+    expect(await api(500).check()).toBe("unknown");
+    expect(await api("offline").check()).toBe("unknown");
+  });
+});
