@@ -32,7 +32,9 @@ export const removeServer = (list: readonly SavedServer[], origin: string) => li
 
 const read = (storage: Storage | undefined): { owner: string; servers: SavedServer[] } => {
   try {
-    const v = JSON.parse(safeGet(storage, KEY) ?? "null") as { owner?: unknown; servers?: unknown } | null;
+    const v = JSON.parse(safeGet(storage, KEY) ?? "null") as { owner?: unknown; servers?: unknown } | unknown[] | null;
+    // Before owners: an array (no owner: ended, never restored).
+    if (Array.isArray(v)) return { owner: "", servers: v.map((x) => (typeof x === "string" ? { origin: x, name: "?" } : x)).filter(isSaved) };
     const servers = Array.isArray(v?.servers) ? v.servers.filter(isSaved).map(({ origin, name }) => ({ origin, name })) : [];
     return { owner: typeof v?.owner === "string" ? v.owner : "", servers };
   } catch {
