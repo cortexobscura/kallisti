@@ -272,10 +272,11 @@ func OwnSite(allowed []string, origin string) bool {
 	return CookieOrigin(allowed, origin) || slices.Contains(appOrigins, origin)
 }
 
-// IsLocalhost: a development page on this computer.
+// IsLocalhost: a development page on this computer (http or https: not
+// the apps' tauri://localhost).
 func IsLocalhost(origin string) bool {
 	u, err := url.Parse(origin)
-	if err != nil {
+	if err != nil || u.Scheme != "http" && u.Scheme != "https" {
 		return false
 	}
 	host := u.Hostname()

@@ -134,6 +134,7 @@ func TestOrigins(t *testing.T) {
 	}{
 		{[]string{"*"}, "https://any.example", true, false},
 		{[]string{"*"}, "http://localhost:5173", true, true},
+		{[]string{"*"}, "tauri://localhost", true, false}, // the app: tokens
 		{[]string{"*"}, "", true, true},
 		{[]string{"https://a.example"}, "https://a.example", true, true},
 		{[]string{"https://a.example"}, "https://b.example", true, false},
