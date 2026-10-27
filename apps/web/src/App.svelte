@@ -111,20 +111,23 @@
   // Connect): its home server, kept in this tab over the login's pages.
   // Such a page is only that popup: no account here, no servers of its own.
   const popupLogin = (() => {
-    if (isDesktop()) return { home: null, kept: true };
     let tab: Storage | undefined;
     try {
       tab = sessionStorage;
     } catch {
       // No tab storage: see kept.
     }
+    if (isDesktop()) return { home: null, kept: true, resumed: false, tab };
     const asked = new URLSearchParams(location.search).get("kallisti-connect");
     // kept: it survives the login's pages (else it could never finish).
+    // It stays until the token is delivered, fails or is given up (the
+    // tab goes with the popup).
     const kept = !asked || safeSet(tab, "kallisti-connect", asked);
-    // Back from the login: once (a later login in this tab is a normal one).
-    const back = fediBack && ["connect", "register", "error"].includes(fediBack.kind) ? safeGet(tab, "kallisti-connect") : null;
-    if (fediBack) safeSet(tab, "kallisti-connect", "");
-    return { home: asked ?? (back || null), kept };
+    const mark = safeGet(tab, "kallisti-connect") || null;
+    // A reload in the name step: no result in the address any more.
+    const resumed = !asked && !fediBack && !!mark;
+    const back = (fediBack && ["connect", "register", "error"].includes(fediBack.kind)) || resumed ? mark : null;
+    return { home: asked ?? back, kept, resumed, tab };
   })();
   const connectHome = popupLogin.home;
   let connectPhase = $state<"start" | "deliver" | { error: string } | null>(
@@ -132,16 +135,22 @@
       ? null
       : !popupLogin.kept
         ? { error: "This browser keeps no data for this window. Log in with a password there instead." }
-        : !fediBack
-        ? "start"
-        : fediBack.kind === "connect"
-          ? "deliver"
-          : fediBack.kind === "error"
-            ? { error: fediBack.text }
-            : null, // register: the name first (Login), then deliver
+        : popupLogin.resumed
+          ? null // the name step again
+          : !fediBack
+            ? "start"
+            : fediBack.kind === "connect"
+              ? "deliver"
+              : fediBack.kind === "error"
+                ? { error: fediBack.text }
+                : null, // register: the name first (Login), then deliver
   );
+  // Delivered or failed: a later login in this tab is a normal one.
+  $effect(() => {
+    if (connectPhase !== null && connectPhase !== "start") safeSet(popupLogin.tab, "kallisti-connect", "");
+  });
   if (fediBack) history.replaceState(history.state, "", withoutFediResult(location.pathname + location.search + location.hash));
-  let fediSignup = $state(fediBack?.kind === "register");
+  let fediSignup = $state(fediBack?.kind === "register" || popupLogin.resumed);
   let fediNotice = $state<string | null>(null);
   // Back from a fresh login for the first password: to the settings again.
   let reopenSettings = $state(fediBack?.kind === "reauth");
