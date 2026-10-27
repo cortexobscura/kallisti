@@ -13,6 +13,21 @@ account" through the existing fediverse login; a linked local account,
 admins set an optional block list and an optional allow list (then only
 those) in the server settings.
 
+## Done (2026-10-27)
+
+- Endpoints: /api/v1/instance, /api/v1/apps, /oauth/authorize,
+  /oauth/token, verify_credentials, WebFinger (auth/provider.go).
+- An app is its redirect URI (client id = its hash, nothing stored, the
+  secret not checked: PKCE S256 and the exact redirect protect the code);
+  only another server's /api/fedi/callback, never this server's own.
+- Consent per account and redirect URI; the web app asks (/?authorize=),
+  the approval takes a ticket for exactly the request shown. Codes single
+  use, 2 minutes; tokens 10 minutes, by hash. Guests and names other
+  servers refuse (fedi.ValidUsername) are refused before the question.
+- Block and allow lists (package homes; Server settings): a block covers
+  subdomains, an allow is exact; checked at the login's start, callback,
+  the handle's domain and the sign-up.
+
 ## From Chatto and Fluxer (2026-10-27)
 
 - The authorization code: one use, valid 2 minutes, bound to the client's

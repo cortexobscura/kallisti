@@ -34,11 +34,20 @@ rest. test.kallisti.chat runs this branch.
   elsewhere leaves it (and its rejoin after a reconnect).
 - Servers in the background: their unread marks and mentions in the rail,
   their notifications while the page is open.
+- Step 3, Kallisti as a login provider: the Mastodon OAuth subset that
+  fediverse logins use (other Kallisti servers log in with it unchanged),
+  a consent screen once per site, then at once; admins' block and allow
+  lists of home servers.
+- Step 5, logins without typing (web): "Continue with your account" in
+  the add dialog; the server's page in a popup logs in through the home
+  server and hands its token to the home page (no cookie there).
 
-## Still to do (decided)
+## Still to do
 
-- Steps 3 to 5 (login provider, joined servers updating the list at
-  home, tokens without typing).
+- Step 4 part 2: servers you join update the list at home, and the rail
+  on their own sites (a design question: see home-server-list.md).
+- Step 5, the rest: the web+kallisti: link handler, invite links inside
+  the apps, the desktop app (no popup: deep links).
 - [Push from added servers](push-from-added-servers.md) while the page is
   closed.
 
