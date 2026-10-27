@@ -78,8 +78,11 @@ func ParseInstance(input string, dev bool) (Instance, error) {
 	if port != "" && port != "443" {
 		return Instance{}, ErrInstance
 	}
-	host, err = idna.Lookup.ToASCII(strings.TrimSuffix(host, "."))
-	if err != nil || !strings.Contains(host, ".") || strings.Contains(host, "..") || net.ParseIP(host) != nil || len(host) > 253 {
+	// IDNA first (it maps other full stops to "."), then one root dot.
+	host, err = idna.Lookup.ToASCII(host)
+	host = strings.TrimSuffix(host, ".")
+	if err != nil || !strings.Contains(host, ".") || strings.Contains(host, "..") || strings.HasSuffix(host, ".") ||
+		net.ParseIP(host) != nil || len(host) > 253 {
 		return Instance{}, ErrInstance
 	}
 	return Instance{Host: host, Base: "https://" + host}, nil

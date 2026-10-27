@@ -30,6 +30,7 @@ func TestParseInstance(t *testing.T) {
 		"https://user:pw@mastodon.social/": "mastodon.social",
 		"bücher.example":                   "xn--bcher-kva.example",
 		"social.example.":                  "social.example",
+		"social.example。":                  "social.example",
 	} {
 		got, err := fedi.ParseInstance(in, false)
 		if err != nil || got.Host != want || got.Base != "https://"+want {
@@ -39,6 +40,7 @@ func TestParseInstance(t *testing.T) {
 	for _, in := range []string{
 		"", "localhost", "http://mastodon.social", "mastodon.social:8443", "127.0.0.1", "[::1]",
 		"exa mple.org", "ftp://mastodon.social", "-bad-.example", "a..b",
+		"social.example..", "social.example。.", // one root dot only (also an ideographic full stop)
 	} {
 		if got, err := fedi.ParseInstance(in, false); err == nil {
 			t.Errorf("%q: accepted as %+v", in, got)
