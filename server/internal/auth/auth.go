@@ -64,6 +64,9 @@ type Service struct {
 	// ServerPassword: guests may need the Mumble server's password (Murmur:
 	// unknown, so true). The login page leaves out its field otherwise.
 	ServerPassword bool
+	// ServerName: the server's name for the login page (nil: not known,
+	// with Murmur).
+	ServerName func() string
 	// Revoke closes the open connections whose account ID and session
 	// (SessionKey) match, when sessions end. Nil: none.
 	Revoke func(match func(accountID int64, session string) bool)
@@ -158,7 +161,11 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case r.URL.Path == "/api/server" && r.Method == http.MethodGet:
-		writeJSON(w, http.StatusOK, map[string]bool{"password": a.ServerPassword})
+		info := map[string]any{"password": a.ServerPassword}
+		if a.ServerName != nil {
+			info["name"] = a.ServerName()
+		}
+		writeJSON(w, http.StatusOK, info)
 	case r.URL.Path == "/api/challenge" && r.Method == http.MethodGet:
 		a.challenge(w)
 	case r.URL.Path == "/api/accounts" && r.Method == http.MethodPost:

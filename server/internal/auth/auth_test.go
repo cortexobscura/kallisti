@@ -515,3 +515,24 @@ func TestServerSaysIfGuestsNeedAServerPassword(t *testing.T) {
 		}
 	}
 }
+
+func TestServerSaysItsName(t *testing.T) {
+	a, srv := setup(t)
+	get := func() map[string]any {
+		resp, err := http.Get(srv.URL + "/api/server")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var v map[string]any
+		json.NewDecoder(resp.Body).Decode(&v)
+		return v
+	}
+	if v := get(); v["name"] != nil {
+		t.Fatalf("no name known: %v", v)
+	}
+	a.ServerName = func() string { return "Our place" }
+	if v := get(); v["name"] != "Our place" {
+		t.Fatalf("got %v", v)
+	}
+}

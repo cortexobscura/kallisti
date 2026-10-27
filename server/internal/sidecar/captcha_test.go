@@ -3,6 +3,7 @@ package sidecar
 import (
 	"cmp"
 	"errors"
+	"strings"
 	"testing"
 
 	"kallisti.chat/server/internal/mumble"
@@ -23,6 +24,33 @@ func (f *fakeVoice) Captcha() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return cmp.Or(f.captcha, "off")
+}
+
+func (f *fakeVoice) SetServerName(session uint32, name string) (string, error) {
+	if session != 1 {
+		return "", errors.New("only admins change this setting")
+	}
+	return strings.TrimSpace(name), nil
+}
+
+// Mumble clients see the root channel renamed; the web also gets an event
+// (the confirmation for the admin).
+func TestServerName(t *testing.T) {
+	h := newHub(t, "general")
+	v := &fakeVoice{}
+	h.SetVoice(v, "")
+	admin := readyAs(t, h, 1, "admin")
+	bob := readyAs(t, h, 2, "bob")
+	bob.Handle([]byte(`{"type":"set-server-name","name":"Mine"}`))
+	if m := next(t, bob); m["type"] != "error" || m["about"] != "manage" {
+		t.Fatalf("bob got %v", m)
+	}
+	admin.Handle([]byte(`{"type":"set-server-name","name":" Our place "}`))
+	for _, c := range []*Conn{admin, bob} {
+		if m := next(t, c); m["type"] != "server-name" || m["name"] != "Our place" {
+			t.Fatalf("got %v", m)
+		}
+	}
 }
 
 func TestCaptcha(t *testing.T) {

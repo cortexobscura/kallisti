@@ -139,6 +139,9 @@ type Voice interface {
 	// (admins); Captcha: the level now.
 	SetCaptcha(session uint32, level string) error
 	Captcha() string
+	// SetServerName: admins rename the server (the root channel: clients
+	// see it as a Mumble channel rename).
+	SetServerName(session uint32, name string) (string, error)
 	// Connections: every connection over the recent window (admins).
 	Connections(session uint32) ([]Connection, error)
 	// CheckMessage: a session's message to post (with the word
@@ -815,6 +818,15 @@ func (c *Conn) Handle(raw []byte) {
 			c.manageError(err.Error())
 		} else {
 			c.hub.broadcast(map[string]any{"type": "captcha", "level": req.Level})
+		}
+		return
+	case "set-server-name":
+		if c.hub.voice == nil {
+			c.manageError("this setting needs the built-in Mumble server")
+		} else if name, err := c.hub.voice.SetServerName(id.Session, req.Name); err != nil {
+			c.manageError(err.Error())
+		} else {
+			c.hub.broadcast(map[string]any{"type": "server-name", "name": name})
 		}
 		return
 	case "connections":

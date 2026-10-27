@@ -389,29 +389,46 @@ func (d *DB) SetGuestsReadOnly(on bool) error {
 	return d.setMeta("guests_read_only", n)
 }
 
-// MessageRules are the saved rules (see Server.SetMessageRules).
-func (d *DB) MessageRules() (msgrules.Rules, error) {
-	var r msgrules.Rules
-	var v string
-	err := d.db.QueryRow(`SELECT value FROM mumble_settings WHERE key = 'message_rules'`).Scan(&v)
+// setting reads a JSON value of mumble_settings into v (false: none).
+func (d *DB) setting(key string, v any) (bool, error) {
+	var raw string
+	err := d.db.QueryRow(`SELECT value FROM mumble_settings WHERE key = ?`, key).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return r, nil
+		return false, nil
 	}
 	if err != nil {
-		return r, err
+		return false, err
 	}
-	return r, json.Unmarshal([]byte(v), &r)
+	return true, json.Unmarshal([]byte(raw), v)
 }
 
-func (d *DB) SetMessageRules(r msgrules.Rules) error {
-	v, err := json.Marshal(r)
+func (d *DB) setSetting(key string, v any) error {
+	raw, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	_, err = d.db.Exec(`INSERT INTO mumble_settings (key, value) VALUES ('message_rules', ?)
-		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, string(v))
+	_, err = d.db.Exec(`INSERT INTO mumble_settings (key, value) VALUES (?, ?)
+		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, string(raw))
 	return err
 }
+
+// MessageRules are the saved rules (see Server.SetMessageRules).
+func (d *DB) MessageRules() (msgrules.Rules, error) {
+	var r msgrules.Rules
+	_, err := d.setting("message_rules", &r)
+	return r, err
+}
+
+func (d *DB) SetMessageRules(r msgrules.Rules) error { return d.setSetting("message_rules", r) }
+
+// ServerName is the name an admin set ("": none, see Server.SetServerName).
+func (d *DB) ServerName() (string, error) {
+	var name string
+	_, err := d.setting("server_name", &name)
+	return name, err
+}
+
+func (d *DB) SetServerName(name string) error { return d.setSetting("server_name", name) }
 
 func (d *DB) SaveNextChannel(n uint32) error {
 	_, err := d.db.Exec(`INSERT INTO mumble_meta (key, value) VALUES ('last_channel_id', ?)

@@ -5,6 +5,7 @@
 package mumbled
 
 import (
+	"cmp"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -234,13 +235,15 @@ type client struct {
 }
 
 func New(cfg Config) (*Server, error) {
-	if cfg.RootName == "" {
-		cfg.RootName = "Root"
-	}
 	var saved []Channel
 	var lastID uint32
 	if cfg.DB != nil {
-		var err error
+		// An admin's name wins over the configured one.
+		name, err := cfg.DB.ServerName()
+		if err != nil {
+			return nil, err
+		}
+		cfg.RootName = cmp.Or(name, cfg.RootName)
 		if saved, err = cfg.DB.Channels(); err != nil {
 			return nil, err
 		}
@@ -248,6 +251,7 @@ func New(cfg Config) (*Server, error) {
 			return nil, err
 		}
 	}
+	cfg.RootName = cmp.Or(cfg.RootName, "Root")
 	var bans []BanEntry
 	if cfg.DB != nil {
 		var err error
