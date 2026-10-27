@@ -38,6 +38,7 @@ import (
 const (
 	codeLifetime  = 2 * time.Minute
 	tokenLifetime = 10 * time.Minute
+	askLifetime   = 10 * time.Minute
 )
 
 // clientIDFor is the app of a redirect URI.
@@ -54,6 +55,13 @@ type Provider struct {
 	// Public: the server's public address (the issuer; WebFinger's host).
 	Public string
 	codes  pending[oauthCode]
+	asks   pending[oauthAsk]
+}
+
+// oauthAsk: a request the web app showed its account (see oauthRequest).
+type oauthAsk struct {
+	account int64
+	req     authRequest
 }
 
 type oauthCode struct {
@@ -101,6 +109,11 @@ var errBadRequest = errors.New("invalid request")
 // parseAuthorize checks an authorize request; an error never redirects
 // (the redirect URI may be anyone's).
 func (a *Service) parseAuthorize(q url.Values) (authRequest, error) {
+	for _, k := range []string{"client_id", "redirect_uri", "response_type", "scope", "state", "code_challenge", "code_challenge_method"} {
+		if len(q[k]) > 1 { // which one counts would be a guess
+			return authRequest{}, errBadRequest
+		}
+	}
 	requested := strings.Fields(q.Get("scope"))
 	if len(requested) == 0 {
 		requested = []string{"read"}
@@ -250,51 +263,53 @@ func (a *Service) authorize(w http.ResponseWriter, r *http.Request) {
 }
 
 // oauthRequest (GET /api/oauth/request?<authorize query>): what the web
-// app asks the user; oauthApprove (POST, {query}): allowed, the redirect.
-func (a *Service) oauthRequest(w http.ResponseWriter, r *http.Request, approve bool) {
-	raw := r.URL.RawQuery
-	if approve {
-		var body struct {
-			Query string `json:"query"`
-		}
-		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&body) != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
-			return
-		}
-		raw = body.Query
-	}
-	values, _ := url.ParseQuery(raw)
-	q, err := a.parseAuthorize(values)
+// app asks the user, with a ticket for exactly this checked request;
+// oauthApprove (POST, {ticket}): allowed, the redirect. (The approval
+// never parses a query again: two parsers could read it differently.)
+func (a *Service) oauthRequest(w http.ResponseWriter, r *http.Request) {
+	q, err := a.parseAuthorize(r.URL.Query())
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "this login request is not valid"})
 		return
 	}
-	acc, ok := a.AccountFor(r)
+	acc, ok := a.providerAccount(w, r)
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not logged in"})
 		return
 	}
-	if acc.Temporary {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "set a password first: a guest account cannot log in elsewhere"})
+	now := a.Now()
+	ticket := a.Provider.asks.put(oauthAsk{acc.ID, q}, now, now.Add(askLifetime))
+	if ticket == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "please try again"})
 		return
 	}
-	// Other servers take names as the fediverse makes them (see
-	// fedi.ValidUsername).
-	if !fedi.ValidUsername(acc.Name) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "other servers do not take names with characters other than letters, digits, _ . and -"})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"site": q.site(), "account": acc.Name, "ticket": ticket,
+		"deny": withQuery(q.redirect, url.Values{"error": {"access_denied"}, "state": {q.state}}),
+	})
+}
+
+func (a *Service) oauthApprove(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Ticket string `json:"ticket"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	if approve && !a.allow(r) {
+	acc, ok := a.providerAccount(w, r)
+	if !ok {
+		return
+	}
+	if !a.allow(r) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 		return
 	}
-	if !approve {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"site": q.site(), "account": acc.Name,
-			"deny": withQuery(q.redirect, url.Values{"error": {"access_denied"}, "state": {q.state}}),
-		})
+	ask, ok := a.Provider.asks.get(body.Ticket, a.Now(), true)
+	if !ok || ask.account != acc.ID {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "the question expired, please try again"})
 		return
 	}
+	q := ask.req
 	if err := a.Store.GrantOAuth(acc.ID, q.redirect, a.Now()); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "please try again"})
 		return
@@ -305,6 +320,24 @@ func (a *Service) oauthRequest(w http.ResponseWriter, r *http.Request, approve b
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"redirect": to})
+}
+
+// providerAccount is the logged-in account that may log in elsewhere (not
+// a guest, a name other servers take); else it answers why not.
+func (a *Service) providerAccount(w http.ResponseWriter, r *http.Request) (store.Account, bool) {
+	acc, ok := a.AccountFor(r)
+	switch {
+	case !ok:
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not logged in"})
+	case acc.Temporary:
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "set a password first: a guest account cannot log in elsewhere"})
+	case !fedi.ValidUsername(acc.Name):
+		// Other servers take names as the fediverse makes them.
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "other servers do not take names with characters other than letters, digits, _ . and -"})
+	default:
+		return acc, true
+	}
+	return store.Account{}, false
 }
 
 func tokenError(w http.ResponseWriter, code string) {

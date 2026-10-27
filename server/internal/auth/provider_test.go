@@ -65,7 +65,7 @@ func TestKallistiAsALoginProvider(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || v["account"] != "lain" || v["site"] != bURL {
 		t.Fatalf("request: %d %v", resp.StatusCode, v)
 	}
-	resp, v = br.do("POST", pSrv.URL+"/api/oauth/approve", map[string]string{"query": query})
+	resp, v = br.do("POST", pSrv.URL+"/api/oauth/approve", map[string]any{"ticket": v["ticket"]})
 	if resp.StatusCode != http.StatusOK || !strings.HasPrefix(v["redirect"].(string), bURL+"/api/fedi/callback?") {
 		t.Fatalf("approve: %d %v", resp.StatusCode, v)
 	}
@@ -171,7 +171,8 @@ func TestAuthorizeRefusesBadRequests(t *testing.T) {
 		t.Fatalf("good: %d", code)
 	}
 	for name, change := range map[string]func(url.Values){
-		"another client": func(q url.Values) { q.Set("client_id", clientIDFor("https://c.example/api/fedi/callback")) },
+		"another client":   func(q url.Values) { q.Set("client_id", clientIDFor("https://c.example/api/fedi/callback")) },
+		"a doubled client": func(q url.Values) { q.Add("client_id", clientIDFor("https://c.example/api/fedi/callback")) },
 		"another path": func(q url.Values) {
 			q.Set("redirect_uri", "https://b.example/open-redirect")
 			q.Set("client_id", clientIDFor("https://b.example/open-redirect"))
