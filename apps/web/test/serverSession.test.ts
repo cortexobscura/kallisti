@@ -6,11 +6,16 @@ import { fakeConnection, type FakeConnection } from "./helpers/fakeConnection.sv
 
 const credentials = { username: "alice" };
 
-const setup = (local = false) => {
+// urlFor answers when the test says (the desktop app's bridge is slow).
+const setup = (local = false, deferred = false) => {
   const made: FakeConnection[] = [];
+  const pending: (() => void)[] = [];
   const session = createServerSession<FakeConnection>({
     site: () => "https://chat.example",
-    urlFor: async () => ({ url: "wss://chat.example/ws", local }),
+    urlFor: (c) =>
+      deferred
+        ? new Promise((resolve) => pending.push(() => resolve({ url: `wss://chat.example/ws?${c.username}`, local })))
+        : Promise.resolve({ url: `wss://chat.example/ws?${c.username}`, local }),
     connect: (target) => {
       const c = fakeConnection(target.url);
       made.push(c);
@@ -18,7 +23,7 @@ const setup = (local = false) => {
     },
     tabStorage: () => undefined,
   });
-  return { session, made };
+  return { session, made, pending };
 };
 // Lets awaited promises and effects run.
 const settle = async () => {
@@ -31,13 +36,68 @@ describe("a server session", () => {
   afterEach(() => vi.useRealTimers());
 
   it("connects, and a later start wins over a slower earlier one", async () => {
-    const { session, made } = setup();
+    const { session, made, pending } = setup(false, true);
     void session.start(credentials);
     void session.start({ username: "bob" });
+    pending[1]!(); // bob's address first
+    await settle();
+    pending[0]!(); // alice's late
+    await settle();
+    expect(made.map((c) => c.url)).toEqual(["wss://chat.example/ws?bob"]);
+    expect(session.connection).toBe(made[0]);
+    session.dispose();
+  });
+
+  it("leaving drops a start that still waits for its address", async () => {
+    const { session, made, pending } = setup(false, true);
+    void session.start(credentials);
+    session.leave();
+    pending[0]!();
+    await settle();
+    expect(made).toHaveLength(0);
+    expect(session.connection).toBeNull();
+    session.dispose();
+  });
+
+  it("leaving drops a reconnect attempt that still waits for its address", async () => {
+    const { session, made, pending } = setup(false, true);
+    void session.start(credentials);
+    pending[0]!();
+    await settle();
+    made[0]!.sync();
+    made[0]!.drop();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(1000); // the attempt asks for its address
+    session.leave();
+    pending[1]!();
     await settle();
     expect(made).toHaveLength(1);
-    expect(session.connection).toBe(made[0]);
-    expect(session.credentials?.username).toBe("bob");
+    session.dispose();
+  });
+
+  it("dispose ends everything: no attempt later", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.sync();
+    made[0]!.drop();
+    flushSync();
+    session.dispose();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(made).toHaveLength(1);
+  });
+
+  it("gives up on an attempt that gets nowhere in 15 s", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.sync();
+    made[0]!.drop();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(made).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(made[1]!.closeRequests).toBe(1);
     session.dispose();
   });
 

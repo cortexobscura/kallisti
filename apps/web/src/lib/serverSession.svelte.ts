@@ -41,7 +41,8 @@ const BUSY_NAME_TRIES = 5;
 // One server's connection and what goes with it: it comes back by itself
 // after a loss (see lib/reconnect), and keeps the place, the watched
 // streams, unsent texts and files over reconnects and reloads. dispose:
-// its effects end (the connection stays: leave closes it).
+// nothing more happens (no start, attempt or effect); the connection stays
+// open (leave closes it).
 export const createServerSession = <C extends SessionConnection>(deps: SessionDeps<C>) => {
   // Raw: the objects themselves (their getters are reactive), so viaBridge
   // finds them.
@@ -137,7 +138,7 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     if (lostFor >= QUIET_MS) attempts++;
   };
 
-  const dispose = $effect.root(() => {
+  const disposeEffects = $effect.root(() => {
     $effect(() => {
       if (!lost) return void (lostAt = null);
       untrack(() => (lostAt = now = Date.now()));
@@ -176,12 +177,16 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     });
   });
 
+  // Untracked: callers save from their effects, which must not run again
+  // when the credentials change.
   const keepPlace = (p: Place | null, left = false) => {
     place = p;
-    if (credentials) savePlace(deps.tabStorage(), placeKeyOf(credentials), p, left);
+    const c = untrack(() => credentials);
+    if (c) savePlace(deps.tabStorage(), placeKeyOf(c), p, left);
   };
   const keepStreams = () => {
-    if (credentials) saveLost(deps.tabStorage(), streamsKeyOf(credentials), leaving(streams.watching, streams.lost, Date.now()));
+    const [c, kept] = untrack(() => [credentials, streams] as const);
+    if (c) saveLost(deps.tabStorage(), streamsKeyOf(c), leaving(kept.watching, kept.lost, Date.now()));
   };
 
   return {
@@ -257,7 +262,11 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     keepStreams,
     // Into voice, or a new output device (see lib/voice/restart).
     setAudio: (ctx: AudioContext, keepMic: boolean) => [connection, attempt].forEach((c) => c?.setAudio(ctx, keepMic)),
-    dispose,
+    dispose: () => {
+      starts++;
+      stopReconnecting();
+      disposeEffects();
+    },
   };
 };
 export type ServerSession<C extends SessionConnection> = ReturnType<typeof createServerSession<C>>;

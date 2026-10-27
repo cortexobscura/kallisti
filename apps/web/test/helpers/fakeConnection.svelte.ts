@@ -1,8 +1,10 @@
 import { initialState, type ServerState } from "@kallisti/protocol";
 
 // A connection whose status a test sets (reactive, as the real one).
+// close() only asks, as a WebSocket does: closed comes with drop().
 export const fakeConnection = (url: string) => {
   let state = $state.raw<ServerState>(initialState);
+  let closeRequests = 0;
   let closed = $state(false);
   let wasSynced = $state(false);
   let closeReason = $state("");
@@ -28,8 +30,11 @@ export const fakeConnection = (url: string) => {
       closeReason = reason;
       closed = true;
     },
+    get closeRequests() {
+      return closeRequests;
+    },
     close() {
-      closed = true;
+      closeRequests++;
     },
     setAudio() {},
   };
