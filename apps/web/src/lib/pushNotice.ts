@@ -15,15 +15,27 @@ export const clickTarget = (url: unknown, origin: string): string => {
   return `${origin}/`;
 };
 
+// The logo's icon, from this server only (else Kallisti's).
+const iconOf = (icon: unknown, origin: string) => {
+  try {
+    const u = new URL(typeof icon === "string" ? icon : "", origin);
+    if (u.origin === origin && u.pathname.startsWith("/api/logo/")) return u.href;
+  } catch {
+    // Not a URL.
+  }
+  return ICON;
+};
+
+// The server's name and logo come with the push (none: Kallisti's).
 export const noticeOf = (data: unknown, origin: string) => {
   const d = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
   const text = (v: unknown) => (typeof v === "string" && v ? v : undefined);
   return {
-    title: "Kallisti",
+    title: text(d.title) ?? "Kallisti",
     options: {
       body: text(d.body) ?? "New activity",
       tag: text(d.tag),
-      icon: ICON,
+      icon: iconOf(d.icon, origin),
       badge: ICON,
       data: { url: clickTarget(d.url, origin) },
     },

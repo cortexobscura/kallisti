@@ -67,6 +67,16 @@ describe("noticeOf", () => {
     });
   });
 
+  it("has the server's name and logo, an icon only from its logo", () => {
+    const n = noticeOf({ body: "x", url: "/", title: "Our place", icon: "/api/logo/192.png?v=abc" }, ORIGIN);
+    expect(n.title).toBe("Our place");
+    expect(n.options.icon).toBe(`${ORIGIN}/api/logo/192.png?v=abc`);
+    expect(n.options.badge).toBe("/icons/icon-192.png"); // a silhouette on Android
+    for (const icon of ["https://evil.example/api/logo/192.png", "//evil.example/api/logo/192.png", "/api/logo/../files/x.png", "/files/x.png", 3]) {
+      expect(noticeOf({ body: "x", icon }, ORIGIN).options.icon).toBe("/icons/icon-192.png");
+    }
+  });
+
   it("has a text for broken data", () => {
     const n = noticeOf("nope", ORIGIN);
     expect(n.options.body).toBe("New activity");
