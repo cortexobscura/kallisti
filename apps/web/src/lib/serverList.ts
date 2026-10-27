@@ -25,6 +25,9 @@ export type SavedServer = { origin: string; name: string };
 const isSaved = (v: unknown): v is SavedServer =>
   !!v && typeof v === "object" && isOrigin((v as SavedServer).origin) && typeof (v as SavedServer).name === "string" && (v as SavedServer).name !== "";
 
+// The valid entries of a list from the server.
+export const savedServers = (v: unknown): SavedServer[] => (Array.isArray(v) ? v.filter(isSaved).map(({ origin, name }) => ({ origin, name })) : []);
+
 export const addServer = (list: readonly SavedServer[], server: SavedServer, home: string) =>
   server.origin === home || list.some((s) => s.origin === server.origin) ? [...list] : [...list, server];
 

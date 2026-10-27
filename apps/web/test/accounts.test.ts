@@ -13,6 +13,20 @@ const fakeFetch = (status: number, body: unknown, calls: Call[]) =>
   }) as unknown as typeof fetch;
 
 describe("accounts API", () => {
+  it("reads and changes the account's server list", async () => {
+    const calls: Call[] = [];
+    const list = { servers: [{ origin: "https://b.example", name: "lain" }, { origin: "not an origin", name: "x" }, { origin: "https://c.example" }] };
+    const api = createAccountsApi("http://srv", fakeFetch(200, list, calls));
+    expect(await api.servers()).toEqual([{ origin: "https://b.example", name: "lain" }]);
+    await api.addServer({ origin: "https://b.example", name: "lain" });
+    await api.removeServer("https://b.example");
+    expect(calls.map((c) => [c.url, c.init.method, c.init.body && JSON.parse(String(c.init.body))])).toEqual([
+      ["http://srv/api/servers", "GET", undefined],
+      ["http://srv/api/servers", "POST", { origin: "https://b.example", name: "lain" }],
+      ["http://srv/api/servers", "DELETE", { origin: "https://b.example" }],
+    ]);
+  });
+
   it("logs in with the cookie included", async () => {
     const calls: Call[] = [];
     const api = createAccountsApi("http://srv:8080", fakeFetch(200, { name: "Alice" }, calls));

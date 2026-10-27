@@ -4,6 +4,7 @@
 // is third-party there): it keeps the server's token and sends it.
 import type { Challenge, Proof } from "./captcha";
 import type { FediLink } from "./fedi";
+import { type SavedServer, savedServers } from "./serverList";
 
 // A logged-in account; temporary: a guest account without a password (the
 // server deletes it after a day without a visit). password false: made
@@ -117,6 +118,11 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       const data = await call("/api/stream-key").catch(() => ({}) as Answer);
       return { enabled: data.enabled === true, exists: data.exists === true };
     },
+    // The home account's list of the servers it joined (the rail; not for
+    // guests).
+    servers: async () => savedServers(((await call("/api/servers")) as { servers?: unknown }).servers),
+    addServer: async (server: SavedServer) => void (await call("/api/servers", server)),
+    removeServer: async (origin: string) => void (await call("/api/servers", { origin }, "DELETE")),
     // A new key (the old one stops working): shown this once.
     newStreamKey: async () => (await call("/api/stream-key", {})).key ?? "",
     removeStreamKey: async () => {
