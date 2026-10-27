@@ -3,6 +3,8 @@
   import Login from "./components/Login.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
   import ServerRail, { type RailServer } from "./components/ServerRail.svelte";
+  import type { RemoteVoice } from "./components/Client.svelte";
+  import { inVoice, isLobby, joinChannel, setSelfState } from "@kallisti/protocol";
   import { createAccountsApi, type Account, type AccountActions } from "./lib/accounts";
   import { connect, type Connection, type Credentials } from "./lib/connection.svelte";
   import { createServerSession, type ServerSession, type Target } from "./lib/serverSession.svelte";
@@ -27,6 +29,7 @@
   import { untrack, type Snippet } from "svelte";
   import { checkForUpdate } from "./lib/update";
   import { browserPushSupport, turnOffPush } from "./lib/push";
+  import { voiceJoined } from "./lib/voice";
   import { voiceSupported } from "./lib/voice/support";
   import { loadCaptureWorklet, startAfter } from "./lib/voice/worklet";
   import { closeVoiceOutput } from "./lib/voice/output";
@@ -367,7 +370,62 @@
     railEntry("", connection, "Home"),
     ...hub.servers.map((a) => railEntry(a.origin, a.session?.connection ?? null, new URL(a.origin).host)),
   ]);
-  const selectServer = (id: string) => hub.show(id || null);
+  // A dialog open in the client that goes out of sight would keep the page
+  // inert: it closes (a notification's click switches servers).
+  const selectServer = (id: string) => {
+    if ((id || null) !== hub.shown) for (const d of document.querySelectorAll<HTMLDialogElement>(".view dialog[open]")) d.close();
+    hub.show(id || null);
+  };
+
+  // Voice across servers: the clients of all connected servers stay
+  // mounted (one shown), so voice goes on while another is on screen. One
+  // voice channel at a time: joining one elsewhere leaves the other.
+  const views = $derived([{ id: "", session }, ...hub.servers.flatMap((a) => (a.session ? [{ id: a.origin, session: a.session }] : []))]);
+  // A lost connection's voice is not one (nothing goes through it).
+  const inVoiceOn = (s: ServerSession<Connection>) => !s.lost && s.connection?.state.status === "synced" && inVoice(s.connection.state);
+  const voiceId = $derived(views.find((v) => inVoiceOn(v.session))?.id ?? null);
+  const leaveVoiceOn = (id: string) => {
+    const c = views.find((v) => v.id === id)?.session.connection;
+    const me = c?.state.session == null ? undefined : c.state.users[c.state.session];
+    if (c && me && isLobby(c.state)) c.send(joinChannel(me.session, 0));
+  };
+  let voiceBefore: string[] = [];
+  $effect(() => {
+    const ids = views.filter((v) => inVoiceOn(v.session)).map((v) => v.id);
+    untrack(() => {
+      const stays = voiceJoined(voiceBefore, ids);
+      voiceBefore = ids;
+      if (stays === null) return;
+      // The others leave, and do not rejoin after a reconnect.
+      for (const v of views.filter((x) => x.id !== stays)) {
+        if (ids.includes(v.id)) leaveVoiceOn(v.id);
+        const place = v.session.place;
+        if (place?.voice != null) v.session.keepPlace({ ...place, voice: null });
+      }
+    });
+  });
+  // The voice bar of the server in voice, for the others' screens.
+  const remoteVoiceFor = (id: string): RemoteVoice | null => {
+    const v = voiceId === null || voiceId === id ? null : views.find((x) => x.id === voiceId);
+    const c = v?.session.connection;
+    const me = c?.state.session == null ? undefined : c.state.users[c.state.session];
+    if (!v || !c || !me) return null;
+    const target = v.id;
+    return {
+      server: railServers.find((r) => r.id === target)?.name ?? "",
+      channel: c.state.channels[me.channelId]?.name ?? "",
+      selfMute: me.selfMute,
+      selfDeaf: me.selfDeaf,
+      info: c.info,
+      setSelf: (s) => c.send(setSelfState(me.session, s)),
+      ptt: (down) => c.capture?.setPttDown(down),
+      talking: c.capture?.transmitting ?? false,
+      leave: () => leaveVoiceOn(target),
+      show: () => selectServer(target),
+    };
+  };
+  // Push-to-talk acts on the server in voice, else on the one shown.
+  const pttOn = (id: string) => (voiceId ?? (hub.shown ?? "")) === id;
   // An added server's account in its settings: logging out takes it out
   // of the rail; no fediverse link from here (that is its own site's).
   const addedActions = (origin: string): AccountActions => {
@@ -504,75 +562,89 @@
 
 {#if checking}
   <div class="connecting" aria-busy="true"></div>
-{:else if shownAdded}
-  {@const a = shownAdded}
-  {@const s = a.session}
-  {#if s?.connection?.state.status === "synced" && !s.error}
-    {#if s.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
-    {#key s.connection}
-      <Client connection={s.connection} lost={s.lost} {rail} account={addedActions(a.origin)} push={false} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
-    {/key}
-  {:else}
-    {#snippet added()}
-      {@const host = new URL(a.origin).host}
-      <div class="connecting">
-        <p>{!s ? `Log in to ${host} on this device.` : s.error ? `${host}: ${s.error}` : `Connecting to ${host}…`}</p>
-        <p class="actions">
-          {#if !s && owner !== null}
-            <button type="button" onclick={() => (addingFor = { owner: owner!, server: { origin: a.origin, name: a.name } })}>Log in</button>
-          {:else if s?.error}
-            <button type="button" onclick={() => void s.retry().catch(() => {})}>Try again</button>
-          {/if}
-          <button type="button" onclick={() => hub.remove(a.origin)}>Remove this server</button>
-        </p>
-      </div>
-    {/snippet}
-    {@render withRail(added)}
-  {/if}
-{:else if !connection || session.error}
-  {#snippet login()}
-    <Login
-      error={session.certificate ? null : (session.error ?? loginNote)}
-      certificate={session.certificate}
-      onTrust={trustAndConnect}
-      onCancelTrust={() => leave(null, false)}
-      {api}
-      {account}
-      desktop={desktop ? { server: desktopServer, kind: desktopKind, onServer: chooseServer, onChangeServer: changeServer } : null}
-      onAccountChange={(acc) => {
-        // A logout from the login screen (after a kick or refusal) ends the
-        // home login too.
-        authGeneration++;
-        if (!acc) hub.endAll();
-        account = acc;
-        ownerKnown = true;
-      }}
-      onConnect={start}
-      {fediSignup}
-      onFediSignupDone={() => (fediSignup = false)}
-    />
-  {/snippet}
-  {@render withRail(login)}
-{:else if connection.state.status === "synced"}
-  <!-- Quiet first (the server is usually back within seconds): a small
-       sign, then the banner (see lossNotice). -->
-  {#if session.lost && session.notice === "banner"}
-    <div class="reconnecting" role="status">
-      Connection lost. Reconnecting…
-      <button type="button" onclick={() => void session.tryNow()}>Retry now</button>
-    </div>
-  {:else if session.lost && session.notice === "sign"}
-    <div class="reconnecting quiet" role="status">Reconnecting…</div>
-  {/if}
-  <!-- While lost, the old view stays readable but takes no input (it would be lost); the rail does. -->
-  {#key connection}
-    <Client {connection} lost={session.lost} {rail} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
-  {/key}
 {:else}
-  {#snippet connectingHome()}
-    <div class="connecting">Connecting…</div>
-  {/snippet}
-  {@render withRail(connectingHome)}
+  <!-- Every connected server's client, the one on screen visible. -->
+  {#if connection?.state.status === "synced" && !session.error}
+    {@const shown = hub.shown === null}
+    <div class="view" hidden={!shown}>
+      <!-- Quiet first (the server is usually back within seconds): a small
+           sign, then the banner (see lossNotice). -->
+      {#if shown && session.lost && session.notice === "banner"}
+        <div class="reconnecting" role="status">
+          Connection lost. Reconnecting…
+          <button type="button" onclick={() => void session.tryNow()}>Retry now</button>
+        </div>
+      {:else if shown && session.lost && session.notice === "sign"}
+        <div class="reconnecting quiet" role="status">Reconnecting…</div>
+      {/if}
+      <!-- While lost, the old view stays readable but takes no input (it would be lost); the rail does. -->
+      {#key connection}
+        <Client {connection} active={shown} pttHere={pttOn("")} remoteVoice={remoteVoiceFor("")} onShow={() => selectServer("")} lost={session.lost} {rail} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
+      {/key}
+    </div>
+  {/if}
+  {#each hub.servers as a (a.origin)}
+    {@const s = a.session}
+    {#if s?.connection?.state.status === "synced" && !s.error}
+      {@const shown = hub.shown === a.origin}
+      <div class="view" hidden={!shown}>
+        {#if shown && s.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
+        {#key s.connection}
+          <Client connection={s.connection} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} push={false} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
+        {/key}
+      </div>
+    {/if}
+  {/each}
+  {#if shownAdded}
+    {@const a = shownAdded}
+    {@const s = a.session}
+    {#if !(s?.connection?.state.status === "synced" && !s.error)}
+      {#snippet added()}
+        {@const host = new URL(a.origin).host}
+        <div class="connecting">
+          <p>{!s ? `Log in to ${host} on this device.` : s.error ? `${host}: ${s.error}` : `Connecting to ${host}…`}</p>
+          <p class="actions">
+            {#if !s && owner !== null}
+              <button type="button" onclick={() => (addingFor = { owner: owner!, server: { origin: a.origin, name: a.name } })}>Log in</button>
+            {:else if s?.error}
+              <button type="button" onclick={() => void s.retry().catch(() => {})}>Try again</button>
+            {/if}
+            <button type="button" onclick={() => hub.remove(a.origin)}>Remove this server</button>
+          </p>
+        </div>
+      {/snippet}
+      {@render withRail(added)}
+    {/if}
+  {:else if !connection || session.error}
+    {#snippet login()}
+      <Login
+        error={session.certificate ? null : (session.error ?? loginNote)}
+        certificate={session.certificate}
+        onTrust={trustAndConnect}
+        onCancelTrust={() => leave(null, false)}
+        {api}
+        {account}
+        desktop={desktop ? { server: desktopServer, kind: desktopKind, onServer: chooseServer, onChangeServer: changeServer } : null}
+        onAccountChange={(acc) => {
+          // A logout from the login screen (after a kick or refusal) ends the
+          // home login too.
+          authGeneration++;
+          if (!acc) hub.endAll();
+          account = acc;
+          ownerKnown = true;
+        }}
+        onConnect={start}
+        {fediSignup}
+        onFediSignupDone={() => (fediSignup = false)}
+      />
+    {/snippet}
+    {@render withRail(login)}
+  {:else if connection.state.status !== "synced"}
+    {#snippet connectingHome()}
+      <div class="connecting">Connecting…</div>
+    {/snippet}
+    {@render withRail(connectingHome)}
+  {/if}
 {/if}
 
 <div class="status-bar" aria-hidden="true"></div>
@@ -685,6 +757,10 @@
     border-radius: 4px;
     background: var(--bg-active);
     color: var(--text);
+  }
+  /* The clients of servers not on screen stay mounted, hidden. */
+  .view:not([hidden]) {
+    display: contents;
   }
   /* A screen without the client, beside the rail. */
   .shell {

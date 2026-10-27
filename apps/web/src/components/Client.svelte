@@ -1,3 +1,30 @@
+<script lang="ts" module>
+  import type { ConnectionInfo as Info } from "../lib/connectionInfo.svelte";
+  import type { SelfState } from "../lib/voice";
+
+  // Several servers' clients are mounted at once (one shown): which one set
+  // the page's title and icons, holds the media session and the Android
+  // voice service (all clients share one audio output), so that another's
+  // cleanup leaves them.
+  const page: Record<"title" | "icons" | "voice" | "service", object | null> = { title: null, icons: null, voice: null, service: null };
+
+  // Voice on another server (several servers in one client): its bar here,
+  // and mute and deafen act on it.
+  export type RemoteVoice = {
+    server: string;
+    channel: string;
+    selfMute: boolean;
+    selfDeaf: boolean;
+    info: Info;
+    setSelf: (s: SelfState) => void;
+    // Push-to-talk there (the phone's hold button here), and whether it sends.
+    ptt: (down: boolean) => void;
+    talking: boolean;
+    leave: () => void;
+    show: () => void;
+  };
+</script>
+
 <script lang="ts">
   import {
     type ChatMessage,
@@ -78,7 +105,7 @@
   import { previewKey, previewsToAsk } from "../lib/linkPreview";
   import { shouldSendTyping, stoppedTyping, typed, typingNames, typingText, type Typers } from "../lib/typing";
   import { gainOf, userAudioFor } from "../lib/userAudio";
-  import { loadSelfState, micWanted, saveSelfState, soundHint, type SelfState } from "../lib/voice";
+  import { loadSelfState, micWanted, saveSelfState, soundHint } from "../lib/voice";
   import { documentPage, restartOnJoin, watchOutputDevices } from "../lib/voice/restart";
   import { keepRunningHidden } from "../lib/voice/background";
   import { listenOnlySessions } from "../lib/listenOnly";
@@ -136,6 +163,10 @@
     rail,
     lost = false,
     push = true,
+    active = true,
+    pttHere = true,
+    remoteVoice = null,
+    onShow,
   }: {
     connection: Connection;
     account?: AccountActions;
@@ -169,6 +200,16 @@
     // Push notifications belong to this server (the home server; added
     // servers have none yet: the browser has one subscription).
     push?: boolean;
+    // Several servers: this one is on screen (the others are mounted,
+    // hidden: their voice, unread marks and notifications go on). Only it
+    // has the page's title, icons, shortcuts and swipes, and is seen.
+    active?: boolean;
+    // Push-to-talk acts here: in voice here, or on screen with no voice
+    // anywhere.
+    pttHere?: boolean;
+    remoteVoice?: RemoteVoice | null;
+    // Puts this server on screen (a click on one of its notifications).
+    onShow?: () => void;
   } = $props();
 
   const server = $derived(connection.state);
@@ -259,7 +300,7 @@
   const pttOn = $derived(prefs.mode === "ptt");
   const pttKey = $derived(prefs.pttKey);
   $effect(() => {
-    if (!isDesktop() || !pttOn || !capture) return;
+    if (!isDesktop() || !pttOn || !capture || !pttHere) return;
     const [key, target] = [pttKey, capture];
     let stop: (() => void) | null = null;
     let cancelled = false;
@@ -276,12 +317,12 @@
     t instanceof HTMLElement &&
     (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
   const onKey = (e: KeyboardEvent) => {
-    if (e.type === "keydown" && navKey(e)) return;
-    if (e.type === "keydown" && e.key === "Escape" && phone && panel !== "chat" && !menu && !document.querySelector("dialog[open]")) {
+    if (active && e.type === "keydown" && navKey(e)) return;
+    if (active && e.type === "keydown" && e.key === "Escape" && phone && panel !== "chat" && !menu && !document.querySelector("dialog[open]")) {
       panel = "chat";
       return;
     }
-    if (prefs.mode !== "ptt") return;
+    if (prefs.mode !== "ptt" || !pttHere) return;
     const ev = { code: e.code, repeat: e.repeat, editable: isEditable(e.target) };
     if (pttBlocksDefault(ev, prefs.pttKey)) e.preventDefault();
     const action = pttAction(e.type as "keydown" | "keyup", ev, prefs.pttKey);
@@ -297,6 +338,7 @@
     phoneQuery.addEventListener("change", update);
     return () => phoneQuery.removeEventListener("change", update);
   });
+  let layoutEl: HTMLElement | undefined = $state();
   let panel = $state<Panel>("chat");
   // Swipes do not count in dialogs, text fields, the hold button, or with
   // two fingers (pinch).
@@ -305,7 +347,7 @@
   const touchStart = (e: TouchEvent) => {
     const t = e.touches[0];
     const blocked = e.touches.length > 1 || (e.target instanceof Element && e.target.closest(NO_SWIPE));
-    touch = phone && t && !blocked ? { x: t.clientX, y: t.clientY, t: e.timeStamp } : null;
+    touch = active && phone && t && !blocked ? { x: t.clientX, y: t.clientY, t: e.timeStamp } : null;
   };
   // An opened drawer gets the focus; closing it returns focus to the header
   // button that belongs to it (not the active element: Safari does not
@@ -321,10 +363,10 @@
       await tick();
       if (p === "chat") {
         const button = closed === "channels" ? "button[aria-label=Channels]" : ".members-toggle";
-        if (closed !== "chat") document.querySelector<HTMLElement>(button)?.focus({ preventScroll: true });
+        if (closed !== "chat") layoutEl?.querySelector<HTMLElement>(button)?.focus({ preventScroll: true });
         return;
       }
-      const drawer = p === "channels" ? leftEl : document.querySelector<HTMLElement>(".layout > aside");
+      const drawer = p === "channels" ? leftEl : layoutEl?.querySelector<HTMLElement>(":scope > aside");
       // No scrolling: the drawer is still off-screen, and the browser would
       // scroll the layout to show it, pushing the chat aside.
       drawer?.querySelector<HTMLElement>("button, [href], input")?.focus({ preventScroll: true });
@@ -340,7 +382,7 @@
   const paneCommon = $derived({
     menuOpen: panel === "channels",
     lost,
-    talking: capture?.transmitting ?? false,
+    talking: (voiceOn ? capture?.transmitting : remoteVoice?.talking) ?? false,
     membersOpen: phone ? panel === "members" : membersOpen,
     onToggleMembers: () => {
       if (phone) panel = panel === "members" ? "chat" : "members";
@@ -348,7 +390,12 @@
     },
     onMenu: phone ? () => (panel = "channels") : undefined,
     // Phones have no PTT key: a hold button instead.
-    onHoldTalk: phone && prefs.mode === "ptt" && voiceOn ? (down: boolean) => capture?.setPttDown(down) : undefined,
+    onHoldTalk:
+      phone && prefs.mode === "ptt" && voiceOn
+        ? (down: boolean) => capture?.setPttDown(down)
+        : phone && prefs.mode === "ptt" && remoteVoice
+          ? remoteVoice.ptt
+          : undefined,
   });
   // A stored chat's pane fields (null: not known yet). Errors: not the
   // quiet ones (quietError).
@@ -478,20 +525,34 @@
   );
   // In voice: keeps phones from freezing the page (see lib/mediaSession).
   const session = $derived(voiceHere === null ? null : voiceSession({ channel: server.channels[voiceHere]?.name ?? "", server: serverName, lobby }));
-  $effect(() =>
-    connection.playback?.setVoice(session, (action) => (action === "leave" ? leaveVoice() : updateSelf({ selfMute: true, selfDeaf: true }))),
-  );
-  $effect(() => () => connection.playback?.releaseVoice());
+  const own = {};
+  $effect(() => {
+    if (session === null && page.voice !== own) return;
+    page.voice = session === null ? null : own;
+    connection.playback?.setVoice(session, (action) => (action === "leave" ? leaveVoice() : updateSelf({ selfMute: true, selfDeaf: true })));
+  });
+  $effect(() => () => {
+    if (page.voice !== own) return;
+    page.voice = null;
+    connection.playback?.releaseVoice();
+  });
   // The Android app: its voice service while in voice (see desktop.ts).
   const voiceService = $derived(voiceHere === null || !androidApp() ? null : (server.channels[voiceHere]?.name ?? ""));
   // On for a channel; a new channel only changes its notification (Android
   // starts such a service only from the foreground), off when leaving.
   $effect(() => {
-    if (voiceService !== null) setVoiceService(true, voiceService).catch((err) => console.warn("voice service not started", err));
+    if (voiceService === null) return;
+    page.service = own;
+    setVoiceService(true, voiceService).catch((err) => console.warn("voice service not started", err));
   });
   const inVoiceService = $derived(voiceService !== null);
   $effect(() => {
-    if (inVoiceService) return () => void setVoiceService(false, null).catch(() => {});
+    if (inVoiceService)
+      return () => {
+        if (page.service !== own) return;
+        page.service = null;
+        void setVoiceService(false, null).catch(() => {});
+      };
   });
   // Mute and deafen sounds (see sounds.ts), not for about 3 s after a
   // reconnect: we restore our mute and deafen then. REJOIN_MS: how long
@@ -682,7 +743,9 @@
   $effect(() => {
     const sw = navigator.serviceWorker;
     const onMessage = (e: MessageEvent) => {
-      if (e.data?.type === "open" && typeof e.data.url === "string") openMessage(parseMessageLink(e.data.url, site));
+      const link = e.data?.type === "open" && typeof e.data.url === "string" ? parseMessageLink(e.data.url, site) : null;
+      if (link) onShow?.();
+      openMessage(link);
     };
     sw?.addEventListener("message", onMessage);
     return () => sw?.removeEventListener("message", onMessage);
@@ -801,7 +864,7 @@
     () => (phone && threadId !== null ? [threadId] : [chatId, threadId]),
     () => me?.name ?? "",
     blockedUsers.has,
-    () => pageVisible,
+    () => pageVisible && active,
   );
   const unreadText = $derived(withoutMuted(textView.unread, mutedText));
   // Unread counts as shown (muted direct chats count none).
@@ -837,10 +900,10 @@
     };
   });
   const notify = (title: string, body: string, open: boolean, onOpen: () => void) => {
-    const visible = chatSeen({ visible: document.visibilityState === "visible", focused: document.hasFocus(), desktop: isDesktop() });
+    const visible = active && chatSeen({ visible: document.visibilityState === "visible", focused: document.hasFocus(), desktop: isDesktop() });
     const enabled = prefs.notifications;
     if (leader?.leads() !== false && shouldNotify({ enabled, permission: notifications.permission(), visible, deaf: me?.selfDeaf ?? false, dnd, open }))
-      notifications.show(title, body, onOpen);
+      notifications.show(title, body, () => (onShow?.(), onOpen()));
   };
   $effect(() =>
     connection.onTextEvent((ev) => {
@@ -1105,15 +1168,24 @@
   $effect(() => {
     const sum = (r: Record<string | number, number>) => Object.values(r).reduce((a, n) => a + n, 0);
     const name = serverName;
+    if (!active) return;
+    const mine = {};
+    page.title = mine;
     document.title = tabTitle(name, sum(mentions) + sum(unread));
-    return () => (document.title = name);
+    return () => {
+      if (page.title === mine) document.title = name;
+    };
   });
   // Once the server said (the page has its icons until then); Kallisti's
   // again when the client goes (another server may come next).
   $effect(() => {
-    if (text.logo === undefined) return;
+    if (text.logo === undefined || !active) return;
+    const mine = {};
+    page.icons = mine;
     showIcons(document, connection.httpBase, text.logo);
-    return () => showIcons(document, "", null);
+    return () => {
+      if (page.icons === mine) showIcons(document, "", null);
+    };
   });
   $effect(() => {
     if (dm === null) return;
@@ -1839,6 +1911,7 @@
 
 <div
   class="layout"
+  bind:this={layoutEl}
   class:members={membersOpen || side !== "members" || threadAside}
   class:side={side !== "members" || threadAside}
   class:thread={threadAside}
@@ -1938,15 +2011,18 @@
           info={connection.info}
           onJoinHere={() => join(elsewhere.channelId)}
         />
+      {:else if remoteVoice}
+        <VoiceBar channel="{remoteVoice.channel} · {remoteVoice.server}" onLeave={remoteVoice.leave} info={remoteVoice.info} onShow={remoteVoice.show} />
       {/if}
+      {@const away = remoteVoice}
       <UserPanel
-        {me}
-        status={elsewhere ? "In voice on another device" : !voiceOn ? "Not in voice" : lobby ? "Online" : "Voice connected"}
-        active={voiceOn && !lobby}
+        me={away ? { ...me, selfMute: away.selfMute, selfDeaf: away.selfDeaf } : me}
+        status={away ? "Voice connected" : elsewhere ? "In voice on another device" : !voiceOn ? "Not in voice" : lobby ? "Online" : "Voice connected"}
+        active={(voiceOn && !lobby) || !!away}
         info={voiceOn && !lobby ? connection.info : undefined}
         micError={micOn ? (capture ? capture.micError : noVoice) : null}
         noVoice={!capture && !!noVoice}
-        onSelfState={updateSelf}
+        onSelfState={away ? away.setSelf : updateSelf}
         onSettings={() => (showSettings = true)}
         presence={statusOf(me.session).presence}
         own={text.ownStatus}
@@ -2088,7 +2164,7 @@
       onOpen={(m) => openMessage({ chat: m.channel, message: m.id })}
       onClose={() => {
         openSide("members");
-        document.querySelector<HTMLInputElement>('input[aria-label="Search messages"]')?.focus();
+        layoutEl?.querySelector<HTMLInputElement>('input[aria-label="Search messages"]')?.focus();
       }}
     />
   {:else if side === "pins" && chatId !== null}

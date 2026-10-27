@@ -22,6 +22,7 @@
     onGoLive,
     info,
     onJoinHere,
+    onShow,
   }: {
     channel: string;
     onLeave: () => void;
@@ -33,6 +34,9 @@
     onGoLive?: (action: GoLiveAction) => void;
     info: Info;
     onJoinHere?: () => void;
+    // Voice is on another server (several servers in one client): the
+    // channel's name leads there.
+    onShow?: () => void;
   } = $props();
 
   let menu = $state<{ x: number; y: number } | null>(null);
@@ -55,7 +59,11 @@
         {#if recording}<span class="note rec" title="Everything said in this channel is recorded">● Recording</span>{/if}
       {/if}
     </div>
-    <div class="channel ellipsis" title={channel}>{channel}</div>
+    {#if onShow}
+      <button class="channel ellipsis link" title="Show {channel}" onclick={onShow}>{channel}</button>
+    {:else}
+      <div class="channel ellipsis" title={channel}>{channel}</div>
+    {/if}
   </div>
   {#if onJoinHere}
     <button class="here" onclick={onJoinHere}>Join voice here</button>
@@ -134,6 +142,16 @@
   .channel {
     color: var(--text-muted);
     font-size: 12px;
+  }
+  .bar .link {
+    display: block;
+    max-width: 100%;
+    padding: 0;
+    text-align: left;
+  }
+  .bar .link:hover {
+    color: var(--text);
+    text-decoration: underline;
   }
   .bar button {
     display: inline-flex;

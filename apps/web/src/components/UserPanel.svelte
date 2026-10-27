@@ -1,3 +1,9 @@
+<script lang="ts" module>
+  // The mute when deafening: undeafening brings it back. One for all
+  // panels: voice is on one server, its panel or another's toggles it.
+  let mutedBeforeDeaf = false;
+</script>
+
 <script lang="ts">
   import type { User } from "@kallisti/protocol";
   import { toggleDeaf, toggleMute, type SelfState } from "../lib/voice";
@@ -49,8 +55,6 @@
   const custom = $derived(customOf(own, now));
   let menu = $state<{ x: number; y: number } | null>(null);
   let editing = $state(false);
-  // The mute when deafening: undeafening brings it back.
-  let mutedBeforeDeaf = false;
   const choose = (v: PresenceView) => {
     onStatus?.(v);
     menu = null;

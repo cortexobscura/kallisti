@@ -28,12 +28,13 @@ rest. test.kallisti.chat runs this branch.
 - The rail outside the client: the same beside the connecting, error and
   login screens; while a connection is lost the rail (on phones the menu
   to the drawer) still takes input.
+- Voice continues while another server is on screen: the clients of all
+  connected servers stay mounted (one shown); the others show the voice
+  server's bar; mute, deafen and push-to-talk act on it; joining voice
+  elsewhere leaves it (and its rejoin after a reconnect).
 
 ## Still to do (decided)
 
-- Voice continues while another server is on screen: voice bar, mute,
-  deafen and push-to-talk follow the voice connection; joining voice
-  elsewhere leaves it.
 - Unread marks, mentions and notifications of servers in the background.
 - Steps 3 to 5 (login provider, joined servers updating the list at
   home, tokens without typing).
