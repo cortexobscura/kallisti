@@ -163,12 +163,20 @@ func TestFediStateIsChecked(t *testing.T) {
 	if sessionCookie(resp) != nil {
 		t.Fatal("a session without the state cookie")
 	}
-	// A wrong state in the right browser fails too, and ends the flow.
+	// A wrong or missing state in the right browser fails too, but leaves
+	// the flow alone (a link from anywhere cannot cancel a login); the real
+	// callback then works, once.
 	cb, _ := url.Parse(callback)
-	q := cb.Query()
-	q.Set("state", "wrong")
-	resp, _ = b.do("GET", srv.URL+"/api/fedi/callback?"+q.Encode(), nil)
-	wantRedirect(t, resp, home+"?fedi=error&reason=expired")
+	for _, state := range []string{"wrong", ""} {
+		q := cb.Query()
+		q.Set("state", state)
+		resp, _ = b.do("GET", srv.URL+"/api/fedi/callback?"+q.Encode(), nil)
+		wantRedirect(t, resp, home+"?fedi=error&reason=expired")
+	}
+	resp, _ = b.do("GET", callback, nil)
+	if loc := resp.Header.Get("Location"); strings.Contains(loc, "reason=expired") {
+		t.Fatalf("the real callback after a wrong one: %s", loc)
+	}
 	resp, _ = b.do("GET", callback, nil)
 	wantRedirect(t, resp, home+"?fedi=error&reason=expired")
 

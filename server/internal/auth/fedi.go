@@ -368,13 +368,17 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer") // the code is in the URL
 	back := func(result, reason string) { http.Redirect(w, r, a.Fedi.home(result, reason), http.StatusFound) }
-	// The browser's flow ends with any callback; it counts if the state in
-	// the callback is the cookie's.
+	// It counts if the state in the callback is the cookie's; only then
+	// the flow ends (once), so a link from anywhere cannot cancel it.
 	state := cookieValue(r, stateCookie)
+	q := r.URL.Query()
+	if state == "" || subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(state)) != 1 {
+		back("error", "expired")
+		return
+	}
 	flow, ok := a.Fedi.flows.get(state, a.Now(), true)
 	a.setFediCookie(w, r, stateCookie, "", 0)
-	q := r.URL.Query()
-	if !ok || subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(state)) != 1 {
+	if !ok {
 		back("error", "expired")
 		return
 	}
