@@ -69,9 +69,10 @@ describe("the added servers", () => {
     expect(hub.add(A, "bob", "tb")).toBe(false);
     expect(hub.add(HOME, "x", "th")).toBe(false);
     expect(hub.shown).toBe(A);
-    expect(loadTokens(storage)).toEqual({ owner: "home alice", tokens: { [A]: { token: "ta", name: "alice" } } });
+    expect(loadTokens(storage)).toEqual({ owner: "home alice", tokens: { [A]: { token: "ta", name: "alice", unsaved: true } } });
     await flush();
     expect(api.list).toEqual([{ origin: A, name: "alice" }]);
+    expect(loadTokens(storage).tokens).toEqual({ [A]: { token: "ta", name: "alice" } }); // saved at home
   });
 
   it("need an account at home: guests add none", () => {
@@ -191,6 +192,7 @@ describe("the added servers", () => {
     fresh.login("home bob");
     fresh.hub.follow("home bob");
     fresh.hub.add(A, "bob", "tb");
+    await flush();
     stale.hub.endAll();
     expect(stale.revoked).toEqual([]);
     expect(loadTokens(storage)).toEqual({ owner: "home bob", tokens: { [A]: { token: "tb", name: "bob" } } });
@@ -207,6 +209,7 @@ describe("the added servers", () => {
   it("detach (another login in this browser) closes the open ones and keeps the tokens", async () => {
     const { hub, revoked, sessions, storage } = setup();
     hub.add(A, "alice", "ta");
+    await flush();
     hub.detach();
     expect(sessions[0]!.leave).toHaveBeenCalled();
     expect(hub.servers).toEqual([]);
@@ -279,5 +282,49 @@ describe("the added servers", () => {
     await hub.sync();
     expect(hub.servers[0]!.token).toBe("ta");
     expect(sessions.map((s) => s.token)).toEqual(["ta"]);
+  });
+
+  it("another tab's add that is not saved yet keeps its token at this tab's sync", async () => {
+    const storage = memory();
+    const api = account([]);
+    let answer: (l: SavedServer[]) => void = () => {};
+    api.load.mockImplementationOnce(() => new Promise((r) => (answer = r)));
+    const { hub, revoked } = setup(api, storage);
+    const pending = hub.sync();
+    saveTokens(storage, "home alice", { [A]: { token: "ta", name: "alice", unsaved: true } }); // the other tab adds
+    answer([]);
+    await pending;
+    expect(revoked).toEqual([]);
+    expect(loadTokens(storage).tokens).toEqual({ [A]: { token: "ta", name: "alice", unsaved: true } });
+  });
+
+  it("a list loaded while an add was on its way home does not drop it", async () => {
+    const api = account();
+    let answer: (l: SavedServer[]) => void = () => {};
+    const { hub, revoked } = setup(api);
+    hub.add(A, "alice", "ta");
+    api.load.mockImplementationOnce(() => new Promise((r) => (answer = r)));
+    const pending = hub.sync(); // its list is from before the add was saved
+    await flush(); // the add is saved now
+    answer([]);
+    await pending;
+    expect(hub.servers.map((s) => s.origin)).toEqual([A]);
+    expect(revoked).toEqual([]);
+  });
+
+  it("tokens another tab stored while this page started are not ended at its first follow", () => {
+    const storage = memory();
+    const revoked: [string, string][] = [];
+    const hub = createServerHub({
+      storage: () => storage,
+      allowed: () => true,
+      list: () => null,
+      owner: () => null,
+      open: () => ({ leave: () => {}, dispose: () => {}, close: () => {} }),
+      revoke: async (origin, token) => void revoked.push([origin, token]),
+    });
+    saveTokens(storage, "home bob", { [A]: { token: "tb", name: "bob" } }); // the other tab
+    hub.follow(null); // this page's late first answer: not logged in
+    expect(revoked).toEqual([]);
   });
 });

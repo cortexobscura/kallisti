@@ -42,8 +42,9 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
   // The home login the open ones and the tokens belong to.
   let live: string | null = null;
   let first = true;
-  // Adds on their way home: a list loaded meanwhile does not have them yet.
-  const pending = new Set<string>();
+  // The tokens as this page found them: changed before the first follow,
+  // another tab is at work (its login, not one that ended).
+  const found = JSON.stringify(loadTokens(deps.storage()));
   // Changes here: a list loaded before one is older than this tab.
   let changes = 0;
 
@@ -107,11 +108,13 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
   const save = (server: SavedServer, undo?: HubServer<S>) => {
     const api = deps.list();
     if (!api) return;
-    pending.add(server.origin);
     api.add(server).then(
-      () => void pending.delete(server.origin),
+      () => {
+        changes++;
+        const login = tokens()[server.origin];
+        if (undo && login?.token === undo.token && login.unsaved) setToken(server.origin, { token: login.token, name: login.name });
+      },
       (err: unknown) => {
-        pending.delete(server.origin);
         if (undo && servers.includes(undo)) drop(undo);
         error = `${new URL(server.origin).host} was not saved: ${err instanceof Error ? err.message : String(err)}`;
       },
@@ -139,12 +142,14 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
       const owner = live;
       const at = changes;
       if (!api || owner === null) return;
+      // Tokens another tab adds meanwhile are not in this list yet.
+      const before = tokens();
       const list = await api.load().catch(() => null);
       if (list === null || live !== owner || changes !== at) return;
       const want = list.filter((x) => deps.allowed(x.origin));
-      const kept = (origin: string) => pending.has(origin) || want.some((x) => x.origin === origin);
+      const kept = (origin: string) => tokens()[origin]?.unsaved === true || want.some((x) => x.origin === origin);
       for (const s of servers) if (!kept(s.origin)) drop(s);
-      for (const [origin, { token }] of Object.entries(tokens())) if (!kept(origin)) forget(origin, token);
+      for (const [origin, { token }] of Object.entries(before)) if (!kept(origin) && tokens()[origin]?.token === token) forget(origin, token);
       servers = servers.map((s) => (s.session || !tokens()[s.origin] ? s : entry(s.origin, s.name)));
       const added = want.filter((x) => !servers.some((s) => s.origin === x.origin)).map((x) => entry(x.origin, x.name));
       servers = [...servers, ...added];
@@ -155,7 +160,7 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
       if (live === null || deps.owner() !== live || !mine() || !deps.allowed(origin) || servers.some((s) => s.origin === origin)) return false;
       changes++;
       const s = entry(origin, name, { token, name });
-      setToken(origin, { token, name });
+      setToken(origin, { token, name, unsaved: true });
       servers = [...servers, s];
       shown = origin;
       error = null;
@@ -196,7 +201,7 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     follow: (owner: string | null) => {
       if (first) {
         first = false;
-        endTokens(owner);
+        if (JSON.stringify(loadTokens(deps.storage())) === found) endTokens(owner);
         live = owner;
       } else if (owner !== live) endLogin(owner);
     },

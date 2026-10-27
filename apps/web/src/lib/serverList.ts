@@ -29,7 +29,9 @@ export const savedServers = (v: unknown): SavedServer[] => (Array.isArray(v) ? v
 // list's name may be another device's login), and whose they are: the home
 // login that made them (another login here does not use them, see
 // lib/serverHub).
-export type Login = { token: string; name: string };
+// unsaved: added, not in the home account's list yet (a list loaded
+// meanwhile, in any tab, does not end it).
+export type Login = { token: string; name: string; unsaved?: true };
 export type Tokens = { owner: string; tokens: Record<string, Login> };
 
 const isLogin = (v: unknown): v is Login =>
@@ -41,7 +43,7 @@ export const loadTokens = (storage: Storage | undefined): Tokens => {
     const entries = Object.entries(v?.tokens && typeof v.tokens === "object" ? v.tokens : {});
     return {
       owner: typeof v?.owner === "string" ? v.owner : "",
-      tokens: Object.fromEntries(entries.filter(([o, t]) => isOrigin(o) && isLogin(t)).map(([o, t]) => [o, { token: t.token, name: t.name }])),
+      tokens: Object.fromEntries(entries.filter(([o, t]) => isOrigin(o) && isLogin(t)).map(([o, t]) => [o, { token: t.token, name: t.name, ...(t.unsaved === true && { unsaved: true as const }) }])),
     };
   } catch {
     return { owner: "", tokens: {} };

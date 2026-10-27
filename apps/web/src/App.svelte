@@ -129,13 +129,16 @@
     audio = null;
   };
   // The session ended on the server (a logout or password change on
-  // another device): back to the login screen, as after a logout.
+  // another device): back to the login screen, as after a logout. The
+  // added servers only close: whoever ended it ended their tokens (a tab
+  // that wakes late must not end a newer login's).
   $effect(() => {
     if (connection?.closed && loggedOut(connection.closeReason))
       untrack(() => {
+        hub.detach();
         account = null;
         void stopPush();
-        leave("You were logged out.");
+        leave("You were logged out.", false);
       });
   });
   // This browser's push notifications end with the login (see lib/push).
