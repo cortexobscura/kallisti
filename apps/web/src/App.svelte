@@ -3,10 +3,10 @@
   import Login from "./components/Login.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
   import type { RailServer } from "./components/ServerRail.svelte";
-  import { createAccountsApi, type Account, type AccountActions, type AccountsApi } from "./lib/accounts";
+  import { createAccountsApi, type Account, type AccountActions } from "./lib/accounts";
   import { connect, type Connection, type Credentials } from "./lib/connection.svelte";
   import { createServerSession, type ServerSession, type Target } from "./lib/serverSession.svelte";
-  import { addServer, loadServers, removeServer, saveServers } from "./lib/serverList";
+  import { createServerHub } from "./lib/serverHub.svelte";
   import { iconHref } from "./lib/serverLogo";
   import {
     bridgeUrl,
@@ -100,6 +100,8 @@
       });
   const leave = (note: string | null) => {
     loginNote = note;
+    // The home login ends: the added servers end with it (see lib/serverHub).
+    hub.endAll();
     session.leave();
     closeAudio(audio);
     audio = null;
@@ -205,6 +207,7 @@
     checking = false;
   };
   const changeServer = () => {
+    hub.endAll(); // another home server: not with this one's added servers
     choices++;
     desktopKind = null;
     kallisti = null;
@@ -240,94 +243,88 @@
   $effect(() => session.dispose);
   const connection = $derived(session.connection);
 
-  // Several servers in one client (see lib/serverList): the servers added
-  // on this device, each with its account API (a session token) and its
-  // own session. All stay connected; one is on screen (null: the home
-  // server).
-  type Added = { origin: string; api: AccountsApi; account: Account; session: ServerSession<Connection> };
-  let added = $state.raw<Added[]>([]);
-  let shown = $state<string | null>(null);
-  let addingServer = $state(false);
+  // Several servers in one client (see lib/serverHub): the servers added
+  // on this device, each with its own token and session; all stay
+  // connected, one is on screen (null: the home server). Their tokens have
+  // keys of their own (in the desktop app the home server's is session:).
   const homeOrigin = () => kallisti ?? location.origin;
-  const apiFor = (origin: string) => createAccountsApi(origin, fetch, sessionStore(origin));
-  const open = (origin: string, api: AccountsApi, account: Account): Added => {
-    const s = createServerSession<Connection>({
-      site: () => origin,
-      urlFor: async () => kallistiSocket(origin, sessionStore(origin).get()),
-      connect: (target, c) => connect(target.url, c, audio, target.protocols),
-      tabStorage,
-    });
-    void s.start({ username: account.name, account: true }).catch(() => {});
-    return { origin, api, account, session: s };
+  const addedStore = (origin: string) => {
+    const key = `added-session:${origin}`;
+    return { get: () => safeGet(localStorage, key) || null, set: (token: string | null) => void safeSet(localStorage, key, token ?? "") };
   };
-  const serverAdded = (origin: string, api: AccountsApi, account: Account) => {
-    if (added.some((a) => a.origin === origin)) return;
-    added = [...added, open(origin, api, account)];
-    saveServers(localStorage, addServer(loadServers(localStorage), origin, homeOrigin()));
-    shown = origin;
-  };
-  // Out of the rail: logged out there, its token gone from this device.
-  const removeServerHere = (origin: string) => {
-    const a = added.find((x) => x.origin === origin);
-    if (shown === origin) shown = null;
-    saveServers(localStorage, removeServer(loadServers(localStorage), origin));
-    if (!a) return;
-    added = added.filter((x) => x !== a);
-    a.session.leave();
-    a.session.dispose();
-    void a.api.logout().finally(() => sessionStore(origin).set(null));
-  };
-  // Once the home server is in: the saved ones (one that does not answer
-  // now stays saved and is tried again next time).
-  let restored = false;
-  $effect(() => {
-    if (restored || connection?.state.status !== "synced") return;
-    restored = true;
-    untrack(() => {
-      for (const origin of loadServers(localStorage)) {
-        if (origin === homeOrigin()) continue;
-        const api = apiFor(origin);
-        void api.me().then((acc) => {
-          if (acc && !added.some((a) => a.origin === origin)) added = [...added, open(origin, api, acc)];
-        });
+  const memoryStore = (token: string | null = null) => ({ get: () => token, set: (t: string | null) => void (token = t) });
+  const hub = createServerHub<ServerSession<Connection>>({
+    storage: () => {
+      try {
+        return localStorage;
+      } catch {
+        return undefined;
       }
-    });
+    },
+    home: homeOrigin,
+    tokens: addedStore,
+    open: (origin, name) => {
+      const s = createServerSession<Connection>({
+        site: () => origin,
+        urlFor: async () => kallistiSocket(origin, addedStore(origin).get()),
+        connect: (target, c) => connect(target.url, c, audio, target.protocols),
+        tabStorage,
+      });
+      void s.start({ username: name, account: true }).catch(() => {});
+      return s;
+    },
+    revoke: async (origin, token) => void (await createAccountsApi(origin, fetch, memoryStore(token)).logout()),
   });
-  $effect(() => () => added.forEach((a) => a.session.dispose()));
-  const shownAdded = $derived(shown === null ? null : (added.find((a) => a.origin === shown) ?? null));
+  let addingServer = $state(false);
+  // The add dialog's logins: the token stays in memory until the hub
+  // takes it.
+  const dialogApi = (origin: string) => {
+    const store = memoryStore();
+    return { api: createAccountsApi(origin, fetch, store), token: store.get };
+  };
+  // Once the home server is in: the saved ones (once per home login).
+  $effect(() => {
+    if (connection?.state.status === "synced") untrack(() => hub.restore());
+  });
+  $effect(() => () => hub.close());
+  const allSessions = () => [session, ...hub.servers.map((a) => a.session)];
+  const shownAdded = $derived(hub.shown === null ? null : (hub.servers.find((a) => a.origin === hub.shown) ?? null));
   const railEntry = (id: string, c: Connection | null, fallback: string): RailServer => ({
     id,
     name: c?.state.channels[0]?.name ?? fallback,
     logo: c?.text.logo ? iconHref(c.httpBase, 192, c.text.logo) : null,
-    active: shown === (id || null),
+    active: hub.shown === (id || null),
   });
   const rail = $derived<RailServer[]>([
     railEntry("", connection, "Home"),
-    ...added.map((a) => railEntry(a.origin, a.session.connection, new URL(a.origin).host)),
+    ...hub.servers.map((a) => railEntry(a.origin, a.session.connection, new URL(a.origin).host)),
   ]);
-  const selectServer = (id: string) => (shown = id || null);
+  const selectServer = (id: string) => hub.show(id || null);
   // An added server's account in its settings: logging out takes it out
   // of the rail; no fediverse link from here (that is its own site's).
-  const addedActions = (a: Added): AccountActions => ({
-    temporary: a.account.temporary,
-    logout: async () => removeServerHere(a.origin),
-    logoutAll: async () => {
-      await a.api.logoutAll();
-      removeServerHere(a.origin);
-    },
-    changePassword: (old, next) => a.api.changePassword(old, next),
-    whipUrl: a.api.whipUrl,
-    streamKey: () => a.api.streamKey(),
-    newStreamKey: () => a.api.newStreamKey(),
-    removeStreamKey: () => a.api.removeStreamKey(),
-    hasPassword: a.account.password !== false,
-    fedi: null,
-    fediEnabled: async () => false,
-    fediLink: async () => {},
-    fediUnlink: async () => {},
-    fediPublic: async () => {},
-    fediReauth: async () => {},
-  });
+  const addedActions = (origin: string): AccountActions => {
+    const api = createAccountsApi(origin, fetch, addedStore(origin));
+    return {
+      temporary: false,
+      logout: async () => hub.remove(origin),
+      logoutAll: async () => {
+        await api.logoutAll();
+        hub.remove(origin);
+      },
+      changePassword: (old, next) => api.changePassword(old, next),
+      whipUrl: api.whipUrl,
+      streamKey: () => api.streamKey(),
+      newStreamKey: () => api.newStreamKey(),
+      removeStreamKey: () => api.removeStreamKey(),
+      hasPassword: true,
+      fedi: null,
+      fediEnabled: async () => false,
+      fediLink: async () => {},
+      fediUnlink: async () => {},
+      fediPublic: async () => {},
+      fediReauth: async () => {},
+    };
+  };
 
   // A new version on the server (web app only: the desktop app carries its
   // own): checked now, every 15 minutes, when the tab shows again, and
@@ -396,10 +393,10 @@
   // context (see lib/voice/restart). Not on reconnects. keepMic: the
   // microphone stays open (a new output device).
   const restartAudio = (keepMic = false) => {
-    const move = (ctx: AudioContext) => [session, ...added.map((a) => a.session)].forEach((s) => s.setAudio(ctx, keepMic));
+    const move = (ctx: AudioContext) => allSessions().forEach((s) => s.setAudio(ctx, keepMic));
     audio = swapContext(audio, makeAudio, move, closeAudio);
   };
-  const wakeAll = () => [session, ...added.map((a) => a.session)].forEach((s) => s.wake());
+  const wakeAll = () => allSessions().forEach((s) => s.wake());
   const start = async (credentials: Credentials) => {
     loginNote = null;
     // The old connection closes at once (before the address is known).
@@ -416,7 +413,7 @@
   };
 </script>
 
-<svelte:window ononline={wakeAll} onpagehide={() => [session, ...added.map((a) => a.session)].forEach((s) => (s.place && s.keepPlace(s.place, true), s.keepStreams()))} onpointerdowncapture={wakeSound} onkeydowncapture={wakeSound} />
+<svelte:window ononline={wakeAll} onpagehide={() => allSessions().forEach((s) => (s.place && s.keepPlace(s.place, true), s.keepStreams()))} onpointerdowncapture={wakeSound} onkeydowncapture={wakeSound} />
 <svelte:document onvisibilitychange={wakeAll} />
 
 {#if checking}
@@ -437,19 +434,19 @@
   />
 {:else if shownAdded}
   {@const a = shownAdded}
-  {#if a.session.connection?.state.status === "synced"}
+  {#if a.session.connection?.state.status === "synced" && !a.session.error}
     {#if a.session.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
     <div class="client" inert={a.session.lost}>
       {#key a.session.connection}
-        <Client connection={a.session.connection} account={addedActions(a)} resume={a.session.place} onPlace={(p) => a.session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={a.session.drafts} pendingFiles={a.session.pendingFiles} streams={a.session.streams} servers={rail} onSelectServer={selectServer} onAddServer={() => (addingServer = true)} />
+        <Client connection={a.session.connection} account={addedActions(a.origin)} push={false} resume={a.session.place} onPlace={(p) => a.session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={a.session.drafts} pendingFiles={a.session.pendingFiles} streams={a.session.streams} servers={rail} onSelectServer={selectServer} onAddServer={() => (addingServer = true)} />
       {/key}
     </div>
   {:else}
     <div class="connecting">
       <p>{a.session.error ? `${new URL(a.origin).host}: ${a.session.error}` : `Connecting to ${new URL(a.origin).host}…`}</p>
       <p class="actions">
-        <button type="button" onclick={() => (shown = null)}>Back</button>
-        <button type="button" onclick={() => removeServerHere(a.origin)}>Remove this server</button>
+        <button type="button" onclick={() => hub.show(null)}>Back</button>
+        <button type="button" onclick={() => hub.remove(a.origin)}>Remove this server</button>
       </p>
     </div>
   {/if}
@@ -479,7 +476,7 @@
 {#if fediNotice}<Toast text={fediNotice} />{/if}
 
 {#if addingServer}
-  <AddServerDialog taken={[homeOrigin(), ...added.map((a) => a.origin)]} {apiFor} onAdded={serverAdded} onClose={() => (addingServer = false)} />
+  <AddServerDialog home={homeOrigin()} taken={hub.servers.map((a) => a.origin)} apiFor={dialogApi} onAdded={(origin, account, token) => hub.add(origin, account.name, token)} onClose={() => (addingServer = false)} />
 {/if}
 
 {#if updateReady && !updateClosed}

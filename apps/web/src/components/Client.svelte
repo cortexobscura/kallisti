@@ -136,6 +136,7 @@
     servers,
     onSelectServer,
     onAddServer,
+    push = true,
   }: {
     connection: Connection;
     account?: AccountActions;
@@ -165,6 +166,9 @@
     servers?: readonly RailServer[];
     onSelectServer?: (id: string) => void;
     onAddServer?: () => void;
+    // Push notifications belong to this server (the home server; added
+    // servers have none yet: the browser has one subscription).
+    push?: boolean;
   } = $props();
 
   const server = $derived(connection.state);
@@ -660,7 +664,7 @@
   // this session, the quiet chats (see pushLists) and the blocked users
   // (as a string: the same prefs post nothing). A click on one in an open
   // window comes from the service worker.
-  const pushName = $derived(account && !account.temporary && browserPushSupport() !== "none" ? me?.name : undefined);
+  const pushName = $derived(push && account && !account.temporary && browserPushSupport() !== "none" ? me?.name : undefined);
   const pushPrefsKey = $derived(
     JSON.stringify({
       ...pushLists(channelPrefs.value, connection.httpBase, Object.keys(text.directs).map(Number)),

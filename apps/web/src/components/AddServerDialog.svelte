@@ -1,70 +1,98 @@
 <script lang="ts">
   import type { Account, AccountsApi } from "../lib/accounts";
-  import { isKallisti, kallistiOrigin } from "../lib/desktop";
+  import { isKallisti } from "../lib/desktop";
+  import { serverOrigin } from "../lib/serverList";
 
   // Another Kallisti server for the rail (several servers in one client):
   // its address, then a login there. New accounts and guests are made on
-  // that server's own site (it refuses other sites).
+  // that server's own site (it refuses other sites). The login's token
+  // stays here until onAdded takes it (a cancelled or late login is logged
+  // out again).
   let {
+    home,
     taken,
     apiFor,
     onAdded,
     onClose,
   }: {
-    // Origins already in the rail (the home server too).
+    home: string;
+    // Origins already in the rail.
     taken: readonly string[];
-    // The account API of a server, with its session token kept on this device.
-    apiFor: (origin: string) => AccountsApi;
-    onAdded: (origin: string, api: AccountsApi, account: Account) => void;
+    // A server's account API whose token stays in memory (see token()).
+    apiFor: (origin: string) => { api: AccountsApi; token: () => string | null };
+    onAdded: (origin: string, account: Account, token: string) => void;
     onClose: () => void;
   } = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
   let address = $state("");
-  let found = $state<{ origin: string; api: AccountsApi } | null>(null);
+  let found = $state<{ origin: string } & ReturnType<typeof apiFor> | null>(null);
   let name = $state("");
   let password = $state("");
   let error = $state<string | null>(null);
   let busy = $state(false);
+  // Each check and login gets a number: Back, Close and a new try make
+  // older ones count for nothing.
+  let attempt = 0;
   $effect(() => dialog?.showModal());
+  $effect(() => () => void attempt++);
+
+  const back = () => {
+    attempt++;
+    found = null;
+    name = password = "";
+    error = null;
+    busy = false;
+  };
 
   const check = async (event: SubmitEvent) => {
     event.preventDefault();
     error = null;
-    const origin = kallistiOrigin(address);
-    if (!origin) return void (error = "Enter a server address, for example chat.example.org");
+    const parsed = serverOrigin(address, home);
+    if ("error" in parsed) return void (error = parsed.error);
+    const { origin } = parsed;
     if (taken.includes(origin)) return void (error = "This server is already in the list.");
+    const mine = ++attempt;
     busy = true;
     const kind = await isKallisti(origin);
+    if (mine !== attempt) return;
     busy = false;
     if (kind === "unreachable") error = `Cannot reach ${origin}. Check the address, or try again.`;
     else if (kind === "other") error = `${origin} is not a Kallisti server.`;
-    else found = { origin, api: apiFor(origin) };
+    else found = { origin, ...apiFor(origin) };
   };
 
   const logIn = async (event: SubmitEvent) => {
     event.preventDefault();
-    if (!found) return;
+    const target = found;
+    if (!target) return;
+    const mine = ++attempt;
     error = null;
     busy = true;
+    const cancelled = () => mine !== attempt;
     try {
-      const result = await found.api.login(name.trim(), password);
+      const result = await target.api.login(name.trim(), password);
       // A Mumble registration has no session for other sites (the server
       // refuses it there; an older one may not).
       if (result.mumble) throw new Error("Log in with this name on the server's own site.");
-      const account = await found.api.me();
-      if (!account) throw new Error("The login did not last. Please try again.");
-      onAdded(found.origin, found.api, account);
+      const account = await target.api.me();
+      const token = target.token();
+      if (cancelled()) {
+        if (token) void target.api.logout();
+        return;
+      }
+      if (!account || !token) throw new Error("The login did not last. Please try again.");
+      onAdded(target.origin, account, token);
       dialog?.close();
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+      if (!cancelled()) error = err instanceof Error ? err.message : String(err);
     } finally {
-      busy = false;
+      if (!cancelled()) busy = false;
     }
   };
 </script>
 
-<dialog bind:this={dialog} onclose={onClose} aria-labelledby="add-server-title">
+<dialog bind:this={dialog} onclose={() => (attempt++, onClose())} aria-labelledby="add-server-title">
   <header>
     <h2 id="add-server-title">Add a server</h2>
     <button type="button" class="close" onclick={() => dialog?.close()} aria-label="Close">×</button>
@@ -98,7 +126,7 @@
       <p class="hint">No account there yet? Make one on <a href={found.origin} target="_blank" rel="noopener noreferrer">its own site</a>.</p>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <footer>
-        <button type="button" class="secondary" onclick={() => ((found = null), (error = null))}>Back</button>
+        <button type="button" class="secondary" onclick={back}>Back</button>
         <button type="submit" class="primary" disabled={busy || !name.trim() || !password}>{busy ? "Logging in…" : "Log in"}</button>
       </footer>
     </form>
