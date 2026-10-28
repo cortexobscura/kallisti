@@ -27,7 +27,7 @@
   import { popupLogin, type ConnectPhase } from "./lib/popupLogin";
   import { proxyUrl } from "./lib/status";
   import { loggedOut } from "./lib/reconnect";
-  import { untrack, type Snippet } from "svelte";
+  import { untrack, type ComponentProps, type Snippet } from "svelte";
   import { checkForUpdate } from "./lib/update";
   import { browserPushSupport, dropServerPushes, pushIsOn, syncServerPush, turnOffPush } from "./lib/push";
   import { createVoiceAcross } from "./lib/voiceAcross.svelte";
@@ -633,36 +633,30 @@
   <div class="connecting" aria-busy="true"></div>
 {:else}
   <!-- Every connected server's client, the one on screen visible. -->
-  {#if connection?.state.status === "synced" && !session.error}
-    {@const shown = hub.shown === null}
-    <div class="view" hidden={!shown} inert={!shown}>
-      <!-- Quiet first (the server is usually back within seconds): a small
-           sign, then the banner (see lossNotice). -->
-      {#if shown && session.lost && session.notice === "banner"}
-        <div class="reconnecting" role="status">
-          Connection lost. Reconnecting…
-          <button type="button" onclick={() => void session.tryNow()}>Retry now</button>
-        </div>
-      {:else if shown && session.lost && session.notice === "sign"}
-        <div class="reconnecting quiet" role="status">Reconnecting…</div>
-      {/if}
-      <!-- While lost, the old view stays readable but takes no input (it would be lost); the rail does. -->
-      {#key connection}
-        <Client {connection} link={links.linkFor("")} onLinkUsed={() => links.used("")} onInvite={openInvite} onBadge={(b) => setBadge("", b)} active={shown} pttHere={pttOn("")} remoteVoice={remoteVoiceFor("")} onShow={() => selectServer("")} lost={session.lost} {rail} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
-      {/key}
-    </div>
-  {/if}
-  {#each hub.servers as a (a.origin)}
-    {@const s = a.session}
-    {#if s?.connection?.state.status === "synced" && !s.error}
-      {@const shown = hub.shown === a.origin}
+  {#snippet serverView(id: string, s: ServerSession<Connection>, own: Partial<ComponentProps<typeof Client>>)}
+    {#if s.connection?.state.status === "synced" && !s.error}
+      {@const shown = (hub.shown ?? "") === id}
       <div class="view" hidden={!shown} inert={!shown}>
-        {#if shown && s.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
+        <!-- Quiet first (the server is usually back within seconds): a small
+             sign, then the banner (see lossNotice). -->
+        {#if shown && s.lost && s.notice === "banner"}
+          <div class="reconnecting" role="status">
+            Connection lost. Reconnecting…
+            <button type="button" onclick={() => void s.tryNow()}>Retry now</button>
+          </div>
+        {:else if shown && s.lost && s.notice === "sign"}
+          <div class="reconnecting quiet" role="status">Reconnecting…</div>
+        {/if}
+        <!-- While lost, the old view stays readable but takes no input (it would be lost); the rail does. -->
         {#key s.connection}
-          <Client connection={s.connection} pushSync={serverPush.syncFor(a)} link={links.linkFor(a.origin)} onLinkUsed={() => links.used(a.origin)} onInvite={openInvite} onBadge={(b) => setBadge(a.origin, b)} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
+          <Client connection={s.connection} link={links.linkFor(id)} onLinkUsed={() => links.used(id)} onInvite={openInvite} onBadge={(b) => setBadge(id, b)} active={shown} pttHere={pttOn(id)} remoteVoice={remoteVoiceFor(id)} onShow={() => selectServer(id)} lost={s.lost} {rail} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} {...own} />
         {/key}
       </div>
     {/if}
+  {/snippet}
+  {@render serverView("", session, { account: account ? accountActions : undefined, onLogIn: () => leave(null), site: kallisti ?? location.origin, openSettings: reopenSettings, onSettingsOpened: () => (reopenSettings = false) })}
+  {#each hub.servers as a (a.origin)}
+    {#if a.session}{@render serverView(a.origin, a.session, { pushSync: serverPush.syncFor(a), account: addedActions(a.origin), site: a.origin })}{/if}
   {/each}
   {#if shownAdded}
     {@const a = shownAdded}
