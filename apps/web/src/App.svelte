@@ -108,7 +108,7 @@
   // must not show it again).
   const fediBack = isDesktop() ? null : fediResult(location.search);
   // Another server asks who you are (see Authorize): after the login here.
-  const authorizeQuery = isDesktop() ? null : new URLSearchParams(location.search).get("authorize");
+  // (authorizeQuery: read after a kept address is restored, below.)
   // This page is the popup in which a Kallisti page adds this server (see
   // Connect): its home server, kept in this tab over the login's pages.
   // Such a page is only that popup: no account here, no servers of its own.
@@ -153,10 +153,11 @@
   const keptInvite = safeGet(popupLogin.tab, "kallisti-invite");
   if (keptInvite) safeSet(popupLogin.tab, "kallisti-invite", "");
   // A link in the address wins (a newer one).
-  const explicit = /^\/invite\//.test(location.pathname) || /[?&](join|open)=/.test(location.search);
-  const restore = !explicit && (keptInvite?.startsWith("/invite/") || keptInvite?.startsWith("/?join=")) ? keptInvite : null;
+  const explicit = /^\/invite\//.test(location.pathname) || /[?&](join|open|authorize)=/.test(location.search);
+  const restore = !explicit && /^\/(invite\/|\?(join|authorize)=)/.test(keptInvite ?? "") ? keptInvite : null;
   if (restore) history.replaceState(history.state, "", restore);
   else if (fediBack) history.replaceState(history.state, "", withoutFediResult(location.pathname + location.search + location.hash));
+  const authorizeQuery = isDesktop() ? null : new URLSearchParams(location.search).get("authorize");
   let fediSignup = $state(fediBack?.kind === "register" || popupLogin.resumed);
   let fediNotice = $state<string | null>(null);
   // Back from a fresh login for the first password: to the settings again.
@@ -693,6 +694,8 @@
   const wakeAll = () => allSessions().forEach((s) => s.wake());
   const start = async (credentials: Credentials) => {
     loginNote = null;
+    // A consent page (see Authorize): the login only, no chat.
+    if (authorizeQuery) return;
     // The old connection closes at once (before the address is known).
     const started = session.start(credentials);
     closeAudio(audio);
@@ -806,7 +809,7 @@
         {fediSignup}
         onFediSignupDone={() => (connectHome ? window.close() : (fediSignup = false))}
         onHandoff={() => (connectPhase = "deliver")}
-        keep={joinUrl ? `/?join=${encodeURIComponent(joinUrl)}` : undefined}
+        keep={joinUrl ? `/?join=${encodeURIComponent(joinUrl)}` : authorizeQuery ? `/?authorize=${encodeURIComponent(authorizeQuery)}` : undefined}
       />
     {/snippet}
     {@render withRail(login)}
