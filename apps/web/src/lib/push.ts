@@ -163,7 +163,9 @@ export const turnOnPush = async (base: string, name: string, prefs: PushPrefs): 
 // Also on logout. The server forgets it with the session anyway.
 export const turnOffPush = (base: string) => {
   countOff();
-  const run = stopPush(home(base)).finally(changed);
+  // The added servers' too: their clients may not be there (a server that
+  // is down); each server drops its dead subscription at its next push.
+  const run = Promise.all([stopPush(home(base)), dropServerPushes([]).catch(() => {})]).then(() => {}).finally(changed);
   queue = Promise.all([queue, run]).catch(() => {}); // later subscribing waits for it
   return run;
 };
@@ -201,7 +203,7 @@ export const syncServerPush = async (server: { origin: string; token: string; na
 // dropped their subscriptions with the session) go.
 export const dropServerPushes = async (keep: readonly string[]) => {
   const kept = keep.map((s) => serverPushScope(s, location.origin));
-  for (const reg of (await navigator.serviceWorker?.getRegistrations().catch(() => [])) ?? []) {
+  for (const reg of (await navigator.serviceWorker?.getRegistrations?.().catch(() => [])) ?? []) {
     if (!reg.scope.startsWith(`${location.origin}/push/`) || kept.includes(reg.scope)) continue;
     await (await reg.pushManager.getSubscription().catch(() => null))?.unsubscribe().catch(() => {});
     await reg.unregister().catch(() => {});

@@ -232,7 +232,7 @@ describe("push from added servers", () => {
       requests.push(`${init?.method ?? "GET"} ${url} ${auth} ${init?.credentials}`);
       return url.endsWith("/api/push") ? new Response(JSON.stringify({ publicKey: KEY })) : new Response(null, { status: 204 });
     });
-    const { dropServerPushes, syncServerPush } = await import("../src/lib/push");
+    const { dropServerPushes, syncServerPush, turnOffPush } = await import("../src/lib/push");
     const prefs = { quiet: [], loud: [], blocked: [] };
     storage.set("pushOwner", pushOwner(HOME, "lain")); // the home server's push is on
     const scope = serverPushScope(B, HOME);
@@ -253,5 +253,10 @@ describe("push from added servers", () => {
     await syncServerPush({ origin: B, token: "tb", name: "lain" }, true, prefs);
     await dropServerPushes([]);
     expect(regs.size).toBe(0);
+    // Push off at home ends the added servers' too (their clients may not
+    // be there: a server that is down).
+    await syncServerPush({ origin: B, token: "tb", name: "lain" }, true, prefs);
+    await turnOffPush(HOME);
+    expect(regs.has(scope)).toBe(false);
   });
 });
