@@ -200,7 +200,7 @@
       <!-- The home account first (an account there is made if needed); a
            password there only when asked for (and in the desktop app). -->
       {#if homeCookie}
-        <p class="hint">You join with your account at {new URL(home).host}. New there? Your account is made at once.</p>
+        <p class="hint">You join {new URL(found.origin).host} with your account at {new URL(home).host}. No account there yet? One is made for you.</p>
         <button type="button" class="primary" disabled={busy} onclick={viaHome}>Continue with your account at {new URL(home).host}</button>
       {/if}
       {#if withPassword}
