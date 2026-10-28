@@ -223,10 +223,7 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
     // logged in at home now): logged out there, forgotten; not if another
     // login has them.
     endLoginTokens: (owner: string) => {
-      const stored = loadTokens(deps.storage());
-      if (stored.owner !== owner) return;
-      for (const [origin, { token }] of Object.entries(stored.tokens)) void deps.revoke(origin, token).catch(() => {});
-      saveTokens(deps.storage(), "", {});
+      if (loadTokens(deps.storage()).owner === owner) endTokens(null);
     },
     // The home login now (also null: none, or a guest), from the first
     // known one on: another than the open ones' ends them. At the first,

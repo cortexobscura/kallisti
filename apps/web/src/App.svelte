@@ -418,7 +418,8 @@
   });
   // Changes from other devices and tabs: when the page shows again.
   $effect(() => {
-    const onShow = () => document.visibilityState === "visible" && void hub.sync();
+    // Not on a consent page: it opens no servers.
+    const onShow = () => document.visibilityState === "visible" && !authorizeQuery && void hub.sync();
     document.addEventListener("visibilitychange", onShow);
     return () => document.removeEventListener("visibilitychange", onShow);
   });
@@ -694,8 +695,9 @@
   const wakeAll = () => allSessions().forEach((s) => s.wake());
   const start = async (credentials: Credentials) => {
     loginNote = null;
-    // A consent page (see Authorize): the login only, no chat.
-    if (authorizeQuery) return;
+    // A consent page (see Authorize): the login only, no chat (a guest or a
+    // Mumble registration cannot answer it).
+    if (authorizeQuery) return void (credentials.account || (loginNote = "Log in with an account of this server to answer this request."));
     // The old connection closes at once (before the address is known).
     const started = session.start(credentials);
     closeAudio(audio);

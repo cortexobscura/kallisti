@@ -2046,6 +2046,8 @@
           entries={goLive.entries}
           {onGoLive}
         />
+      {:else if remoteVoice}
+        <VoiceBar channel="{remoteVoice.channel} · {remoteVoice.server}" recording={remoteVoice.recording} onLeave={remoteVoice.leave} info={remoteVoice.info} onShow={remoteVoice.show} />
       {:else if elsewhere}
         <VoiceBar
           channel={server.channels[elsewhere.channelId]?.name ?? ""}
@@ -2053,8 +2055,6 @@
           info={connection.info}
           onJoinHere={() => join(elsewhere.channelId)}
         />
-      {:else if remoteVoice}
-        <VoiceBar channel="{remoteVoice.channel} · {remoteVoice.server}" recording={remoteVoice.recording} onLeave={remoteVoice.leave} info={remoteVoice.info} onShow={remoteVoice.show} />
       {/if}
       {@const away = remoteVoice}
       <UserPanel
