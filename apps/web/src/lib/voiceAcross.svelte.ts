@@ -1,4 +1,4 @@
-import { inVoice, isLobby, joinChannel, setSelfState, type ServerState } from "@kallisti/protocol";
+import { inVoice, isLobby, joinChannel, selfOf, setSelfState, type ServerState } from "@kallisti/protocol";
 import type { RemoteVoice } from "../components/Client.svelte";
 import type { ConnectionInfo } from "./connectionInfo.svelte";
 import type { Place } from "./place";
@@ -25,8 +25,6 @@ export type VoiceView = {
   session: { lost: boolean; error: string | null; connection: VoiceConnection | null; place: Place | null; keepPlace(p: Place): void };
 };
 
-const me = (s: ServerState) => (s.session === null ? undefined : s.users[s.session]);
-
 export const createVoiceAcross = (deps: {
   views: () => readonly VoiceView[];
   // A server's name (the rail's) and its key (its site), for the bar.
@@ -41,7 +39,7 @@ export const createVoiceAcross = (deps: {
   const voiceId = $derived(deps.views().find((v) => inVoiceOn(v.session))?.id ?? null);
   const leaveVoiceOn = (id: string) => {
     const c = deps.views().find((v) => v.id === id)?.session.connection;
-    const self = c && me(c.state);
+    const self = c && selfOf(c.state);
     if (c && self && isLobby(c.state)) c.send(joinChannel(self.session, 0));
   };
   let before: string[] = [];
@@ -68,7 +66,7 @@ export const createVoiceAcross = (deps: {
     remoteVoiceFor: (id: string): RemoteVoice | null => {
       const v = voiceId === null || voiceId === id ? null : deps.views().find((x) => x.id === voiceId);
       const c = v?.session.connection;
-      const self = c && me(c.state);
+      const self = c && selfOf(c.state);
       if (!v || !c || !self) return null;
       const target = v.id;
       return {

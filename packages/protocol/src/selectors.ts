@@ -134,23 +134,24 @@ export const may = (state: ServerState, channelId: number, perm: number): boolea
 export const isLobby = (state: ServerState): boolean =>
   state.rootPermissions !== null && (state.rootPermissions & SPEAK) === 0;
 
-const self = (state: ServerState): User | undefined => (state.session === null ? undefined : state.users[state.session]);
+// The own user (none before the sync).
+export const selfOf = (state: ServerState): User | undefined => (state.session === null ? undefined : state.users[state.session]);
 
 // Kallisti servers let an account connect several times; one session is
 // in voice, the others are text-only: in this channel, which is none, and
 // nobody else sees them.
 export const TEXT_ONLY = 0xfffffffe;
 
-export const isTextOnly = (state: ServerState): boolean => self(state)?.channelId === TEXT_ONLY;
+export const isTextOnly = (state: ServerState): boolean => selfOf(state)?.channelId === TEXT_ONLY;
 
 export const inVoice = (state: ServerState): boolean => {
-  const me = self(state);
+  const me = selfOf(state);
   return me !== undefined && me.channelId !== TEXT_ONLY && !(isLobby(state) && me.channelId === 0);
 };
 
 // Other sessions of our account (by user id), in any channel.
 const ourOthers = (state: ServerState): User[] => {
-  const me = self(state);
+  const me = selfOf(state);
   return me?.userId == null ? [] : Object.values(state.users).filter((u) => u.session !== me.session && u.userId === me.userId);
 };
 

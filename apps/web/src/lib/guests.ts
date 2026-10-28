@@ -1,4 +1,4 @@
-import { may, Perm, type ServerState } from "@kallisti/protocol";
+import { may, Perm, selfOf, type ServerState } from "@kallisti/protocol";
 import { roleOf } from "./roles";
 import type { TextState } from "./textChannels";
 
@@ -6,7 +6,7 @@ import type { TextState } from "./textChannels";
 // registration, or with a guest account) read but do not write, react or
 // upload. Staff are never guests. The server checks again.
 export const mayWrite = (server: ServerState, text: Pick<TextState, "guestsReadOnly" | "roles">, guestAccount: boolean) => {
-  const userId = (server.session === null ? undefined : server.users[server.session])?.userId ?? null;
+  const userId = selfOf(server)?.userId ?? null;
   return !text.guestsReadOnly || (userId !== null && (!guestAccount || roleOf(text.roles, userId) !== null || may(server, 0, Perm.Write)));
 };
 

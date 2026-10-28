@@ -50,6 +50,7 @@
     registerSelf,
     setSelfState,
     voiceElsewhere,
+    selfOf,
   } from "@kallisti/protocol";
   import { tick, untrack, type ComponentProps, type Snippet } from "svelte";
   import type { AccountActions } from "../lib/accounts";
@@ -233,7 +234,7 @@
   // A side panel that takes no input: lost, or not the one shown on a
   // phone (the chat takes care of lost itself: its menu leads to the rail).
   const noInput = (p: Panel) => lost || (phone && panel !== p);
-  const me = $derived(server.session === null ? undefined : server.users[server.session]);
+  const me = $derived(selfOf(server));
   // A text-only session (our account is in voice elsewhere) is in no
   // channel: it shows root.
   const textOnly = $derived(isTextOnly(server));

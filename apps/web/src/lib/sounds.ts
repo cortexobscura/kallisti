@@ -1,4 +1,4 @@
-import type { ServerState } from "@kallisti/protocol";
+import { selfOf, type ServerState } from "@kallisti/protocol";
 import { playNotes } from "./ping";
 
 // Short sounds for our own mute and deafen (join and leave sounds were
@@ -8,7 +8,7 @@ export type Sound = "mute" | "unmute" | "deafen" | "undeafen";
 export type VoiceSnapshot = { me: number; selfMute: boolean; selfDeaf: boolean };
 
 export const snapshotOf = (state: ServerState): VoiceSnapshot | null => {
-  const me = state.session === null ? undefined : state.users[state.session];
+  const me = selfOf(state);
   if (!me) return null;
   return { me: me.session, selfMute: me.selfMute, selfDeaf: me.selfDeaf };
 };
