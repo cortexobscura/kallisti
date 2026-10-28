@@ -182,7 +182,7 @@
         <!-- svelte-ignore a11y_autofocus -->
         <input bind:value={address} required placeholder="chat.example.org" autocomplete="url" autofocus />
       </label>
-      <p class="hint">A Kallisti server where you have an account.</p>
+      <p class="hint">Any Kallisti server: with your account here, or one you have there.</p>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <footer>
         <button type="button" class="secondary" onclick={() => dialog?.close()}>Cancel</button>
@@ -199,7 +199,7 @@
       <label>
         Name
         <!-- svelte-ignore a11y_autofocus -->
-        <input bind:value={name} required maxlength="32" autocomplete="username" autofocus />
+        <input bind:value={name} required maxlength="128" autocomplete="username" autofocus />
       </label>
       <label>
         Password

@@ -395,3 +395,18 @@ func TestGreetingAboveTheBudgetCloses(t *testing.T) {
 		t.Fatal("the client reached the upstream")
 	}
 }
+
+// "name@host" belongs to accounts from other servers: a guest cannot take it.
+func TestGuestsCannotUseARemoteName(t *testing.T) {
+	echo := startEcho(t)
+	lookup, isAccount := accounts("carol")
+	url := startBridge(t, Options{Dial: dialer(echo.addr), UniqueGuestNames: true, Account: lookup, IsAccountName: isAccount})
+	c, _, _ := connect(t, url, "")
+	c.Write(testCtx(t), websocket.MessageBinary, hello("alice@chat.example.org"))
+	if m := readReject(t, c); m == nil {
+		t.Fatal("a guest took a remote account's name")
+	}
+	if echo.open.Load() != 0 {
+		t.Fatal("the guest reached the upstream")
+	}
+}

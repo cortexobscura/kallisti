@@ -14,6 +14,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -250,6 +251,10 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case isAccount && name != names.Key(acc.Name):
 			reject(pb.Reject_InvalidUsername, "Use your account name, "+acc.Name+".")
+			return
+		case !isAccount && strings.Contains(name, "@"):
+			// name@host: an account from another server's (see names.Remote).
+			reject(pb.Reject_InvalidUsername, "Guests take names without @.")
 			return
 		case !isAccount && b.opts.IsAccountName != nil && b.opts.IsAccountName(name):
 			reject(pb.Reject_UsernameInUse, "This name belongs to an account. Log in to use it.")

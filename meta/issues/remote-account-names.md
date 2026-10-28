@@ -18,6 +18,12 @@ taken already (rare) falls back to the name step. Mentions of @alice do
 not match @alice@host. The browser check for new accounts stays (it runs
 by itself, no click).
 
+Accepted (from the reviews): the name stays when the handle changes at
+home (a later owner of that handle gets the name step); such an account
+cannot unlink. With an external Murmur, its own clients are not checked
+(the bridge refuses guests with "@"). Before deploying to a server with
+older accounts: check for names with "@" (they would look remote).
+
 ## Acceptance Criteria
 
 - Tests: remote names, no "@" in local names, mentions, signup without a

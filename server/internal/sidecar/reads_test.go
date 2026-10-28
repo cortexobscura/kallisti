@@ -13,9 +13,18 @@ func TestMentionRule(t *testing.T) {
 	for text, want := range map[string]bool{
 		"@lain hi": true, "hi @Lain!": true, "(@lain)": true,
 		"@lainey": false, "mail@lain.example": false, "lain": false,
+		"@lain@chat.example": false, // another server's lain
+		"@lain.":             true, "@lain@": true,
 	} {
 		if got := mentionsName(text, "lain"); got != want {
 			t.Errorf("%q: %v", text, got)
+		}
+	}
+	for text, want := range map[string]bool{
+		"hi @lain@chat.example": true, "@Lain@Chat.Example, hi": true, "@lain@chat.example.org": false, "@lain": false,
+	} {
+		if got := mentionsName(text, "lain@chat.example"); got != want {
+			t.Errorf("remote %q: %v", text, got)
 		}
 	}
 }

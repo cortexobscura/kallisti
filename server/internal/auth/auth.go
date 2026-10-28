@@ -457,8 +457,18 @@ func (a *Service) guest(w http.ResponseWriter, r *http.Request) {
 
 // checkName answers the request if a new account may not have the name.
 func (a *Service) checkName(w http.ResponseWriter, raw string) (string, bool) {
+	return a.checkNameBy(w, raw, names.Check)
+}
+
+// checkRemoteName: the same for an account from another server (see
+// names.CheckRemote).
+func (a *Service) checkRemoteName(w http.ResponseWriter, raw string) (string, bool) {
+	return a.checkNameBy(w, raw, names.CheckRemote)
+}
+
+func (a *Service) checkNameBy(w http.ResponseWriter, raw string, check func(string) string) (string, bool) {
 	name := norm.NFC.String(strings.TrimSpace(raw))
-	if msg := names.Check(name); msg != "" {
+	if msg := check(name); msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
 		return "", false
 	}

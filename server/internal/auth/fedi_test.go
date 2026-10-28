@@ -697,3 +697,38 @@ func TestFediHandoff(t *testing.T) {
 		t.Fatalf("handoff and link: %d", resp.StatusCode)
 	}
 }
+
+// Without a name, the account gets its remote one (name@home, as the
+// fediverse writes it); taken: the name step.
+func TestFediSignupWithTheRemoteName(t *testing.T) {
+	f := &fedifake.Instance{}
+	a, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	b := newBrowser(t, srv)
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host}, "Alice"), home+"?fedi=register")
+	if _, v := b.do("GET", "/api/fedi/signup", nil); v["remote"] != "Alice@"+host {
+		t.Fatalf("signup info: %v", v)
+	}
+	resp, v := b.do("POST", "/api/fedi/signup", map[string]any{})
+	if resp.StatusCode != http.StatusCreated || v["name"] != "Alice@"+host {
+		t.Fatalf("signup: %d %v", resp.StatusCode, v)
+	}
+	// Named after its home: it stays linked.
+	if resp, _ := b.do("POST", "/api/fedi/unlink", map[string]any{}); resp.StatusCode != http.StatusConflict {
+		t.Fatalf("unlink of a remote name: %d", resp.StatusCode)
+	}
+	// Taken already (an account of that name from before): the name step.
+	a.Store.CreateAccount(store.Account{Name: "Bob@" + host, PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, time.Now())
+	b2 := newBrowser(t, srv)
+	wantRedirect(t, b2.fediFlow(f, map[string]any{"instance": host}, "Bob"), home+"?fedi=register")
+	if resp, _ := b2.do("POST", "/api/fedi/signup", map[string]any{}); resp.StatusCode != http.StatusConflict {
+		t.Fatalf("a taken remote name: %d", resp.StatusCode)
+	}
+	if resp, v := b2.do("POST", "/api/fedi/signup", map[string]any{"name": "bob2"}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("the name step: %d %v", resp.StatusCode, v)
+	}
+	// Names of here take no "@": nobody poses as a remote account.
+	if resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "bob@" + host, "password": "longpassword"}, nil); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a local name with @: %d", resp.StatusCode)
+	}
+}

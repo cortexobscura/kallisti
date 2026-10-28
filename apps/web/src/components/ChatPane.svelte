@@ -1,4 +1,5 @@
 <script lang="ts">
+  import UserName from "./UserName.svelte";
   import { autosize } from "../lib/autosize";
   import { afterImageError, asSpoiler, attachmentView, chatSrc, imageBox, lightboxOf } from "../lib/media";
   import { emojiImages } from "../lib/emojiImages.svelte";
@@ -1473,7 +1474,7 @@
         </div>
         <div class="body">
           <div class="meta">
-            <span class="author">{group.actorName ?? "Server"}</span>
+            <span class="author">{#if group.actorName}<UserName name={group.actorName} />{:else}Server{/if}</span>
             {#if "verified" in m && m.verified}
               <span class="verified" title="Registered on the server">✓<span class="sr-only">registered</span></span>
             {/if}

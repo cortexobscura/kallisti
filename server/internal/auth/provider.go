@@ -18,6 +18,7 @@ import (
 
 	"kallisti.chat/server/internal/config"
 	"kallisti.chat/server/internal/fedi"
+	"kallisti.chat/server/internal/names"
 	"kallisti.chat/server/internal/store"
 )
 
@@ -354,7 +355,11 @@ func (a *Service) providerAccount(w http.ResponseWriter, r *http.Request) (store
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "set a password first: a guest account cannot log in elsewhere"})
 	case !fedi.ValidUsername(acc.Name):
 		// Other servers take names as the fediverse makes them.
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "other servers do not take names with characters other than letters, digits, _ . and -"})
+		msg := "other servers do not take names with characters other than letters, digits, _ . and -"
+		if _, host := names.Split(acc.Name); host != "" {
+			msg = "an account from another server logs in elsewhere with its home server"
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": msg})
 	default:
 		return acc, true
 	}

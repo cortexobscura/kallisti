@@ -5,6 +5,7 @@
 </script>
 
 <script lang="ts">
+  import UserName from "./UserName.svelte";
   import type { User } from "@kallisti/protocol";
   import { toggleDeaf, toggleMute, type SelfState } from "../lib/voice";
   import { menuAnchor } from "../lib/menu";
@@ -74,7 +75,7 @@
   >
     <Avatar name={me.name} size={32} status={presence} />
     <div class="who">
-      <div class="name ellipsis">{me.name}</div>
+      <div class="name ellipsis"><UserName name={me.name} /></div>
       {#if micError}
         <div class="status error ellipsis" title={micError}>{noVoice ? "No voice in this browser" : "No microphone"}</div>
       {:else if custom}

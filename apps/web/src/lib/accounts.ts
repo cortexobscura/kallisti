@@ -158,9 +158,10 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     },
     // After a login with an unlinked fediverse account: the suggested name
     // and the handle; null: none (expired).
-    fediSignup: async (): Promise<{ name: string; handle: string } | null> => {
-      const data = await call("/api/fedi/signup").catch(() => null);
-      return data ? { name: data.name ?? "", handle: data.handle ?? "" } : null;
+    // remote: the name the account gets (name@home), unless it is taken.
+    fediSignup: async (): Promise<{ name: string; handle: string; remote: string } | null> => {
+      const data = (await call("/api/fedi/signup").catch(() => null)) as (Answer & { remote?: string }) | null;
+      return data ? { name: data.name ?? "", handle: data.handle ?? "", remote: data.remote ?? "" } : null;
     },
     // A fresh login with the linked account, for the first password.
     fediReauth: async (instance: string) => {

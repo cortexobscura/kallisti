@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { parseInviteLink } from "../lib/invites";
+  import UserName from "./UserName.svelte";
   import { serverOrigin } from "../lib/serverList";
   import { modeForError, type Account, type AccountsApi } from "../lib/accounts";
   import { solveInWorker } from "../lib/captcha";
@@ -196,19 +197,22 @@
     safeSet(localStorage, "kallisti-home", homeAddress.trim());
     location.assign(`${parsed.origin}/?join=${encodeURIComponent(location.href)}`);
   };
-  // The name step: the server suggests the fediverse user name.
-  let signup = $state<{ name: string; handle: string } | null | undefined>(undefined);
+  // A new account from another server: named as at home (name@home), made
+  // at once; only a taken name asks for one (the server suggests it).
+  let signup = $state<{ name: string; handle: string; remote: string } | null | undefined>(undefined);
+  let chooseName = $state(false);
   $effect(() => {
     if (fediSignup && signup === undefined)
       void api.fediSignup().then((s) => {
         signup = s;
         if (s) username = s.name;
+        if (s) void createFromFedi();
       });
   });
-  const createFromFedi = async (event: SubmitEvent) => {
-    event.preventDefault();
-    const name = username.trim();
-    if (!name || !signup) return;
+  const createFromFedi = async (event?: SubmitEvent) => {
+    event?.preventDefault();
+    const name = chooseName ? username.trim() : "";
+    if ((chooseName && !name) || !signup) return;
     busy = true;
     apiError = null;
     try {
@@ -219,6 +223,11 @@
       connectAs(made, true);
     } catch (err) {
       apiError = err instanceof Error ? err.message : String(err);
+      // Its remote name is taken here: the name step (other errors show).
+      if (!chooseName && err instanceof Error && "status" in err && err.status === 409) {
+        chooseName = true;
+        apiError = null;
+      }
     } finally {
       busy = false;
     }
@@ -280,10 +289,21 @@
       <button class="link" onclick={logout}>Log out</button>
     </div>
   {:else if fediSignup}
-    {#if signup}
+    {#if signup && !chooseName}
+      <div class="card">
+        <h1>Welcome</h1>
+        <p class="sub" role="status">Making your account <strong><UserName name={signup.remote || signup.handle} /></strong>…</p>
+        {#if checking}<p class="hint" role="status">Checking your browser…</p>{/if}
+        {#if apiError}
+          <p class="error" role="alert">{apiError}</p>
+          <button class="primary" disabled={busy} onclick={() => void createFromFedi()}>Try again</button>
+          <button type="button" class="link" onclick={onFediSignupDone}>Cancel</button>
+        {/if}
+      </div>
+    {:else if signup}
       <form class="card" onsubmit={createFromFedi}>
         <h1>Choose your name</h1>
-        <p class="sub">Welcome, <strong>{signup.handle}</strong>. Choose the name people see here.</p>
+        <p class="sub">Welcome, <strong>{signup.handle}</strong>. {signup.remote} is taken here: choose the name people see here.</p>
         <label>
           Name
           <input bind:value={username} required maxlength="32" autocomplete="username" />
@@ -334,7 +354,7 @@
       {/if}
       <label>
         Name
-        <input bind:value={username} required maxlength="32" autocomplete="username" />
+        <input bind:value={username} required maxlength={mode === "login" ? 128 : 32} autocomplete="username" />
       </label>
       {#if mumbleOnly}
         <label>

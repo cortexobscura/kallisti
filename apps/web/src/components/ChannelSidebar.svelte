@@ -1,4 +1,5 @@
 <script lang="ts">
+  import UserName from "./UserName.svelte";
   import { channelTree, usersIn, type ChannelNode, type ServerState } from "@kallisti/protocol";
   import { longPress } from "../lib/longPress";
   import { mirrorIds, withoutMirrors } from "../lib/mirrors";
@@ -168,7 +169,7 @@
               oncontextmenu={(e) => onUserMenu(user.session, e)}
             >
               <Avatar name={user.name} size={24} speaking={speaking.has(user.session)} />
-              <span class="name ellipsis">{user.name}</span>
+              <span class="name ellipsis"><UserName name={user.name} /></span>
               <span class="flags">
                 {#if localMuted.has(user.session)}
                   <span title="Muted for you">
@@ -358,7 +359,7 @@
               }}
             >
               <Avatar name={d.peer.name} size={20} />
-              <span class="name ellipsis">{d.peer.name}</span>
+              <span class="name ellipsis"><UserName name={d.peer.name} /></span>
               {#if d.pinned}<span class="pinned" title="Pinned"><Icon name="pin" size={14} /><span class="sr-only">(pinned)</span></span>{/if}
               {#if d.channel !== currentDirect}<Badge count={mentionText[d.channel]} label="unread messages" />{/if}
             </button>

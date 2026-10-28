@@ -6,7 +6,9 @@ import { followedThreads } from "./threads";
 // opening mark (not in an address, a URL or right after an entity).
 // Messages here are escaped HTML, so the name is matched escaped too; tags
 // are skipped.
-const NAME_CHAR = "[\\p{L}\\p{N}_-]";
+// What may not follow a whole name: a name's letter, or "@host"/".x" (then
+// it is another server's account of the name, alice@host).
+const NAME_CHAR = "[\\p{L}\\p{N}_-]|[@.][\\p{L}\\p{N}]";
 const cached = new Map<string, RegExp>(); // a few names: mine, everyone, here
 const pattern = (name: string) => {
   let re = cached.get(name);

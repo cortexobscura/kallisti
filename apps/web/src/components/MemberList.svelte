@@ -1,4 +1,5 @@
 <script lang="ts">
+  import UserName from "./UserName.svelte";
   import type { Badge as Tag } from "../lib/roles";
   import type { UserStatus } from "../lib/presence";
   import type { User } from "@kallisti/protocol";
@@ -54,7 +55,7 @@
       <Avatar {name} size={32} status={status?.presence} {speaking} registered={!status} />
       <span class="who">
         <span class="line">
-          <span class="ellipsis">{name}</span>
+          <span class="ellipsis"><UserName {name} /></span>
           <RoleTag {role} />
         </span>
         {#if status?.custom}

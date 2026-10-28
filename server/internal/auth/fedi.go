@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"kallisti.chat/server/internal/fedi"
+	"kallisti.chat/server/internal/names"
 	"kallisti.chat/server/internal/password"
 	"kallisti.chat/server/internal/store"
 )
@@ -228,7 +229,7 @@ func (a *Service) serveFedi(w http.ResponseWriter, r *http.Request) bool {
 		a.fediCallback(w, r)
 	case p == fediPath+"/signup" && get:
 		if s, ok := a.Fedi.signups.get(a.cookie(r, signupCookie), a.Now(), false); ok {
-			writeJSON(w, http.StatusOK, map[string]string{"name": s.name, "handle": s.id.Handle})
+			writeJSON(w, http.StatusOK, map[string]string{"name": s.name, "handle": s.id.Handle, "remote": remoteName(s.id)})
 		} else {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "the fediverse login expired, please try again"})
 		}
@@ -588,7 +589,14 @@ func (a *Service) fediSignup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this server does not take logins from " + s.id.Host})
 		return
 	}
-	name, ok := a.checkName(w, c.Name)
+	// No name: its remote one (name@home); else one of here (the name step,
+	// when the remote one is taken).
+	var name string
+	if strings.TrimSpace(c.Name) == "" {
+		name, ok = a.checkRemoteName(w, remoteName(s.id))
+	} else {
+		name, ok = a.checkName(w, c.Name)
+	}
 	if !ok || !a.proven(w, c) {
 		return
 	}
@@ -635,6 +643,11 @@ func (a *Service) fediUnlink(w http.ResponseWriter, r *http.Request) {
 	acc, ok := a.AccountFor(r)
 	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not logged in"})
+		return
+	}
+	// Named after its home (name@home): the name needs the link behind it.
+	if _, host := names.Split(acc.Name); host != "" {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "an account named after its home server stays linked to it"})
 		return
 	}
 	switch err := a.Store.UnlinkFedi(acc.ID); {
@@ -712,3 +725,7 @@ func (a *Service) takeHandoff(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]string{"token": token, "name": h.account.Name, "origin": h.origin})
 }
+
+// remoteName: a remote account's name here, as the fediverse writes it
+// (its confirmed handle without the first "@").
+func remoteName(id store.FediIdentity) string { return strings.TrimPrefix(id.Handle, "@") }
