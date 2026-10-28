@@ -188,7 +188,7 @@ func (f *FediLogin) allowsIdentity(id store.FediIdentity) bool {
 	return f.allowsHome(id.Host) && f.allowsHome(id.Handle[strings.LastIndex(id.Handle, "@")+1:])
 }
 
-// EndBlockedHomes ends the logins (sessions, connections, stream keys) of
+// EndBlockedHomes ends the logins (sessions and what lives on of them) of
 // the accounts that log in only with a home server the admins' lists
 // block now; after a change of the lists.
 func (a *Service) EndBlockedHomes() {
@@ -204,11 +204,15 @@ func (a *Service) EndBlockedHomes() {
 		if a.Fedi.allowsIdentity(f.Identity) {
 			continue
 		}
-		if err := a.Store.DeleteSessionsExcept(f.AccountID, ""); err != nil {
-			slog.Error("ending a blocked home's sessions", "account", f.Name, "err", err)
+		acc, err := a.Store.AccountByName(f.Name)
+		if err == nil {
+			err = a.Store.DeleteSessionsExcept(acc.ID, "")
 		}
-		a.revoke(func(id int64, _ string) bool { return id == f.AccountID })
-		a.endStreamKey(store.Account{ID: f.AccountID, Name: f.Name})
+		if err != nil {
+			slog.Error("ending a blocked home's logins", "account", f.Name, "err", err)
+			continue
+		}
+		a.endLogins(acc, "")
 	}
 }
 

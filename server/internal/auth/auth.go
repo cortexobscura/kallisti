@@ -374,6 +374,15 @@ func (a *Service) revoke(match func(accountID int64, session string) bool) {
 	}
 }
 
+// endLogins ends what lives on of the account's logins but the session
+// keep ("": none) after its sessions ended: connections, the stream key,
+// Mumble app logins.
+func (a *Service) endLogins(acc store.Account, keep string) {
+	a.revoke(func(id int64, session string) bool { return id == acc.ID && (keep == "" || session != keep) })
+	a.endStreamKey(acc)
+	a.endPasswordLogins(acc)
+}
+
 func (a *Service) endPasswordLogins(acc store.Account) {
 	if a.EndPasswordLogins != nil {
 		a.EndPasswordLogins(acc)
@@ -662,9 +671,7 @@ func (a *Service) logoutAll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot log out"})
 		return
 	}
-	a.revoke(func(id int64, _ string) bool { return id == acc.ID })
-	a.endStreamKey(acc)
-	a.endPasswordLogins(acc)
+	a.endLogins(acc, "")
 	a.clearCookie(w, r, CookieName)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -728,9 +735,7 @@ func (a *Service) changePassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot change the password"})
 		return
 	}
-	a.revoke(func(id int64, session string) bool { return id == acc.ID && session != keep })
-	a.endStreamKey(acc)
-	a.endPasswordLogins(acc)
+	a.endLogins(acc, keep)
 	if acc.Temporary && a.OnPermanent != nil {
 		a.OnPermanent(acc.Name)
 	}

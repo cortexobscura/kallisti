@@ -56,9 +56,8 @@ type Handler struct {
 	Dir      string
 	MaxBytes int64
 	// Bytes one author may upload in 24 hours.
-	QuotaBytes     int64
-	AllowedOrigins []string
-	Now            func() time.Time
+	QuotaBytes int64
+	Now        func() time.Time
 	// Redeem checks an upload token and returns the uploader's name.
 	Redeem func(token string) (string, bool)
 	// RedeemEmoji checks a custom emoji upload token: who adds which

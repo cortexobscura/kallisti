@@ -44,12 +44,11 @@ func setupHandler(t *testing.T, maxBytes int64) (*httptest.Server, *store.Store,
 	}
 	t.Cleanup(func() { s.Close() })
 	h := &Handler{
-		Store:          s,
-		Dir:            t.TempDir(),
-		MaxBytes:       maxBytes,
-		QuotaBytes:     3 * maxBytes,
-		AllowedOrigins: []string{"https://app.example"},
-		Now:            func() time.Time { return time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) },
+		Store:      s,
+		Dir:        t.TempDir(),
+		MaxBytes:   maxBytes,
+		QuotaBytes: 3 * maxBytes,
+		Now:        func() time.Time { return time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) },
 		Redeem: func(token string) (string, bool) {
 			return "alice", token == "good"
 		},

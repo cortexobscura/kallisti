@@ -776,6 +776,15 @@ func TestEndBlockedHomes(t *testing.T) {
 			}
 		}
 	}
+	// An account with a password, linked to the same home: it stays.
+	now := time.Now()
+	bob, _ := a.Store.CreateAccount(store.Account{Name: "bob", PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, now)
+	a.Store.CreateSession(tokenHash("bob"), bob.ID, now.Add(time.Hour))
+	if err := a.Store.LinkFedi(bob.ID, tokenHash("bob"), store.FediIdentity{Host: host, RemoteID: "bob-id", Handle: "@bob@" + host}, now); err != nil {
+		t.Fatal(err)
+	}
+	var keysEnded []string
+	a.StreamKeyChanged = func(name string) { keysEnded = append(keysEnded, name) }
 	blocked := false
 	a.Fedi.AllowsHome = func(h string) bool { return !(blocked && h == host) }
 	a.EndBlockedHomes()
@@ -786,5 +795,11 @@ func TestEndBlockedHomes(t *testing.T) {
 	a.EndBlockedHomes()
 	if loggedIn() || len(revoked) != 1 {
 		t.Fatalf("blocked: logged in %v, revoked %v", loggedIn(), revoked)
+	}
+	if len(keysEnded) != 1 || keysEnded[0] != "alice" {
+		t.Fatalf("stream keys ended: %v", keysEnded)
+	}
+	if _, err := a.Store.AccountBySession(tokenHash("bob"), time.Now()); err != nil {
+		t.Fatalf("the account with a password was logged out: %v", err)
 	}
 }

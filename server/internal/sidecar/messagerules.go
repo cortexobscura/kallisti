@@ -117,7 +117,7 @@ func (c *Conn) homeServers(id mumble.Identity, req request) {
 		c.manageError(err.Error())
 		return
 	}
-	if req.Type == "set-home-servers" && c.hub.OnHomesChanged != nil {
+	if req.Type == "set-home-servers" && req.Homes != nil && c.hub.OnHomesChanged != nil {
 		c.hub.OnHomesChanged()
 	}
 	if r.Hosts == nil { // a list, not null
