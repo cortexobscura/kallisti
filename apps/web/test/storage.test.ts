@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { safeGet, safeSet } from "../src/lib/storage";
+import { localStore, safeGet, safeSet } from "../src/lib/storage";
 
 const broken = {
   getItem: () => {
@@ -26,5 +26,21 @@ describe("safe storage", () => {
   it("survives a missing storage", () => {
     expect(safeGet(undefined, "a")).toBeNull();
     expect(safeSet(undefined, "a", "1")).toBe(false);
+  });
+});
+
+describe("localStore", () => {
+  it("is localStorage, or undefined where it is blocked", () => {
+    const real = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    const fake = { getItem: () => null, setItem: () => {} };
+    try {
+      Object.defineProperty(globalThis, "localStorage", { configurable: true, get: () => fake });
+      expect(localStore()).toBe(fake);
+      Object.defineProperty(globalThis, "localStorage", { configurable: true, get: () => { throw new Error("SecurityError"); } });
+      expect(localStore()).toBeUndefined();
+    } finally {
+      if (real) Object.defineProperty(globalThis, "localStorage", real);
+      else delete (globalThis as { localStorage?: unknown }).localStorage;
+    }
   });
 });

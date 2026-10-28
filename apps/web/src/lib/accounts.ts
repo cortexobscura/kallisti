@@ -26,6 +26,9 @@ class ApiError extends Error {
 
 export type SessionStore = { get: () => string | null; set: (token: string | null) => void };
 
+// A token kept in memory only.
+export const memoryStore = (token: string | null = null): SessionStore => ({ get: () => token, set: (t) => void (token = t) });
+
 export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, session?: SessionStore) => {
   type Answer = { name?: string; mumble?: boolean; temporary?: boolean; token?: string } & Partial<Challenge> &
     Partial<StreamKey> & { key?: string; url?: string; handle?: string; password?: boolean; fedi?: FediLink; session?: string };
@@ -234,3 +237,7 @@ export type AccountActions = {
   // to the settings), needed for the first password.
   fediReauth: () => Promise<void>;
 };
+
+// The API of another server, with this login's own token (not the cookie).
+export const apiWithToken = (origin: string, token: string | null, fetchFn: typeof fetch = fetch) =>
+  createAccountsApi(origin, fetchFn, memoryStore(token));

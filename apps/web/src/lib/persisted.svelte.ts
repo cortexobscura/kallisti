@@ -1,6 +1,6 @@
-import { safeGet, safeSet } from "./storage";
+import { localStore, safeGet, safeSet } from "./storage";
 
-const storage = () => (typeof localStorage === "undefined" ? undefined : localStorage);
+const storage = localStore;
 
 // A reactive value saved in localStorage, synced between tabs. `parse` must
 // accept null and broken data (old versions, other tabs, manual edits).

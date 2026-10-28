@@ -5,7 +5,7 @@
   import Connect from "./components/Connect.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
   import ServerRail, { type RailServer } from "./components/ServerRail.svelte";
-  import { createAccountsApi, type Account, type AccountActions } from "./lib/accounts";
+  import { apiWithToken, createAccountsApi, memoryStore, type Account, type AccountActions } from "./lib/accounts";
   import { connect, type Connection, type Credentials } from "./lib/connection.svelte";
   import { createServerSession, type ServerSession, type Target } from "./lib/serverSession.svelte";
   import { createServerHub } from "./lib/serverHub.svelte";
@@ -23,7 +23,7 @@
   } from "./lib/desktop";
   import { httpBase } from "./lib/textChannels";
   import { serverOrigin } from "./lib/serverList";
-  import { safeGet, safeSet, tabStorage } from "./lib/storage";
+  import { localStore, safeGet, safeSet, tabStorage } from "./lib/storage";
   import { popupLogin, type ConnectPhase } from "./lib/popupLogin";
   import { proxyUrl } from "./lib/status";
   import { loggedOut } from "./lib/reconnect";
@@ -251,7 +251,7 @@
     },
     fediReauth: async () => {
       if (!account?.fedi) return;
-      location.assign(await api.fediReauth(reauthInstance(account.fedi.handle, safeGet(localStorage, "fediInstance")))); // back with ?fedi=reauth
+      location.assign(await api.fediReauth(reauthInstance(account.fedi.handle, safeGet(localStore(), "fediInstance")))); // back with ?fedi=reauth
     },
     get whipUrl() {
       return api.whipUrl;
@@ -265,12 +265,12 @@
   // session token instead of the cookie); any other address through the
   // app's local Mumble bridge. The web app: through its Kallisti server.
   const desktop = isDesktop();
-  let desktopServer = $state(safeGet(localStorage, "server") ?? "");
+  let desktopServer = $state(safeGet(localStore(), "server") ?? "");
   let desktopKind = $state<"kallisti" | "mumble" | null>(null);
   let kallisti = $state<string | null>(null); // the Kallisti server's origin
   const sessionStore = (origin: string) => {
     const key = `session:${origin}`;
-    return { get: () => safeGet(localStorage, key) || null, set: (token: string | null) => void safeSet(localStorage, key, token ?? "") };
+    return { get: () => safeGet(localStore(), key) || null, set: (token: string | null) => void safeSet(localStore(), key, token ?? "") };
   };
   // The newest choice wins (the one from last time is looked at on start).
   let choices = 0;
@@ -287,7 +287,7 @@
     }
     const found = kind === "kallisti";
     desktopServer = address;
-    safeSet(localStorage, "server", address);
+    safeSet(localStore(), "server", address);
     kallisti = found ? origin : null;
     if (found) {
       api = createAccountsApi(origin!, fetch, sessionStore(origin!));
@@ -337,15 +337,8 @@
   // list, each server with its own token on this device and its session;
   // all stay connected, one is on screen (null: the home server).
   const homeOrigin = () => kallisti ?? location.origin;
-  const memoryStore = (token: string | null = null) => ({ get: () => token, set: (t: string | null) => void (token = t) });
   const hub = createServerHub<ServerSession<Connection>>({
-    storage: () => {
-      try {
-        return localStorage;
-      } catch {
-        return undefined;
-      }
-    },
+    storage: localStore,
     allowed: (origin) => {
       const r = serverOrigin(origin, homeOrigin(), !desktop);
       return "origin" in r && r.origin === origin;
@@ -367,7 +360,7 @@
       void s.start({ username: name, account: true }).catch(() => {});
       return s;
     },
-    revoke: async (origin, token) => void (await createAccountsApi(origin, fetch, memoryStore(token)).logout()),
+    revoke: async (origin, token) => void (await apiWithToken(origin, token).logout()),
   });
   // Whose the added servers' tokens are: an account at home (not a guest,
   // not a Mumble server in the desktop app). Once the first check is done,
@@ -492,7 +485,7 @@
   // of the rail; no fediverse link from here (that is its own site's).
   const addedActions = (origin: string): AccountActions => {
     // Its own token (another tab may store another login's for the origin).
-    const api = createAccountsApi(origin, fetch, memoryStore(hub.servers.find((a) => a.origin === origin)?.token ?? null));
+    const api = apiWithToken(origin, hub.servers.find((a) => a.origin === origin)?.token ?? null);
     return {
       temporary: false,
       logout: async () => hub.remove(origin),

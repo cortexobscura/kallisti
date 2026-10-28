@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAccountsApi, modeForError, whipUrl } from "../src/lib/accounts";
+import { apiWithToken, createAccountsApi, modeForError, whipUrl } from "../src/lib/accounts";
 
 type Call = { url: string; init: RequestInit };
 const fakeFetch = (status: number, body: unknown, calls: Call[]) =>
@@ -174,5 +174,15 @@ describe("stream keys (OBS)", () => {
 
   it("gives OBS the server's WHIP address", () => {
     expect(whipUrl("https://chat.example")).toBe("https://chat.example/api/whip");
+  });
+});
+
+describe("apiWithToken", () => {
+  it("sends its own token, and forgets it after a logout", async () => {
+    const calls: Call[] = [];
+    const api = apiWithToken("http://srv", "tok", fakeFetch(204, null, calls));
+    await api.logout();
+    await api.logout();
+    expect(calls.map((c) => (c.init.headers as Record<string, string>).Authorization)).toEqual(["Bearer tok", undefined]);
   });
 });

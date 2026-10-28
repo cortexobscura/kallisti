@@ -8,7 +8,7 @@
   import { formatFingerprint, isDesktop, type CertificateProblem } from "../lib/desktop";
   import type { Credentials } from "../lib/connection.svelte";
   import { iconHref, showIcons } from "../lib/serverLogo";
-  import { safeGet, safeSet, tabStorage } from "../lib/storage";
+  import { localStore, safeGet, safeSet, tabStorage } from "../lib/storage";
 
   let {
     error,
@@ -65,7 +65,7 @@
   ];
   // A guest who tried an account's name gets the Log in tab right away.
   let mode = $state<Mode>(untrack(() => modeForError(error)));
-  let username = $state(safeGet(localStorage, "username") ?? "");
+  let username = $state(safeGet(localStore(), "username") ?? "");
   let password = $state("");
   let serverPassword = $state("");
   let server = $state(untrack(() => desktop?.server) ?? "");
@@ -96,7 +96,7 @@
   };
 
   const connectAs = (name: string, isAccount: boolean, pw = serverPassword) => {
-    safeSet(localStorage, "username", name);
+    safeSet(localStore(), "username", name);
     onConnect({ username: name, password: pw, account: isAccount, ...(desktop && { server: desktop.server }) });
   };
 
@@ -165,7 +165,7 @@
   $effect(() => {
     if (!desktop) void api.fediEnabled().then((on) => (fediOn = on));
   });
-  let instance = $state(safeGet(localStorage, "fediInstance") ?? "");
+  let instance = $state(safeGet(localStore(), "fediInstance") ?? "");
   const fediLogin = async (event: SubmitEvent) => {
     event.preventDefault();
     if (!instance.trim()) return;
@@ -173,7 +173,7 @@
     apiError = null;
     try {
       const url = await api.fediStart(instance.trim());
-      safeSet(localStorage, "fediInstance", instance.trim());
+      safeSet(localStore(), "fediInstance", instance.trim());
       // A link to come back to (an invite here, a ?join): kept over the
       // login's pages (see App keptInvite); none: none.
       safeSet(tabStorage(), "kallisti-invite", keep ?? (invite ? location.pathname : ""));
@@ -187,14 +187,14 @@
   // account on another Kallisti server open it there, at their home (its
   // address remembered by this site).
   const invite = !isDesktop() && !!parseInviteLink(location.href, location.origin);
-  let homeAddress = $state(safeGet(localStorage, "kallisti-home") ?? "");
+  let homeAddress = $state(safeGet(localStore(), "kallisti-home") ?? "");
   let homeError = $state<string | null>(null);
   const openAtHome = (event: SubmitEvent) => {
     event.preventDefault();
     const parsed = serverOrigin(homeAddress, "", false);
     if ("error" in parsed) return void (homeError = parsed.error);
     if (parsed.origin === location.origin) return void (homeError = "That is this server.");
-    safeSet(localStorage, "kallisti-home", homeAddress.trim());
+    safeSet(localStore(), "kallisti-home", homeAddress.trim());
     location.assign(`${parsed.origin}/?join=${encodeURIComponent(location.href)}`);
   };
   // A new account from another server: named as at home (name@home), made

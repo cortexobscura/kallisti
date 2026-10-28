@@ -28,3 +28,12 @@ export const tabStorage = (): globalThis.Storage | undefined => {
     return undefined;
   }
 };
+
+// The device's storage (localStorage), or undefined where it is blocked.
+export const localStore = (): globalThis.Storage | undefined => {
+  try {
+    return localStorage;
+  } catch {
+    return undefined;
+  }
+};

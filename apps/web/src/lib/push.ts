@@ -3,7 +3,7 @@
 // worker (sw.ts, at /sw.js) shows them. It is registered only while push
 // is on. A subscription belongs to one account on one server (owner).
 import { isDesktop } from "./desktop";
-import { safeGet, safeSet } from "./storage";
+import { localStore, safeGet, safeSet } from "./storage";
 
 // "install": iOS has push only for apps on the home screen (16.4+).
 export type PushSupport = "ok" | "install" | "none";
@@ -113,10 +113,10 @@ const active = (reg: ServiceWorkerRegistration) =>
 let queue: Promise<unknown> = Promise.resolve();
 const OFFS_KEY = "pushOffs";
 let tabOffs = 0;
-const offs = () => `${safeGet(localStorage, OFFS_KEY)} ${tabOffs}`;
+const offs = () => `${safeGet(localStore(), OFFS_KEY)} ${tabOffs}`;
 const countOff = () => {
   tabOffs++;
-  safeSet(localStorage, OFFS_KEY, String(Number(safeGet(localStorage, OFFS_KEY)) + 1));
+  safeSet(localStore(), OFFS_KEY, String(Number(safeGet(localStore(), OFFS_KEY)) + 1));
 };
 
 // Subscribes (again, if the server's key changed) and tells the server,
@@ -136,14 +136,14 @@ const subscribe = (t: Target, owner: string, prefs: PushPrefs) => {
     sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey(key) });
     if (asked === offs()) await send(t, "POST", subscriptionBody(sub.toJSON(), prefs));
     if (asked !== offs()) return stopPush(t, reg, sub);
-    if (!t.token) safeSet(localStorage, OWNER_KEY, owner);
+    if (!t.token) safeSet(localStore(), OWNER_KEY, owner);
   });
   queue = run.catch(() => {});
   return run;
 };
 
 export const pushIsOn = async (base: string, name: string) =>
-  safeGet(localStorage, OWNER_KEY) === pushOwner(base, name) && !!(await (await registration())?.pushManager.getSubscription());
+  safeGet(localStore(), OWNER_KEY) === pushOwner(base, name) && !!(await (await registration())?.pushManager.getSubscription());
 
 // Push turned on or off here (added servers follow; see App).
 const changed = () => void globalThis.dispatchEvent?.(new Event("kallisti-push"));
@@ -171,7 +171,7 @@ export const turnOffPush = (base: string) => {
 };
 
 const stopPush = async (t: Target, reg?: ServiceWorkerRegistration, sub?: PushSubscription | null) => {
-  if (!t.token) safeSet(localStorage, OWNER_KEY, "");
+  if (!t.token) safeSet(localStore(), OWNER_KEY, "");
   reg ??= await registration(t.scope).catch(() => undefined);
   sub ??= await reg?.pushManager.getSubscription().catch(() => null);
   if (sub) await send(t, "DELETE", { endpoint: sub.endpoint }).catch(() => {});
@@ -183,7 +183,7 @@ const stopPush = async (t: Target, reg?: ServiceWorkerRegistration, sub?: PushSu
 // follows the session and the prefs (and comes back if the browser dropped
 // the subscription); another account's goes.
 export const syncPush = async (base: string, name: string, prefs: PushPrefs) => {
-  const owner = safeGet(localStorage, OWNER_KEY);
+  const owner = safeGet(localStore(), OWNER_KEY);
   if (owner === pushOwner(base, name) && Notification.permission === "granted")
     await subscribe(home(base), owner, prefs).catch((err) => console.warn("push", err));
   else if (owner || (await registration().catch(() => undefined))) await turnOffPush(base);
@@ -194,7 +194,7 @@ export const syncPush = async (base: string, name: string, prefs: PushPrefs) => 
 export const syncServerPush = async (server: { origin: string; token: string; name: string }, on: boolean, prefs: PushPrefs) => {
   const t: Target = { base: server.origin, scope: serverPushScope(server.origin, location.origin), token: server.token };
   // on, and still on in this browser (another tab may have turned it off).
-  if (on && safeGet(localStorage, OWNER_KEY) && Notification.permission === "granted")
+  if (on && safeGet(localStore(), OWNER_KEY) && Notification.permission === "granted")
     await subscribe(t, pushOwner(server.origin, server.name), prefs).catch((err) => console.warn("push", err));
   else if (await registration(t.scope).catch(() => undefined)) await stopPush(t).catch(() => {});
 };

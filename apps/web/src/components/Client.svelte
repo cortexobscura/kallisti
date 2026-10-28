@@ -52,6 +52,7 @@
     voiceElsewhere,
     selfOf,
   } from "@kallisti/protocol";
+  import { localStore } from "../lib/storage";
   import { tick, untrack, type ComponentProps, type Snippet } from "svelte";
   import type { AccountActions } from "../lib/accounts";
   import { createChannelManagement } from "../lib/channelManagement.svelte";
@@ -579,7 +580,7 @@
   let soundState: VoiceSnapshot | null = null;
   let lastSound = -Infinity;
   let restored = false;
-  const storage = typeof localStorage === "undefined" ? undefined : localStorage;
+  const storage = localStore();
   $effect(() => {
     if (restored || !me) return;
     restored = true;
