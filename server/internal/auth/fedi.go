@@ -188,6 +188,30 @@ func (f *FediLogin) allowsIdentity(id store.FediIdentity) bool {
 	return f.allowsHome(id.Host) && f.allowsHome(id.Handle[strings.LastIndex(id.Handle, "@")+1:])
 }
 
+// EndBlockedHomes ends the logins (sessions, connections, stream keys) of
+// the accounts that log in only with a home server the admins' lists
+// block now; after a change of the lists.
+func (a *Service) EndBlockedHomes() {
+	if a.Fedi == nil {
+		return
+	}
+	accounts, err := a.Store.FediOnlyAccounts()
+	if err != nil {
+		slog.Error("listing fediverse-only accounts", "err", err)
+		return
+	}
+	for _, f := range accounts {
+		if a.Fedi.allowsIdentity(f.Identity) {
+			continue
+		}
+		if err := a.Store.DeleteSessionsExcept(f.AccountID, ""); err != nil {
+			slog.Error("ending a blocked home's sessions", "account", f.Name, "err", err)
+		}
+		a.revoke(func(id int64, _ string) bool { return id == f.AccountID })
+		a.endStreamKey(store.Account{ID: f.AccountID, Name: f.Name})
+	}
+}
+
 // home is the web app with a result for it ("fedi" and "reason").
 func (f *FediLogin) home(result, reason string) string {
 	if result == "" {

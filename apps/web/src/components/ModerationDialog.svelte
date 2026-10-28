@@ -355,8 +355,8 @@
           </div>
         </form>
         <p class="note">
-          Another Kallisti server or a fediverse server (Mastodon and others) where the account lives. Accounts that logged in before
-          keep their sessions.
+          Another Kallisti server or a fediverse server (Mastodon and others) where the account lives. Accounts that log in only
+          with a server you exclude are logged out here when you save.
         </p>
       {/if}
     {/if}

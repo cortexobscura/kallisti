@@ -263,6 +263,9 @@ type Hub struct {
 	Recorder Recorder
 	// SaveFile stores a picture from a Mumble message as an upload.
 	SaveFile func(author, name, ctype string, data []byte) (store.Upload, error)
+	// OnHomesChanged runs after admins changed which home servers' accounts
+	// log in here (nil: nothing).
+	OnHomesChanged func()
 	// Push sends a push notification to a user's browsers, by name (nil:
 	// none; see push.go). It must not block.
 	Push func(name string, n push.Note)

@@ -175,6 +175,33 @@ func (s *Store) AccountByFedi(host, remoteID string) (Account, FediIdentity, err
 	return a, id, err
 }
 
+// FediOnly is an account that logs in only with its remote account (no
+// password).
+type FediOnly struct {
+	AccountID int64
+	Name      string
+	Identity  FediIdentity
+}
+
+// FediOnlyAccounts are all such accounts.
+func (s *Store) FediOnlyAccounts() ([]FediOnly, error) {
+	rows, err := s.db.Query(`SELECT i.account_id, a.name, ` + identityColumns + ` FROM fedi_identities i JOIN accounts a ON a.id = i.account_id
+		WHERE a.password_hash = ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FediOnly
+	for rows.Next() {
+		var f FediOnly
+		if err := rows.Scan(&f.AccountID, &f.Name, &f.Identity.Host, &f.Identity.RemoteID, &f.Identity.Handle, &f.Identity.Public); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
 // FediIdentityOf is an account's remote account (ErrNotFound: none).
 func (s *Store) FediIdentityOf(accountID int64) (FediIdentity, error) {
 	return scanIdentity(s.db.QueryRow(`SELECT `+identityColumns+` FROM fedi_identities i WHERE i.account_id = ?`, accountID))

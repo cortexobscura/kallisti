@@ -185,6 +185,7 @@ func run() error {
 		accounts.Captcha = mumble.srv.Captcha
 		if accounts.Fedi != nil {
 			accounts.Fedi.AllowsHome = mumble.srv.AllowsHome // the admins' lists
+			hub.OnHomesChanged = accounts.EndBlockedHomes
 		}
 		accounts.ServerName = mumble.srv.ServerName
 		accounts.EndPasswordLogins = func(acc store.Account) { mumble.srv.EndPasswordLogins(accountCertHash(acc)) }

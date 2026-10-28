@@ -135,3 +135,28 @@ func TestFediIdentities(t *testing.T) {
 		t.Fatalf("after delete: %v", err)
 	}
 }
+
+func TestFediOnlyAccounts(t *testing.T) {
+	s := open(t)
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	only, err := s.CreateFediAccount(Account{Name: "ann@a.example", CertPEM: []byte("c"), KeyPEM: []byte("k")},
+		FediIdentity{Host: "a.example", RemoteID: "1", Handle: "@ann@a.example"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// With a password: it logs in without its remote account too.
+	both, err := s.CreateAccount(Account{Name: "bob", PasswordHash: "hash", CertPEM: []byte("c"), KeyPEM: []byte("k")}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateSession("h", both.ID, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LinkFedi(both.ID, "h", FediIdentity{Host: "b.example", RemoteID: "2", Handle: "@bob@b.example"}, now); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.FediOnlyAccounts()
+	if err != nil || len(got) != 1 || got[0].AccountID != only.ID || got[0].Name != "ann@a.example" || got[0].Identity.Handle != "@ann@a.example" || got[0].Identity.Host != "a.example" {
+		t.Fatalf("fedi-only accounts: %+v %v", got, err)
+	}
+}

@@ -752,3 +752,39 @@ func TestFediBlockUsesTheKnownDomain(t *testing.T) {
 		t.Fatalf("the confirmed handle changed: %q", id.Handle)
 	}
 }
+
+// Blocking a home server ends the logins of the accounts that log in only
+// with it (their connections too); others stay.
+func TestEndBlockedHomes(t *testing.T) {
+	f := &fedifake.Instance{}
+	a, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	b := newBrowser(t, srv)
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host}, "Alice"), home+"?fedi=register")
+	if resp, v := b.do("POST", "/api/fedi/signup", map[string]any{"name": "alice"}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("signup: %d %v", resp.StatusCode, v)
+	}
+	loggedIn := func() bool {
+		_, v := b.do("GET", "/api/me", nil)
+		return v["name"] == "alice"
+	}
+	var revoked []int64
+	a.Revoke = func(match func(int64, string) bool) {
+		for id := int64(1); id < 10; id++ {
+			if match(id, "") {
+				revoked = append(revoked, id)
+			}
+		}
+	}
+	blocked := false
+	a.Fedi.AllowsHome = func(h string) bool { return !(blocked && h == host) }
+	a.EndBlockedHomes()
+	if !loggedIn() || len(revoked) != 0 {
+		t.Fatalf("not blocked: logged in %v, revoked %v", loggedIn(), revoked)
+	}
+	blocked = true
+	a.EndBlockedHomes()
+	if loggedIn() || len(revoked) != 1 {
+		t.Fatalf("blocked: logged in %v, revoked %v", loggedIn(), revoked)
+	}
+}

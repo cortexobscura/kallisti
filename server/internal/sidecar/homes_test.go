@@ -35,6 +35,8 @@ func TestHomeServerLists(t *testing.T) {
 	h.SetVoice(&fakeVoice{}, "")
 	admin := readyAs(t, h, 1, "admin")
 	bob := readyAs(t, h, 2, "bob")
+	changed := 0
+	h.OnHomesChanged = func() { changed++ }
 	bob.Handle([]byte(`{"type":"set-home-servers","homes":{"mode":"block","hosts":["evil.example"]}}`))
 	if m := next(t, bob); m["type"] != "error" || m["about"] != "manage" {
 		t.Fatalf("bob: %v", m)
@@ -47,5 +49,8 @@ func TestHomeServerLists(t *testing.T) {
 	m := next(t, admin)
 	if got := m["homes"].(map[string]any); m["type"] != "home-servers" || got["mode"] != "block" || got["hosts"].([]any)[0] != "evil.example" {
 		t.Fatalf("set: %v", m)
+	}
+	if changed != 1 { // not for bob's refused try
+		t.Fatalf("OnHomesChanged ran %d times", changed)
 	}
 }
