@@ -17,9 +17,9 @@ rest. test.kallisti.chat runs this branch.
   session (a fingerprint); a logout can name the session and account it
   means (409 for another).
 - Step 1, several servers in the client: a server session unit
-  (lib/serverSession), the hub of added servers (lib/serverHub), the saved
-  list with its owner (home origin, account, session), the add dialog,
-  the rail with all servers, "Try again", push only for the home server.
+  (lib/serverSession), the hub of added servers (lib/serverHub), the add
+  dialog, the rail with all servers, "Try again". (The list first lived
+  on the device with an owner record; it moved to the home account.)
   Ending rules: another home login, or none (also a login that expired in
   an open tab), ends the previous one's servers: logged out there, tokens
   gone; a failed check ends nothing.

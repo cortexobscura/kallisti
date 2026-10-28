@@ -164,7 +164,6 @@
     onSettingsOpened,
     rail,
     lost = false,
-    push = true,
     active = true,
     pttHere = true,
     remoteVoice = null,
@@ -204,9 +203,6 @@
     // The connection is lost: all but the rail takes no input (it would be
     // lost).
     lost?: boolean;
-    // Push notifications belong to this server (the home server; added
-    // servers have none yet: the browser has one subscription).
-    push?: boolean;
     // Several servers: this one is on screen (the others are mounted,
     // hidden: their voice, unread marks and notifications go on). Only it
     // has the page's title, icons, shortcuts and swipes, and is seen.
@@ -226,7 +222,8 @@
     onLinkUsed?: () => void;
     // An invite link clicked here (any server's): true, the caller takes it.
     onInvite?: (url: string) => boolean;
-    // An added server's push (push false), with its quiet chats and blocks.
+    // An added server's push (see lib/push syncServerPush), with its quiet
+    // chats and blocks; none: the home server's own push (its settings).
     pushSync?: (prefs: PushPrefs) => void;
   } = $props();
 
@@ -747,7 +744,7 @@
   // this session, the quiet chats (see pushLists) and the blocked users
   // (as a string: the same prefs post nothing). A click on one in an open
   // window comes from the service worker.
-  const pushName = $derived(push && account && !account.temporary && browserPushSupport() !== "none" ? me?.name : undefined);
+  const pushName = $derived(!pushSync && account && !account.temporary && browserPushSupport() !== "none" ? me?.name : undefined);
   const pushPrefsKey = $derived(
     JSON.stringify({
       ...pushLists(channelPrefs.value, connection.httpBase, Object.keys(text.directs).map(Number)),

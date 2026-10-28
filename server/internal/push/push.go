@@ -248,7 +248,8 @@ func fail(w http.ResponseWriter, status int, msg string) {
 
 // ServeHTTP: GET /api/push is the public key; POST and DELETE
 // /api/push/subscriptions add (or update) and remove this browser's
-// subscription. Same origin only (no CORS): the desktop app has no push.
+// subscription: from its own pages (cookie), or another Kallisti page with
+// this server's token (CORS without credentials; see below).
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Other Kallisti pages (several servers in one client) use it with a
 	// token: CORS for any origin, never with cookies.

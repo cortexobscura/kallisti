@@ -494,8 +494,7 @@ func (a *Service) createAccount(acc store.Account) (store.Account, error) {
 }
 
 // newAccount stores an account with a new certificate (by create) and logs
-// it in; on failure it answers the request.
-// newAccount makes the account and logs in (session: with a session; a
+// it in; on failure it answers the request (session: with a session; a
 // handoff makes its own, see fediHandoff).
 func (a *Service) newAccount(w http.ResponseWriter, r *http.Request, acc store.Account, session bool, create func(store.Account) (store.Account, error)) (store.Account, string, bool) {
 	fail := func() (store.Account, string, bool) {
@@ -816,8 +815,9 @@ func (a *Service) allow(r *http.Request) bool {
 	return a.logins.allow(clientip.Of(r, a.TrustForwardedFor), rate.Limit(perMinute)/60, burst)
 }
 
-// sessionID: a short name of a session for the web client (whose added
-// servers belong to one login), derived from its key, not the key.
+// sessionID: a short name of a session (in /api/me) that a logout can
+// name, so a page showing an older login does not end a newer one; derived
+// from its key, not the key.
 func sessionID(key string) string {
 	sum := sha256.Sum256([]byte("session-id:" + key))
 	return hex.EncodeToString(sum[:8])

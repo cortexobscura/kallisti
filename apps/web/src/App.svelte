@@ -755,7 +755,7 @@
       <div class="view" hidden={!shown} inert={!shown}>
         {#if shown && s.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
         {#key s.connection}
-          <Client connection={s.connection} pushSync={pushSyncFor(a)} link={pendingLinks[a.origin] ?? null} onLinkUsed={linkUsed(a.origin)} onInvite={openInvite} onBadge={(b) => setBadge(a.origin, b)} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} push={false} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
+          <Client connection={s.connection} pushSync={pushSyncFor(a)} link={pendingLinks[a.origin] ?? null} onLinkUsed={linkUsed(a.origin)} onInvite={openInvite} onBadge={(b) => setBadge(a.origin, b)} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
         {/key}
       </div>
     {/if}
