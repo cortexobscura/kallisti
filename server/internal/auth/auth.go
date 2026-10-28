@@ -333,6 +333,15 @@ func (a *Service) sessionToken(r *http.Request) string {
 	return a.cookie(r, CookieName)
 }
 
+// TokenGiven: the request brings a session token (header or subprotocol),
+// valid or not.
+func (a *Service) TokenGiven(r *http.Request) bool {
+	if _, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		return true
+	}
+	return strings.Contains(r.Header.Get("Sec-WebSocket-Protocol"), SessionProtocol)
+}
+
 // SessionProtocol: the desktop app's WebSocket subprotocol with its token.
 const SessionProtocol = "kallisti.session."
 

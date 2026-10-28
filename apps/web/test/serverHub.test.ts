@@ -339,4 +339,21 @@ describe("the added servers", () => {
     await hub.sync();
     expect([hub.listed, hub.loaded]).toEqual([true, true]);
   });
+
+  it("a server whose token ended asks for a login again, and stays in the list", async () => {
+    const api = account();
+    const { hub, sessions, storage, revoked } = setup(api);
+    hub.add(A, "alice", "ta");
+    await flush();
+    hub.expire(A, "ta");
+    expect(sessions[0]!.dispose).toHaveBeenCalled();
+    expect(hub.servers.map((s) => [s.origin, s.session, s.token])).toEqual([[A, null, null]]);
+    expect(loadTokens(storage).tokens).toEqual({});
+    expect(api.list).toEqual([{ origin: A, name: "alice" }]);
+    expect(revoked).toEqual([]); // it ended there already
+    // A late call for an older token changes nothing.
+    hub.login(A, "alice", "tb");
+    hub.expire(A, "ta");
+    expect(hub.servers[0]!.token).toBe("tb");
+  });
 });

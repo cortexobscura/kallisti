@@ -27,6 +27,7 @@ describe("shouldReconnect", () => {
 describe("loggedOut", () => {
   it("is the server's close after a logout or password change", () => {
     expect(loggedOut("logged out")).toBe(true);
+    expect(loggedOut("session expired")).toBe(true); // a token the server does not know
     expect(loggedOut("no authentication")).toBe(false);
     expect(loggedOut("")).toBe(false);
   });

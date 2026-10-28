@@ -192,6 +192,14 @@
     closeAudio(audio);
     audio = null;
   };
+  // An added server's session ended there (expired, or ended on its site):
+  // it asks for a login on this device again, and stays in the list.
+  $effect(() => {
+    for (const a of hub.servers) {
+      const c = a.session?.connection;
+      if (a.token && c?.closed && loggedOut(c.closeReason)) untrack(() => hub.expire(a.origin, a.token!));
+    }
+  });
   // The session ended on the server (a logout or password change on
   // another device): back to the login screen, as after a logout. The
   // added servers only close: whoever ended it ended their tokens (a tab

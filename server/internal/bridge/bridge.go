@@ -64,6 +64,9 @@ type Options struct {
 	// next failed ping). Long, so a page the system suspends for a while (a
 	// macOS app in the background, Android) keeps its session. 0: 2 minutes.
 	PingGrace time.Duration
+	// TokenGiven: the request brings a session token (not a cookie), valid
+	// or not (see auth.Service.TokenGiven).
+	TokenGiven func(r *http.Request) bool
 }
 
 // Upstream is who a connection is for.
@@ -219,6 +222,11 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(MaxPayload)
 
 	acc, isAccount := b.lookup(ws, r)
+	// A token that is no session (any more): the client asks for a login.
+	if !isAccount && b.opts.TokenGiven != nil && b.opts.TokenGiven(r) {
+		ws.Close(websocket.StatusPolicyViolation, "session expired")
+		return
+	}
 	// Guests only on our own pages and in the apps: else any site could
 	// make its visitors join (other sites connect with an account's token).
 	if !isAccount && !config.OwnSite(b.opts.AllowedOrigins, r.Header.Get("Origin")) {

@@ -5,7 +5,8 @@ import type { Place } from "./place";
 // The server closed the connection because its session ended (a logout,
 // also on another device, or a password change there). Same reason text as
 // the bridge's Revoke.
-export const loggedOut = (closeReason: string) => closeReason === "logged out";
+// Also a token the server does not know (expired, or ended on its site).
+export const loggedOut = (closeReason: string) => closeReason === "logged out" || closeReason === "session expired";
 
 // Refused by the server's rules (a guest on another site): retrying cannot
 // help. The bridge's reason text, exactly (another server cannot make the

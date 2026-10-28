@@ -410,3 +410,20 @@ func TestGuestsCannotUseARemoteName(t *testing.T) {
 		t.Fatal("the guest reached the upstream")
 	}
 }
+
+// A token the server does not know (expired, or ended on its site): its
+// own reason, so the client asks for a login instead of trying again.
+func TestAnUnknownTokenIsASessionThatEnded(t *testing.T) {
+	echo := startEcho(t)
+	lookup, isAccount := accounts("carol")
+	given := func(r *http.Request) bool { return r.URL.Query().Get("token") != "" }
+	url := startBridge(t, Options{Dial: dialer(echo.addr), Account: lookup, IsAccountName: isAccount, TokenGiven: given})
+	c, _, _ := connect(t, url+"?token=dead", "https://other.example")
+	_, _, err := c.Read(testCtx(t))
+	if websocket.CloseStatus(err) != websocket.StatusPolicyViolation || !strings.Contains(err.Error(), "session expired") {
+		t.Fatalf("got %v", err)
+	}
+	if echo.open.Load() != 0 {
+		t.Fatal("it reached the upstream")
+	}
+}

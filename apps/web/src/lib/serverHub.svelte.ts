@@ -190,6 +190,17 @@ export const createServerHub = <S extends Closable>(deps: HubDeps<S>) => {
       if (name !== old.name) save({ origin, name });
       return true;
     },
+    // Its token ended there (expired, or ended on its site): closed, the
+    // token forgotten, the entry asks for a login (still in the list). Only
+    // for the token that ended (a newer login stays).
+    expire: (origin: string, token: string) => {
+      const s = servers.find((x) => x.origin === origin && x.token === token);
+      if (!s) return;
+      s.session?.leave();
+      s.session?.dispose();
+      if (tokens()[origin]?.token === token) setToken(origin, null);
+      servers = servers.map((x) => (x === s ? { origin, name: s.name, token: null, session: null } : x));
+    },
     // Out of the rail and the list: logged out there, its token gone.
     remove: (origin: string) => {
       const s = servers.find((x) => x.origin === origin);
