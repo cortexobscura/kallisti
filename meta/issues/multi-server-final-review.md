@@ -24,6 +24,15 @@ Later (own step): App.svelte split, one view for both client mounts,
 shared helpers (client and server), ending sessions of blocked homes, a
 list of allowed sites, App-level tests.
 
+## Done (2026-10-28)
+
+All nine, then a check of the fixes by both: "session expired" only for a
+token the store does not know (not a busy database); a confirmed handle
+kept on every path, the stored one used only when the lookup fails;
+consent pages open no servers; one's own call shown before another
+device's. Left (two actions within a second): a delayed home answer after
+a quick new login; an invite while another server reconnects.
+
 ## Acceptance Criteria
 
 - A test for each point where the logic allows one; all reviewed.

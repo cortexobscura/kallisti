@@ -7,7 +7,7 @@
   - [ ] [Status of the branch multi-server](issues/multi-server-status.md)
     - [x] [Push from added servers](issues/push-from-added-servers.md)
     - [x] [Names of accounts from other servers](issues/remote-account-names.md)
-    - [ ] [Fixes from the final review](issues/multi-server-final-review.md)
+    - [x] [Fixes from the final review](issues/multi-server-final-review.md)
   - [ ] [Several servers in one client](issues/multiple-servers.md)
   - [ ] [Kallisti as a login provider](issues/kallisti-login-provider.md)
   - [ ] [The server list on the home account](issues/home-server-list.md)
