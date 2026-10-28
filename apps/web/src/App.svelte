@@ -8,7 +8,7 @@
   import { createAccountsApi, type Account, type AccountActions } from "./lib/accounts";
   import { connect, type Connection, type Credentials } from "./lib/connection.svelte";
   import { createServerSession, type ServerSession, type Target } from "./lib/serverSession.svelte";
-  import { createServerHub, type HubServer } from "./lib/serverHub.svelte";
+  import { createServerHub } from "./lib/serverHub.svelte";
   import { iconHref } from "./lib/serverLogo";
   import {
     bridgeUrl,
@@ -29,9 +29,10 @@
   import { loggedOut } from "./lib/reconnect";
   import { untrack, type Snippet } from "svelte";
   import { checkForUpdate } from "./lib/update";
-  import { browserPushSupport, dropServerPushes, pushIsOn, syncServerPush, turnOffPush, type PushPrefs } from "./lib/push";
+  import { browserPushSupport, dropServerPushes, pushIsOn, syncServerPush, turnOffPush } from "./lib/push";
   import { createVoiceAcross } from "./lib/voiceAcross.svelte";
   import { createServerLinks } from "./lib/serverLinks.svelte";
+  import { createServerPush } from "./lib/serverPush.svelte";
   import { inviteOf } from "./lib/invites";
   import type { RailBadge } from "./lib/title";
   import { voiceSupported } from "./lib/voice/support";
@@ -429,34 +430,18 @@
     hub.show(id || null);
   };
 
-  // Push from added servers (see lib/push syncServerPush): while the home
-  // server's is on (in this browser, for this login).
-  let homePushOn = $state(false);
-  $effect(() => {
-    const name = owner !== null ? account?.name : undefined;
-    const check = () => {
-      if (name && browserPushSupport() === "ok") void pushIsOn(httpBase(PROXY_URL), name).then((on) => (homePushOn = on));
-      else homePushOn = false;
-    };
-    check();
-    // Here, or in another tab (its owner key changes).
-    const other = (e: StorageEvent) => e.key === "pushOwner" && check();
-    addEventListener("kallisti-push", check);
-    addEventListener("storage", other);
-    return () => {
-      removeEventListener("kallisti-push", check);
-      removeEventListener("storage", other);
-    };
+  // Push from added servers (see lib/serverPush).
+  const pushOk = browserPushSupport() === "ok";
+  const serverPush = createServerPush({
+    name: () => (owner !== null && account ? account.name : null),
+    // Logged out for sure: none of the servers stays.
+    loaded: () => hub.loaded || (ownerKnown && owner === null),
+    servers: () => hub.servers,
+    isOn: async (name) => pushOk && pushIsOn(httpBase(PROXY_URL), name),
+    sync: (server, homeOn, prefs) => (pushOk ? syncServerPush(server, homeOn, prefs) : Promise.resolve()),
+    drop: (keep) => (pushOk ? dropServerPushes(keep) : Promise.resolve()),
   });
-  const pushSyncFor = (a: HubServer<ServerSession<Connection>>) => (prefs: PushPrefs) => {
-    if (a.token) void syncServerPush({ origin: a.origin, token: a.token, name: a.name }, homePushOn, prefs);
-  };
-  // Servers that went (removed, logged out): their registrations too.
-  // Only once the list is known (before it, all would look gone).
-  $effect(() => {
-    const keep = hub.servers.filter((s) => s.token).map((s) => s.origin);
-    if (browserPushSupport() === "ok" && (hub.loaded || (ownerKnown && owner === null))) untrack(() => void dropServerPushes(keep));
-  });
+  $effect(() => serverPush.dispose);
 
   // Links from elsewhere: invites, ?join=, a push notice's ?open= (see
   // lib/serverLinks).
@@ -674,7 +659,7 @@
       <div class="view" hidden={!shown} inert={!shown}>
         {#if shown && s.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
         {#key s.connection}
-          <Client connection={s.connection} pushSync={pushSyncFor(a)} link={links.linkFor(a.origin)} onLinkUsed={() => links.used(a.origin)} onInvite={openInvite} onBadge={(b) => setBadge(a.origin, b)} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
+          <Client connection={s.connection} pushSync={serverPush.syncFor(a)} link={links.linkFor(a.origin)} onLinkUsed={() => links.used(a.origin)} onInvite={openInvite} onBadge={(b) => setBadge(a.origin, b)} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
         {/key}
       </div>
     {/if}
