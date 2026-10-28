@@ -1,5 +1,6 @@
 <script lang="ts">
   import { initials } from "../lib/avatar";
+  import Icon from "./Icon.svelte";
 
   // A server in the rail: logo null shows its initials; mentions (a red
   // count) and unread (a dot) when it is not on screen.
@@ -30,7 +31,7 @@
   {/each}
   {#if onAdd}
     <div class="item">
-      <button class="server add" title="Add a server" aria-label="Add a server" onclick={onAdd}>+</button>
+      <button class="server add" title="Add a server" aria-label="Add a server" onclick={onAdd}><Icon name="plus" size={28} /></button>
     </div>
   {/if}
 </nav>
@@ -114,10 +115,11 @@
     border-radius: inherit;
     object-fit: cover;
   }
+  /* An icon, not a "+": a character's height depends on the font. */
   .add {
+    display: grid;
+    place-items: center;
     color: var(--accent);
-    font-size: 22px;
-    font-weight: 400;
   }
   .server.active,
   .server:hover:not(:disabled) {
