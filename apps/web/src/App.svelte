@@ -31,8 +31,8 @@
   import { checkForUpdate } from "./lib/update";
   import { browserPushSupport, dropServerPushes, pushIsOn, syncServerPush, turnOffPush, type PushPrefs } from "./lib/push";
   import { createVoiceAcross } from "./lib/voiceAcross.svelte";
-  import { inviteOf, inviteRoute } from "./lib/invites";
-  import { parseMessageLink } from "./lib/messageLink";
+  import { createServerLinks } from "./lib/serverLinks.svelte";
+  import { inviteOf } from "./lib/invites";
   import type { RailBadge } from "./lib/title";
   import { voiceSupported } from "./lib/voice/support";
   import { loadCaptureWorklet, startAfter } from "./lib/voice/worklet";
@@ -458,45 +458,17 @@
     if (browserPushSupport() === "ok" && (hub.loaded || (ownerKnown && owner === null))) untrack(() => void dropServerPushes(keep));
   });
 
-  // Invites (see lib/invites): a link to a server, clicked in a client or
-  // opened here with ?join=<link>: that server on screen (added first, with
-  // the home account or a password) and the invite redeemed there (its
-  // client takes the link, see Client link).
-  let pendingLinks = $state<Record<string, string>>({});
-  // Another home login: none of the last one's.
-  let linksOf = untrack(() => owner);
-  $effect(() => {
-    if (owner === linksOf) return;
-    linksOf = owner;
-    untrack(() => (pendingLinks = {}));
+  // Links from elsewhere: invites, ?join=, a push notice's ?open= (see
+  // lib/serverLinks).
+  const links = createServerLinks({
+    servers: () => hub.servers,
+    home: homeOrigin,
+    owner: () => owner,
+    select: selectServer,
+    add: (target) => (addingFor = { owner: owner!, ...target }),
   });
-  const openInvite = (url: string): boolean => {
-    const inv = inviteOf(url);
-    if (!inv) return false;
-    const known = hub.servers.find((s) => s.origin === inv.origin);
-    const route = inviteRoute(inv.origin, new URL(homeOrigin()).origin, known && { session: !!known.session }, owner === null);
-    if (route === null) return false;
-    const id = route === "home" ? "" : inv.origin;
-    pendingLinks[id] = url;
-    if (route !== "add") selectServer(id);
-    if (route === "login") addingFor = { owner: owner!, server: { origin: known!.origin, name: known!.name } };
-    if (route === "add") addingFor = { owner: owner!, address: inv.origin };
-    return true;
-  };
-  const linkUsed = (id: string) => () => delete pendingLinks[id];
-  // A message link of a server here (a push notice's click, ?open=).
-  const openMessageLink = (url: string) => {
-    let origin: string;
-    try {
-      origin = new URL(url).origin;
-    } catch {
-      return;
-    }
-    const id = origin === new URL(homeOrigin()).origin ? "" : hub.servers.find((s) => s.origin === origin && s.session)?.origin;
-    if (id === undefined || !parseMessageLink(url, origin)) return; // message links only
-    pendingLinks[id] = url;
-    selectServer(id);
-  };
+  $effect(() => links.dispose);
+  const { openInvite, openMessageLink } = links;
   let openUrl = new URLSearchParams(location.search).get("open");
   if (openUrl) history.replaceState(history.state, "", location.pathname);
   // Once the added servers are there (restored after the home connects).
@@ -691,7 +663,7 @@
       {/if}
       <!-- While lost, the old view stays readable but takes no input (it would be lost); the rail does. -->
       {#key connection}
-        <Client {connection} link={pendingLinks[""] ?? null} onLinkUsed={linkUsed("")} onInvite={openInvite} onBadge={(b) => setBadge("", b)} active={shown} pttHere={pttOn("")} remoteVoice={remoteVoiceFor("")} onShow={() => selectServer("")} lost={session.lost} {rail} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
+        <Client {connection} link={links.linkFor("")} onLinkUsed={() => links.used("")} onInvite={openInvite} onBadge={(b) => setBadge("", b)} active={shown} pttHere={pttOn("")} remoteVoice={remoteVoiceFor("")} onShow={() => selectServer("")} lost={session.lost} {rail} account={account ? accountActions : undefined} resume={session.place} onPlace={(p) => session.keepPlace(p)} {audioState} onRestartAudio={restartAudio} onLogIn={() => leave(null)} site={kallisti ?? location.origin} drafts={session.drafts} pendingFiles={session.pendingFiles} streams={session.streams} openSettings={reopenSettings} onSettingsOpened={() => (reopenSettings = false)} />
       {/key}
     </div>
   {/if}
@@ -702,7 +674,7 @@
       <div class="view" hidden={!shown} inert={!shown}>
         {#if shown && s.lost}<div class="reconnecting quiet" role="status">Reconnecting…</div>{/if}
         {#key s.connection}
-          <Client connection={s.connection} pushSync={pushSyncFor(a)} link={pendingLinks[a.origin] ?? null} onLinkUsed={linkUsed(a.origin)} onInvite={openInvite} onBadge={(b) => setBadge(a.origin, b)} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
+          <Client connection={s.connection} pushSync={pushSyncFor(a)} link={links.linkFor(a.origin)} onLinkUsed={() => links.used(a.origin)} onInvite={openInvite} onBadge={(b) => setBadge(a.origin, b)} active={shown} pttHere={pttOn(a.origin)} remoteVoice={remoteVoiceFor(a.origin)} onShow={() => selectServer(a.origin)} lost={s.lost} {rail} account={addedActions(a.origin)} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} site={a.origin} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} />
         {/key}
       </div>
     {/if}
@@ -778,7 +750,7 @@
     onClose={() => {
       // An invite for a server that did not come: forgotten.
       const origin = addingFor?.server?.origin ?? addingFor?.address;
-      if (origin && !hub.servers.some((s) => s.origin === origin && s.session)) delete pendingLinks[origin];
+      if (origin && !hub.servers.some((s) => s.origin === origin && s.session)) links.used(origin);
       addingFor = null;
     }}
   />
