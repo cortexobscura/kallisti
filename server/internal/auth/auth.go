@@ -291,6 +291,8 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.oauthRequest(w, r)
 	case r.URL.Path == "/api/oauth/approve" && r.Method == http.MethodPost && a.Provider != nil:
 		a.oauthApprove(w, r)
+	case r.URL.Path == "/api/oauth/grants" && (r.Method == http.MethodGet || r.Method == http.MethodDelete) && a.Provider != nil:
+		a.oauthGrants(w, r)
 	case r.URL.Path == "/api/servers":
 		a.servers(w, r)
 	case r.URL.Path == "/api/stream-key":

@@ -333,6 +333,49 @@ func (a *Service) oauthApprove(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"redirect": to})
 }
 
+// oauthGrants lists the sites the account allowed (GET), or takes one
+// back (DELETE {redirect}): its tokens end, its next login asks again.
+// Only on the own site, as the consent.
+func (a *Service) oauthGrants(w http.ResponseWriter, r *http.Request) {
+	if !a.consentSite(w, r) {
+		return
+	}
+	acc, ok := a.AccountFor(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not logged in"})
+		return
+	}
+	if r.Method == http.MethodDelete {
+		var body struct {
+			Redirect string `json:"redirect"`
+		}
+		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body) != nil || body.Redirect == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+			return
+		}
+		if err := a.Store.RevokeOAuth(acc.ID, body.Redirect, clientIDFor(body.Redirect)); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "please try again"})
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	grants, err := a.Store.OAuthGrants(acc.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "please try again"})
+		return
+	}
+	sites := make([]map[string]string, 0, len(grants))
+	for _, g := range grants {
+		site := g.Redirect
+		if u, err := url.Parse(g.Redirect); err == nil {
+			site = u.Scheme + "://" + u.Host
+		}
+		sites = append(sites, map[string]string{"site": site, "redirect": g.Redirect, "since": g.CreatedAt.Format(time.RFC3339)})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sites": sites})
+}
+
 // consentSite: only this server's own page asks and answers (not another
 // site with a token for an account here: it must not vouch for it to a
 // third server). Narrower than ownSite: not the apps' origins, which a
