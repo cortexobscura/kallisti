@@ -105,5 +105,5 @@ func (a *Service) otherOrigin(origin string) bool {
 // validListName: the account's name on that server (its rules may differ
 // from ours: loosely checked).
 func validListName(name string) bool {
-	return name != "" && utf8.RuneCountInString(name) <= 64 && !strings.ContainsFunc(name, unicode.IsControl)
+	return name != "" && utf8.RuneCountInString(name) <= names.MaxRemote && !strings.ContainsFunc(name, unicode.IsControl)
 }

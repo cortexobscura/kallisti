@@ -85,7 +85,7 @@ func TestServerListChecks(t *testing.T) {
 			t.Errorf("%q: %d, want 400", bad, code)
 		}
 	}
-	for _, name := range []string{"", "  ", "a\nb", strings.Repeat("n", 65)} {
+	for _, name := range []string{"", "  ", "a\nb", strings.Repeat("n", 129)} {
 		if code := add(own, c, "https://chat.bob.org", name); code != http.StatusBadRequest {
 			t.Errorf("name %q: %d, want 400", name, code)
 		}
@@ -163,5 +163,16 @@ func TestServerListOfAnotherAccountIsRefused(t *testing.T) {
 	}
 	if code, v := call(t, srv, "GET", "/api/servers?account=bob", own, nil, c); code != http.StatusOK || len(v.(map[string]any)["servers"].([]any)) != 1 {
 		t.Fatalf("own list: %d %v", code, v)
+	}
+}
+
+// Names as long as remote names (name@home) fit.
+func TestServerListTakesLongNames(t *testing.T) {
+	_, srv := setup(t)
+	resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	c := sessionCookie(resp)
+	name := strings.Repeat("n", 100) + "@" + strings.Repeat("h", 23) + ".org"
+	if code, v := call(t, srv, "POST", "/api/servers", "https://app.example", map[string]string{"origin": "https://chat.bob.org", "name": name}, c); code != http.StatusOK {
+		t.Fatalf("a 128-character name: %d %v", code, v)
 	}
 }

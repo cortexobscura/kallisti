@@ -41,11 +41,14 @@ func AllowedRune(r rune) bool { return allowed.MatchString(string(r)) }
 // (with a port only for local test servers).
 var remote = regexp.MustCompile(`^[\p{L}\p{N}_.-]{1,64}@[a-z0-9.-]+(:[0-9]{1,5})?$`)
 
+// MaxRemote: the longest remote name (characters).
+const MaxRemote = 128
+
 // CheckRemote returns why a remote account's name is not one, or "".
 func CheckRemote(name string) string {
 	user, host := Split(name)
 	switch {
-	case utf8.RuneCountInString(name) > 128 || !remote.MatchString(name):
+	case utf8.RuneCountInString(name) > MaxRemote || !remote.MatchString(name):
 		return "not a name of an account from another server"
 	case strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") || strings.Contains(host, ".."):
 		return "not a server's host"
