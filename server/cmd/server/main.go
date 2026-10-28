@@ -229,7 +229,7 @@ func run() error {
 			return bridge.Account{Name: acc.Name, Cert: &cert, ID: acc.ID, Session: accounts.SessionKey(r)}, true
 		},
 		IsAccountName: accountExists(db),
-		TokenGiven:    accounts.TokenGiven,
+		TokenEnded:    accounts.TokenEnded,
 	})
 	// Ended sessions end their open connections.
 	accounts.Revoke = b.Revoke

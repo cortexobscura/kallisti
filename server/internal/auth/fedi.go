@@ -464,9 +464,13 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 	if knownErr == nil && !confirmed {
 		id.Handle = known.Handle
 	}
-	if !a.Fedi.allowsIdentity(id) || (knownErr == nil && !a.Fedi.allowsIdentity(known)) {
+	if !a.Fedi.allowsIdentity(id) {
 		back("error", "blocked")
 		return
+	}
+	// A newly confirmed handle is kept (on every path, a reauth too).
+	if knownErr == nil && confirmed && known.Handle != id.Handle {
+		a.Store.UpdateFediHandle(id.Host, id.RemoteID, id.Handle)
 	}
 	if flow.reauth {
 		back(a.fediReauth(linkTo, flow.session, id))
@@ -482,9 +486,6 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	switch err := knownErr; {
 	case err == nil:
-		if known.Handle != id.Handle {
-			a.Store.UpdateFediHandle(id.Host, id.RemoteID, id.Handle)
-		}
 		if flow.handoff {
 			if a.handOff(w, r, acc, flow.inst.Base) {
 				back("connect", "")

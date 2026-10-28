@@ -417,7 +417,7 @@ func TestAnUnknownTokenIsASessionThatEnded(t *testing.T) {
 	echo := startEcho(t)
 	lookup, isAccount := accounts("carol")
 	given := func(r *http.Request) bool { return r.URL.Query().Get("token") != "" }
-	url := startBridge(t, Options{Dial: dialer(echo.addr), Account: lookup, IsAccountName: isAccount, TokenGiven: given})
+	url := startBridge(t, Options{Dial: dialer(echo.addr), Account: lookup, IsAccountName: isAccount, TokenEnded: given})
 	c, _, _ := connect(t, url+"?token=dead", "https://other.example")
 	_, _, err := c.Read(testCtx(t))
 	if websocket.CloseStatus(err) != websocket.StatusPolicyViolation || !strings.Contains(err.Error(), "session expired") {

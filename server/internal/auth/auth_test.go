@@ -881,3 +881,25 @@ func TestLogoutOfAnotherAccountIsRefused(t *testing.T) {
 		t.Fatal("bob's own logout refused")
 	}
 }
+
+// TokenEnded: a token that is no session; not a cookie, not a valid token.
+func TestTokenEnded(t *testing.T) {
+	a, srv := setup(t)
+	req := func(h, v string) *http.Request {
+		r := httptest.NewRequest("GET", "/ws", nil)
+		r.Header.Set(h, v)
+		return r
+	}
+	if !a.TokenEnded(req("Authorization", "Bearer dead")) || !a.TokenEnded(req("Sec-WebSocket-Protocol", "kallisti, "+SessionProtocol+"dead")) {
+		t.Fatal("a dead token is not ended")
+	}
+	resp, v := post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	_ = v
+	c := sessionCookie(resp)
+	if a.TokenEnded(req("Authorization", "Bearer "+c.Value)) {
+		t.Fatal("a valid token counts as ended")
+	}
+	if a.TokenEnded(requestWith(&http.Cookie{Name: CookieName, Value: "dead"})) {
+		t.Fatal("a cookie counts as a token")
+	}
+}

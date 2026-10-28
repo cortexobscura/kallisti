@@ -333,13 +333,17 @@ func (a *Service) sessionToken(r *http.Request) string {
 	return a.cookie(r, CookieName)
 }
 
-// TokenGiven: the request brings a session token (header or subprotocol),
-// valid or not.
-func (a *Service) TokenGiven(r *http.Request) bool {
-	if _, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
-		return true
+// TokenEnded: the request brings a session token (header or subprotocol,
+// not a cookie) that is no session (any more): expired, or ended. Not on
+// other errors (a busy database): those are worth another try.
+func (a *Service) TokenEnded(r *http.Request) bool {
+	token := a.sessionToken(r)
+	_, hasBearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if token == "" || !(hasBearer || strings.Contains(r.Header.Get("Sec-WebSocket-Protocol"), SessionProtocol)) {
+		return false
 	}
-	return strings.Contains(r.Header.Get("Sec-WebSocket-Protocol"), SessionProtocol)
+	_, err := a.Store.AccountBySession(tokenHash(token), a.Now())
+	return errors.Is(err, store.ErrNotFound)
 }
 
 // SessionProtocol: the desktop app's WebSocket subprotocol with its token.
