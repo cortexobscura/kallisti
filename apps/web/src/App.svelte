@@ -5,8 +5,6 @@
   import Connect from "./components/Connect.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
   import ServerRail, { type RailServer } from "./components/ServerRail.svelte";
-  import type { RemoteVoice } from "./components/Client.svelte";
-  import { inVoice, isLobby, joinChannel, setSelfState } from "@kallisti/protocol";
   import { createAccountsApi, type Account, type AccountActions } from "./lib/accounts";
   import { connect, type Connection, type Credentials } from "./lib/connection.svelte";
   import { createServerSession, type ServerSession, type Target } from "./lib/serverSession.svelte";
@@ -32,7 +30,7 @@
   import { untrack, type Snippet } from "svelte";
   import { checkForUpdate } from "./lib/update";
   import { browserPushSupport, dropServerPushes, pushIsOn, syncServerPush, turnOffPush, type PushPrefs } from "./lib/push";
-  import { voiceJoined } from "./lib/voice";
+  import { createVoiceAcross } from "./lib/voiceAcross.svelte";
   import { inviteOf, inviteRoute } from "./lib/invites";
   import { parseMessageLink } from "./lib/messageLink";
   import type { RailBadge } from "./lib/title";
@@ -522,58 +520,17 @@
       });
   });
 
-  // Voice across servers: the clients of all connected servers stay
-  // mounted (one shown), so voice goes on while another is on screen. One
-  // voice channel at a time: joining one elsewhere leaves the other.
+  // Voice across servers (see lib/voiceAcross).
   const views = $derived([{ id: "", session }, ...hub.servers.flatMap((a) => (a.session ? [{ id: a.origin, session: a.session }] : []))]);
-  // A lost or closed connection's voice is not one (nothing goes through it).
-  const inVoiceOn = (s: ServerSession<Connection>) =>
-    !s.lost && !s.error && !s.connection?.closed && s.connection?.state.status === "synced" && inVoice(s.connection.state);
-  const voiceId = $derived(views.find((v) => inVoiceOn(v.session))?.id ?? null);
-  const leaveVoiceOn = (id: string) => {
-    const c = views.find((v) => v.id === id)?.session.connection;
-    const me = c?.state.session == null ? undefined : c.state.users[c.state.session];
-    if (c && me && isLobby(c.state)) c.send(joinChannel(me.session, 0));
-  };
-  let voiceBefore: string[] = [];
-  $effect(() => {
-    const ids = views.filter((v) => inVoiceOn(v.session)).map((v) => v.id);
-    untrack(() => {
-      const stays = voiceJoined(voiceBefore, ids);
-      voiceBefore = ids;
-      if (stays === null) return;
-      // The others leave, and do not rejoin after a reconnect.
-      for (const v of views.filter((x) => x.id !== stays)) {
-        if (ids.includes(v.id)) leaveVoiceOn(v.id);
-        const place = v.session.place;
-        if (place?.voice != null) v.session.keepPlace({ ...place, voice: null });
-      }
-    });
+  const voice = createVoiceAcross({
+    views: () => views,
+    name: (id) => railServers.find((r) => r.id === id)?.name ?? "",
+    key: (id) => id || homeOrigin(),
+    show: (id) => selectServer(id),
+    shown: () => hub.shown,
   });
-  // The voice bar of the server in voice, for the others' screens.
-  const remoteVoiceFor = (id: string): RemoteVoice | null => {
-    const v = voiceId === null || voiceId === id ? null : views.find((x) => x.id === voiceId);
-    const c = v?.session.connection;
-    const me = c?.state.session == null ? undefined : c.state.users[c.state.session];
-    if (!v || !c || !me) return null;
-    const target = v.id;
-    return {
-      key: target || (kallisti ?? location.origin),
-      server: railServers.find((r) => r.id === target)?.name ?? "",
-      channel: c.state.channels[me.channelId]?.name ?? "",
-      recording: (c.text.recording ?? []).includes(me.channelId),
-      selfMute: me.selfMute,
-      selfDeaf: me.selfDeaf,
-      info: c.info,
-      setSelf: (s) => c.send(setSelfState(me.session, s)),
-      ptt: (down) => c.capture?.setPttDown(down),
-      talking: c.capture?.transmitting ?? false,
-      leave: () => leaveVoiceOn(target),
-      show: () => selectServer(target),
-    };
-  };
-  // Push-to-talk acts on the server in voice, else on the one shown.
-  const pttOn = (id: string) => (voiceId ?? (hub.shown ?? "")) === id;
+  $effect(() => voice.dispose);
+  const { remoteVoiceFor, pttOn } = voice;
   // An added server's account in its settings: logging out takes it out
   // of the rail; no fediverse link from here (that is its own site's).
   const addedActions = (origin: string): AccountActions => {
