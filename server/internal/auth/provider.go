@@ -335,7 +335,8 @@ func (a *Service) oauthApprove(w http.ResponseWriter, r *http.Request) {
 
 // consentSite: only this server's own page asks and answers (not another
 // site with a token for an account here: it must not vouch for it to a
-// third server).
+// third server). Narrower than ownSite: not the apps' origins, which a
+// local page can send.
 func (a *Service) consentSite(w http.ResponseWriter, r *http.Request) bool {
 	if config.CookieOrigin(a.AllowedOrigins, r.Header.Get("Origin")) {
 		return true
@@ -432,6 +433,7 @@ func (a *Service) webFinger(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// randomHex: n random bytes in hex (tokens, keys, tickets).
 func randomHex(n int) string {
 	b := make([]byte, n)
 	rand.Read(b)

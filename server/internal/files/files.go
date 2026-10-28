@@ -126,14 +126,7 @@ func (h *Handler) post(w http.ResponseWriter, r *http.Request, upload http.Handl
 
 // cors lets the web app (possibly on another origin) post uploads.
 func (h *Handler) cors(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Vary", "Origin")
-	origin := r.Header.Get("Origin")
-	if origin == "" || !config.OriginAllowed(h.AllowedOrigins, origin) {
-		return
-	}
-	w.Header().Set("Access-Control-Allow-Origin", origin)
-	w.Header().Set("Access-Control-Allow-Methods", "POST")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Filename, X-Upload-Token")
+	config.CORS(w, r.Header.Get("Origin"), "POST", "Content-Type, X-Filename, X-Upload-Token", false)
 }
 
 func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {

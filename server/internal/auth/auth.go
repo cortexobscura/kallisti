@@ -4,7 +4,6 @@ package auth
 
 import (
 	"cmp"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -761,9 +760,7 @@ func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store
 
 // newSession is a new session's token.
 func (a *Service) newSession(acc store.Account) (string, error) {
-	b := make([]byte, 32)
-	rand.Read(b)
-	token := hex.EncodeToString(b)
+	token := randomHex(32)
 	return token, a.Store.CreateSession(tokenHash(token), acc.ID, a.Now().Add(sessionLifetime))
 }
 
@@ -801,18 +798,8 @@ func (a *Service) secure(r *http.Request) bool {
 // localhost origins get credentials: a production server set to * by
 // mistake is not open to every site's cookie requests.
 func (a *Service) cors(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Vary", "Origin")
 	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return
-	}
-	h := w.Header()
-	h.Set("Access-Control-Allow-Origin", origin)
-	h.Set("Access-Control-Allow-Methods", "GET, POST, DELETE")
-	h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Kallisti-Session")
-	if config.CookieOrigin(a.AllowedOrigins, origin) {
-		h.Set("Access-Control-Allow-Credentials", "true")
-	}
+	config.CORS(w, origin, "GET, POST, DELETE", "Content-Type, Authorization, X-Kallisti-Session", config.CookieOrigin(a.AllowedOrigins, origin))
 }
 
 func (a *Service) allow(r *http.Request) bool {

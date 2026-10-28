@@ -261,6 +261,23 @@ func CookieOrigin(allowed []string, origin string) bool {
 	return origin == "" || slices.Contains(allowed, origin) || slices.Contains(allowed, "*") && IsLocalhost(origin)
 }
 
+// CORS lets a page of origin call with these methods and headers (no
+// origin: not a browser's cross-site call, nothing to allow); credentials:
+// also with its cookies.
+func CORS(w http.ResponseWriter, origin, methods, headers string, credentials bool) {
+	h := w.Header()
+	h.Add("Vary", "Origin")
+	if origin == "" {
+		return
+	}
+	h.Set("Access-Control-Allow-Origin", origin)
+	h.Set("Access-Control-Allow-Methods", methods)
+	h.Set("Access-Control-Allow-Headers", headers)
+	if credentials {
+		h.Set("Access-Control-Allow-Credentials", "true")
+	}
+}
+
 // appOrigins are the Kallisti desktop and mobile apps' pages (Tauri). A
 // website cannot send them (browsers set Origin); a local page can (see
 // auth: guests only).

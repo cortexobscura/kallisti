@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
@@ -178,5 +179,25 @@ func TestTheBuiltInServerIsTheDefault(t *testing.T) {
 		RecordingDir: "/rec", RecordingMax: 90 * time.Minute, RecordingMaxBytes: 200 << 20, RecordingKeep: 2 * 24 * time.Hour}
 	if !reflect.DeepEqual(got.Builtin, want) {
 		t.Errorf("got %+v, want %+v", got.Builtin, want)
+	}
+}
+
+func TestCORS(t *testing.T) {
+	w := httptest.NewRecorder()
+	CORS(w, "", "GET", "Content-Type", true)
+	if len(w.Header()["Access-Control-Allow-Origin"]) != 0 || w.Header().Get("Vary") != "Origin" {
+		t.Errorf("no origin: %v", w.Header())
+	}
+	w = httptest.NewRecorder()
+	CORS(w, "https://a.example", "GET, POST", "Content-Type", false)
+	h := w.Header()
+	if h.Get("Access-Control-Allow-Origin") != "https://a.example" || h.Get("Access-Control-Allow-Methods") != "GET, POST" ||
+		h.Get("Access-Control-Allow-Headers") != "Content-Type" || h.Get("Access-Control-Allow-Credentials") != "" {
+		t.Errorf("without credentials: %v", h)
+	}
+	w = httptest.NewRecorder()
+	CORS(w, "https://a.example", "GET", "Content-Type", true)
+	if w.Header().Get("Access-Control-Allow-Credentials") != "true" {
+		t.Errorf("with credentials: %v", w.Header())
 	}
 }

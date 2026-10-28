@@ -21,6 +21,7 @@ import (
 
 	"github.com/SherClockHolmes/webpush-go"
 
+	"kallisti.chat/server/internal/config"
 	"kallisti.chat/server/internal/names"
 	"kallisti.chat/server/internal/store"
 )
@@ -253,13 +254,7 @@ func fail(w http.ResponseWriter, status int, msg string) {
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Other Kallisti pages (several servers in one client) use it with a
 	// token: CORS for any origin, never with cookies.
-	if origin := r.Header.Get("Origin"); origin != "" {
-		h := w.Header()
-		h.Add("Vary", "Origin")
-		h.Set("Access-Control-Allow-Origin", origin)
-		h.Set("Access-Control-Allow-Methods", "GET, POST, DELETE")
-		h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-	}
+	config.CORS(w, r.Header.Get("Origin"), "GET, POST, DELETE", "Content-Type, Authorization", false)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return

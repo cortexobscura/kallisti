@@ -2,9 +2,7 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -164,9 +162,7 @@ func (p *pending[T]) put(v T, now, expires time.Time) string {
 			return ""
 		}
 	}
-	b := make([]byte, 32)
-	rand.Read(b)
-	key := hex.EncodeToString(b)
+	key := randomHex(32)
 	p.m[key] = pendingEntry[T]{v, expires}
 	return key
 }
