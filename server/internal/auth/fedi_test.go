@@ -732,3 +732,23 @@ func TestFediSignupWithTheRemoteName(t *testing.T) {
 		t.Fatalf("a local name with @: %d", resp.StatusCode)
 	}
 }
+
+// A known account's confirmed home domain counts for the block list, also
+// when today's handle lookup gives only the instance's host.
+func TestFediBlockUsesTheKnownDomain(t *testing.T) {
+	f := &fedifake.Instance{}
+	a, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	b := newBrowser(t, srv)
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host}, "Alice"), home+"?fedi=register")
+	b.do("POST", "/api/fedi/signup", map[string]any{})
+	b.do("POST", "/api/logout", map[string]any{})
+	acc, _ := a.Store.AccountByName("Alice@" + host)
+	id, _ := a.Store.FediIdentityOf(acc.ID)
+	a.Store.UpdateFediHandle(id.Host, id.RemoteID, "@alice@blocked.example") // confirmed at an earlier login
+	a.Fedi.AllowsHome = func(h string) bool { return h != "blocked.example" }
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host}, "Alice"), home+"?fedi=error&reason=blocked")
+	if id, _ := a.Store.FediIdentityOf(acc.ID); id.Handle != "@alice@blocked.example" {
+		t.Fatalf("the confirmed handle changed: %q", id.Handle)
+	}
+}

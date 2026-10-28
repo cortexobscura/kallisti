@@ -186,6 +186,12 @@ func (f *FediLogin) redirectURI() string { return f.Public + fediPath + "/callba
 
 func (f *FediLogin) allowsHome(host string) bool { return f.AllowsHome == nil || f.AllowsHome(host) }
 
+// allowsIdentity: the lists allow a remote account: its instance and its
+// handle's domain (an account may be served elsewhere).
+func (f *FediLogin) allowsIdentity(id store.FediIdentity) bool {
+	return f.allowsHome(id.Host) && f.allowsHome(id.Handle[strings.LastIndex(id.Handle, "@")+1:])
+}
+
 // home is the web app with a result for it ("fedi" and "reason").
 func (f *FediLogin) home(result, reason string) string {
 	if result == "" {
@@ -357,13 +363,14 @@ func (f *FediLogin) reauthInstance(host, input string) (fedi.Instance, error) {
 
 // displayHandle prefers a confirmed account-domain address. OAuth already
 // established the account, so optional discovery failure keeps logins working.
-func (f *FediLogin) displayHandle(ctx context.Context, inst fedi.Instance, remote fedi.Account) string {
+// confirmed: false when discovery failed (the instance's own address).
+func (f *FediLogin) displayHandle(ctx context.Context, inst fedi.Instance, remote fedi.Account) (handle string, confirmed bool) {
 	handle, err := f.Client.DiscoverHandle(ctx, inst, remote.Username, f.Dev)
 	if err != nil {
 		slog.Debug("fediverse display handle", "instance", inst.Host, "err", err)
-		return remote.Handle(inst)
+		return remote.Handle(inst), false
 	}
-	return handle
+	return handle, true
 }
 
 // fediApp is our app on the instance, registered on first use (and again
@@ -449,13 +456,18 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 		back("error", "unreachable")
 		return
 	}
-	handle := a.Fedi.displayHandle(r.Context(), flow.inst, remote)
-	// The handle's domain counts too (an account may be served elsewhere).
-	if !a.Fedi.allowsHome(handle[strings.LastIndex(handle, "@")+1:]) {
+	handle, confirmed := a.Fedi.displayHandle(r.Context(), flow.inst, remote)
+	id := store.FediIdentity{Host: flow.inst.Host, RemoteID: remote.ID, Handle: handle}
+	// A known account: its confirmed handle (from an earlier login) counts
+	// too, and a failed lookup does not replace it.
+	acc, known, knownErr := a.Store.AccountByFedi(id.Host, id.RemoteID)
+	if knownErr == nil && !confirmed {
+		id.Handle = known.Handle
+	}
+	if !a.Fedi.allowsIdentity(id) || (knownErr == nil && !a.Fedi.allowsIdentity(known)) {
 		back("error", "blocked")
 		return
 	}
-	id := store.FediIdentity{Host: flow.inst.Host, RemoteID: remote.ID, Handle: handle}
 	if flow.reauth {
 		back(a.fediReauth(linkTo, flow.session, id))
 		return
@@ -468,8 +480,7 @@ func (a *Service) fediCallback(w http.ResponseWriter, r *http.Request) {
 		back(result, reason)
 		return
 	}
-	acc, known, err := a.Store.AccountByFedi(id.Host, id.RemoteID)
-	switch {
+	switch err := knownErr; {
 	case err == nil:
 		if known.Handle != id.Handle {
 			a.Store.UpdateFediHandle(id.Host, id.RemoteID, id.Handle)
@@ -584,7 +595,7 @@ func (a *Service) fediSignup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Blocked since the callback (a sign-up may wait 15 minutes).
-	if !a.Fedi.allowsHome(s.id.Host) || !a.Fedi.allowsHome(s.id.Handle[strings.LastIndex(s.id.Handle, "@")+1:]) {
+	if !a.Fedi.allowsIdentity(s.id) {
 		a.Fedi.signups.get(key, a.Now(), true)
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this server does not take logins from " + s.id.Host})
 		return
