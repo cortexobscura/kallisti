@@ -17,6 +17,7 @@
   import { createSave } from "../lib/saveFeedback.svelte";
   import SaveStatus from "./SaveStatus.svelte";
   import FediAccount from "./FediAccount.svelte";
+  import AllowedSites from "./AllowedSites.svelte";
 
   let {
     settings,
@@ -500,6 +501,7 @@
       {/if}
     </form>
     <FediAccount {account} />
+    {#if account.sites && !account.temporary}<AllowedSites sites={account.sites} />{/if}
     <div class="account">
       <span class="label">Log out</span>
       {#if account.temporary}

@@ -177,6 +177,20 @@ describe("stream keys (OBS)", () => {
   });
 });
 
+describe("allowed sites", () => {
+  it("lists the sites the account allowed, and takes one back", async () => {
+    const calls: Call[] = [];
+    const sites = [{ site: "https://b.example", redirect: "https://b.example/api/fedi/callback", since: "2026-10-28T12:00:00Z" }];
+    const api = createAccountsApi("http://srv", fakeFetch(200, { sites }, calls));
+    expect(await api.allowedSites()).toEqual(sites);
+    await api.revokeSite("https://b.example/api/fedi/callback");
+    expect(calls.map((c) => [c.url, c.init.method, c.init.body && JSON.parse(String(c.init.body))])).toEqual([
+      ["http://srv/api/oauth/grants", "GET", undefined],
+      ["http://srv/api/oauth/grants", "DELETE", { redirect: "https://b.example/api/fedi/callback" }],
+    ]);
+  });
+});
+
 describe("apiWithToken", () => {
   it("sends its own token, and forgets it after a logout", async () => {
     const calls: Call[] = [];

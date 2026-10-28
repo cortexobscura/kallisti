@@ -133,6 +133,10 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       (await call(`/api/oauth/request?${query}`)) as { site: string; account: string; deny: string; ticket: string },
     // The answer is for exactly the request shown (its ticket).
     oauthApprove: async (ticket: string) => ((await call("/api/oauth/approve", { ticket })) as { redirect: string }).redirect,
+    // The sites this account allowed to log in with it (only on its own
+    // site); one taken back asks again next time.
+    allowedSites: async () => ((await call("/api/oauth/grants")) as { sites?: AllowedSite[] }).sites ?? [],
+    revokeSite: async (redirect: string) => void (await call("/api/oauth/grants", { redirect }, "DELETE")),
     // A new key (the old one stops working): shown this once.
     newStreamKey: async () => (await call("/api/stream-key", {})).key ?? "",
     removeStreamKey: async () => {
@@ -213,6 +217,10 @@ export const modeForError = (error: string | null): "guest" | "login" =>
 
 // What a logged-in user can do from the settings (temporary: a guest
 // account, which gets its first password without an old one).
+// A site the account allowed (Kallisti as a login provider): its origin,
+// the redirect URI it was allowed for, since when (RFC 3339).
+export type AllowedSite = { site: string; redirect: string; since: string };
+
 export type AccountActions = {
   temporary: boolean;
   logout: () => Promise<void>;
@@ -236,6 +244,9 @@ export type AccountActions = {
   // A fresh login with the linked account (goes to the instance, and back
   // to the settings), needed for the first password.
   fediReauth: () => Promise<void>;
+  // The sites allowed to log in with this account (undefined: not here,
+  // only on its home server's own site).
+  sites?: { list: () => Promise<AllowedSite[]>; revoke: (redirect: string) => Promise<void> };
 };
 
 // The API of another server, with this login's own token (not the cookie).

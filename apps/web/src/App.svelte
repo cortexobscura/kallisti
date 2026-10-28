@@ -259,6 +259,8 @@
     streamKey: () => api.streamKey(),
     newStreamKey: () => api.newStreamKey(),
     removeStreamKey: () => api.removeStreamKey(),
+    // Only on the own site (not the desktop app: see the server's consentSite).
+    sites: isDesktop() ? undefined : { list: () => api.allowedSites(), revoke: (redirect) => api.revokeSite(redirect) },
   };
 
   // The desktop app: a Kallisti server works as in the web app (with a
