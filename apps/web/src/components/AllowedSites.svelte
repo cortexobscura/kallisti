@@ -3,18 +3,22 @@
 
   // The settings' list of other servers this account logs in to (Kallisti
   // as a login provider); one taken back asks again at its next login.
-  // Nothing shown while there are none.
+  // Nothing shown while there are none (or until they loaded).
   let { sites }: { sites: NonNullable<AccountActions["sites"]> } = $props();
 
   let list = $state<AllowedSite[]>([]);
   let error = $state<string | null>(null);
   let busy = $state<string | null>(null);
-  $effect(() => {
-    void sites.list().then(
+  // Not loaded: the section shows the error, to try again.
+  let failed = $state(false);
+  const load = () => {
+    failed = false;
+    sites.list().then(
       (got) => (list = got),
-      () => {},
+      () => (failed = true),
     );
-  });
+  };
+  $effect(load);
   const revoke = async (redirect: string) => {
     busy = redirect;
     error = null;
@@ -29,7 +33,13 @@
   };
 </script>
 
-{#if list.length > 0}
+{#if failed}
+  <div class="account">
+    <span class="label">Servers you log in to with this account</span>
+    <p class="hint" role="alert">The list did not load.</p>
+    <div><button type="button" class="secondary" onclick={load}>Try again</button></div>
+  </div>
+{:else if list.length > 0}
   <div class="account">
     <span class="label">Servers you log in to with this account</span>
     <ul>
