@@ -19,6 +19,8 @@
     selfDeaf: boolean;
     info: Info;
     setSelf: (s: SelfState) => void;
+    // Its channel is recorded (the bar says so, as there).
+    recording: boolean;
     // Push-to-talk there (the phone's hold button here), and whether it sends.
     ptt: (down: boolean) => void;
     talking: boolean;
@@ -2051,7 +2053,7 @@
           onJoinHere={() => join(elsewhere.channelId)}
         />
       {:else if remoteVoice}
-        <VoiceBar channel="{remoteVoice.channel} · {remoteVoice.server}" onLeave={remoteVoice.leave} info={remoteVoice.info} onShow={remoteVoice.show} />
+        <VoiceBar channel="{remoteVoice.channel} · {remoteVoice.server}" recording={remoteVoice.recording} onLeave={remoteVoice.leave} info={remoteVoice.info} onShow={remoteVoice.show} />
       {/if}
       {@const away = remoteVoice}
       <UserPanel

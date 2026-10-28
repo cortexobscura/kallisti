@@ -578,6 +578,7 @@
       key: target || (kallisti ?? location.origin),
       server: railServers.find((r) => r.id === target)?.name ?? "",
       channel: c.state.channels[me.channelId]?.name ?? "",
+      recording: (c.text.recording ?? []).includes(me.channelId),
       selfMute: me.selfMute,
       selfDeaf: me.selfDeaf,
       info: c.info,
