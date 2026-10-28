@@ -87,16 +87,27 @@ func TestFediIdentities(t *testing.T) {
 
 	// Linking: a guest account becomes permanent; one identity per account.
 	guest, _ := s.CreateAccount(Account{Name: "guest", Temporary: true, CertPEM: []byte("c"), KeyPEM: []byte("k")}, now)
-	if err := s.LinkFedi(guest.ID, id, now); err != nil {
+	later := now.Add(time.Hour)
+	s.CreateSession("guest-session", guest.ID, later)
+	s.CreateSession("acc-session", acc.ID, later)
+	// Only while the session that started it lasts (a logout everywhere
+	// meanwhile ends it).
+	if err := s.LinkFedi(guest.ID, "gone", id, now); !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("link without the session: %v", err)
+	}
+	if err := s.LinkFedi(guest.ID, "acc-session", id, now); !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("link with another account's session: %v", err)
+	}
+	if err := s.LinkFedi(guest.ID, "guest-session", id, now); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 	if g, _ := s.AccountByName("guest"); g.Temporary {
 		t.Fatal("a linked guest account stays temporary")
 	}
-	if err := s.LinkFedi(acc.ID, id, now); !errors.Is(err, ErrFediTaken) {
+	if err := s.LinkFedi(acc.ID, "acc-session", id, now); !errors.Is(err, ErrFediTaken) {
 		t.Fatalf("identity of another account: %v", err)
 	}
-	if err := s.LinkFedi(guest.ID, FediIdentity{Host: "x.example", RemoteID: "1", Handle: "@g@x.example"}, now); !errors.Is(err, ErrFediTaken) {
+	if err := s.LinkFedi(guest.ID, "guest-session", FediIdentity{Host: "x.example", RemoteID: "1", Handle: "@g@x.example"}, now); !errors.Is(err, ErrFediTaken) {
 		t.Fatalf("second identity: %v", err)
 	}
 	if ident, err := s.FediIdentityOf(guest.ID); err != nil || ident.RemoteID != "42" {
@@ -122,5 +133,30 @@ func TestFediIdentities(t *testing.T) {
 	s.DeleteAccount(guest.ID)
 	if _, _, err := s.AccountByFedi("social.example", "42"); err != ErrNotFound {
 		t.Fatalf("after delete: %v", err)
+	}
+}
+
+func TestFediOnlyAccounts(t *testing.T) {
+	s := open(t)
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	only, err := s.CreateFediAccount(Account{Name: "ann@a.example", CertPEM: []byte("c"), KeyPEM: []byte("k")},
+		FediIdentity{Host: "a.example", RemoteID: "1", Handle: "@ann@a.example"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// With a password: it logs in without its remote account too.
+	both, err := s.CreateAccount(Account{Name: "bob", PasswordHash: "hash", CertPEM: []byte("c"), KeyPEM: []byte("k")}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateSession("h", both.ID, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LinkFedi(both.ID, "h", FediIdentity{Host: "b.example", RemoteID: "2", Handle: "@bob@b.example"}, now); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.FediOnlyAccounts()
+	if err != nil || len(got) != 1 || got[0].AccountID != only.ID || got[0].Name != "ann@a.example" || got[0].Identity.Handle != "@ann@a.example" || got[0].Identity.Host != "a.example" {
+		t.Fatalf("fedi-only accounts: %+v %v", got, err)
 	}
 }

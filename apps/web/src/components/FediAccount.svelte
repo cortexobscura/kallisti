@@ -2,7 +2,7 @@
   import type { AccountActions } from "../lib/accounts";
   import { busyLabel } from "../lib/saveFeedback";
   import { createSave } from "../lib/saveFeedback.svelte";
-  import { safeGet, safeSet } from "../lib/storage";
+  import { localStore, safeGet, safeSet } from "../lib/storage";
   import SaveStatus from "./SaveStatus.svelte";
 
   // The settings' fediverse account: link one (a login on the instance),
@@ -13,12 +13,12 @@
   $effect(() => {
     void account.fediEnabled().then((on) => (enabled = on));
   });
-  let instance = $state(safeGet(localStorage, "fediInstance") ?? "");
+  let instance = $state(safeGet(localStore(), "fediInstance") ?? "");
   let password = $state("");
   const linkSave = createSave();
   const link = (event: SubmitEvent) => {
     event.preventDefault();
-    safeSet(localStorage, "fediInstance", instance.trim());
+    safeSet(localStore(), "fediInstance", instance.trim());
     linkSave.run(() => account.fediLink(instance.trim(), password));
   };
   const publicSave = createSave();

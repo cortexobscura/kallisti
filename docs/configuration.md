@@ -25,6 +25,9 @@ brackets.
   header and nginx with `$proxy_add_x_forwarded_for` adds to it; both work.
   With two proxies (for example Cloudflare and nginx), all users would get
   the first proxy's address.
+  It also trusts `X-Forwarded-Proto` for HTTPS: secure login cookies (with
+  the `__Host-` prefix) need the proxy to set it (Caddy does; nginx:
+  `proxy_set_header X-Forwarded-Proto $scheme;`).
 - `MAX_CONNECTIONS` (100) and `MAX_CONNECTIONS_PER_IP` (10): web connections. Per-address limits
   (also login attempts) count an IPv6 /64 as one address: devices on one
   network that share a /64 share the limit.

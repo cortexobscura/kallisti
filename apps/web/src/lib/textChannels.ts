@@ -16,6 +16,7 @@ import type { Members, Online } from "./members";
 import { parseConnections, type Connection } from "./connections";
 import { isCaptchaLevel, type CaptchaLevel } from "./captcha";
 import { parseMessageRules, type MessageRules } from "./messageRules";
+import { parseHomeServers, type HomeServers } from "./homeServers";
 import { parseRecordings, type FinishedRecording } from "./recording";
 import type { TextCategory } from "./categories";
 import { isPoll, withPoll, type Poll, type PollBody } from "./polls";
@@ -214,6 +215,9 @@ export type ServerEvent =
   | { type: "connections"; connections: Connection[] }
   // The message rules (admins, asked for or saved: see lib/messageRules).
   | { type: "message-rules"; rules: MessageRules }
+  // Which other servers' accounts log in (admins, asked for or saved: see
+  // lib/homeServers).
+  | { type: "home-servers"; homes: HomeServers }
   // The channel that holds a voice channel's chat.
   | { type: "voice-chat"; voice: number; channel: number }
   // The text channels changed (an admin managed them).
@@ -309,6 +313,8 @@ export type TextState = {
   connections: Connection[] | null;
   // The message rules, once asked for (admins).
   messageRules: MessageRules | null;
+  // Which other servers' accounts log in, once asked for (admins).
+  homeServers: HomeServers | null;
   // Direct chats: chat -> the other user.
   directs: Readonly<Record<number, Peer>>;
   // Live screen shares, and their thumbnails by streamer session.
@@ -381,6 +387,7 @@ export const initialTextState: TextState = {
   logo: undefined,
   connections: null,
   messageRules: null,
+  homeServers: null,
   directs: {},
   streams: [],
   streamPreviews: {},
@@ -668,6 +675,10 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
       const rules = parseMessageRules(v.rules);
       return rules && { type: "message-rules", rules };
     }
+    case "home-servers": {
+      const homes = parseHomeServers(v.homes);
+      return homes && { type: "home-servers", homes };
+    }
     case "timeouts":
       return isTimeouts(v.timeouts)
         ? { type: "timeouts", timeouts: v.timeouts, channelTimeouts: isChannelTimeouts(v.channelTimeouts) ? v.channelTimeouts : [] }
@@ -896,6 +907,8 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
       return { ...state, connections: event.connections };
     case "message-rules":
       return { ...state, messageRules: event.rules };
+    case "home-servers":
+      return { ...state, homeServers: event.homes };
     case "streams":
       return { ...state, streams: event.streams, streamPreviews: keepPreviews(state.streamPreviews, event.streams) };
     case "stream-preview": {
@@ -1169,6 +1182,9 @@ export type ManageAction =
   // The message rules (admins): ask for them, or save new ones.
   | { messageRules: true }
   | { setMessageRules: MessageRules }
+  // Which other servers' accounts log in (admins): ask, or save new lists.
+  | { homeServers: true }
+  | { setHomeServers: HomeServers }
   // Recording a voice channel (staff): start or stop; the finished ones.
   | { record: number; on: boolean }
   | { recordings: true };
@@ -1209,6 +1225,8 @@ const manageBody = (a: ManageAction) => {
   if ("connections" in a) return { type: "connections" };
   if ("messageRules" in a) return { type: "message-rules" };
   if ("setMessageRules" in a) return { type: "set-message-rules", rules: a.setMessageRules };
+  if ("homeServers" in a) return { type: "home-servers" };
+  if ("setHomeServers" in a) return { type: "set-home-servers", homes: a.setHomeServers };
   if ("record" in a) return { type: a.on ? "start-recording" : "stop-recording", voice: a.record };
   if ("recordings" in a) return { type: "recordings" };
   return { type: "order-channels", channels: a.order };

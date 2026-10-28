@@ -48,3 +48,20 @@ export const windowFor = <W extends { url: string; focused: boolean }>(windows: 
   const ours = windows.filter((w) => w.url.startsWith(`${origin}/`));
   return ours.find((w) => w.focused) ?? ours[0] ?? null;
 };
+
+// Push for added servers (several servers in one client): one service
+// worker registration each (a subscription is per registration, and each
+// server has its own key), at <home>/push/<origin>/ (see lib/push).
+
+// The server a registration is for (its scope, see lib/push
+// serverPushScope; anything else: home).
+export const serverOfScope = (scope: string, home: string): string => {
+  const prefix = `${home}/push/`;
+  if (!scope.startsWith(prefix) || !scope.endsWith("/")) return home;
+  try {
+    const server = atob(scope.slice(prefix.length, -1).replaceAll("-", "+").replaceAll("_", "/"));
+    return new URL(server).origin === server ? server : home;
+  } catch {
+    return home;
+  }
+};

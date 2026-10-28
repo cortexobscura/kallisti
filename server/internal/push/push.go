@@ -21,6 +21,7 @@ import (
 
 	"github.com/SherClockHolmes/webpush-go"
 
+	"kallisti.chat/server/internal/config"
 	"kallisti.chat/server/internal/names"
 	"kallisti.chat/server/internal/store"
 )
@@ -248,8 +249,16 @@ func fail(w http.ResponseWriter, status int, msg string) {
 
 // ServeHTTP: GET /api/push is the public key; POST and DELETE
 // /api/push/subscriptions add (or update) and remove this browser's
-// subscription. Same origin only (no CORS): the desktop app has no push.
+// subscription: from its own pages (cookie), or another Kallisti page with
+// this server's token (CORS without credentials; see below).
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Other Kallisti pages (several servers in one client) use it with a
+	// token: CORS for any origin, never with cookies.
+	config.CORS(w, r.Header.Get("Origin"), "GET, POST, DELETE", "Content-Type, Authorization", false)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if r.URL.Path == "/api/push" && r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, map[string]string{"publicKey": s.PublicKey})
 		return
@@ -259,12 +268,13 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Against CSRF, as in auth: JSON only (forms cannot send it), and not
-	// cross-site.
+	// cross-site with cookies (a token is no forgery: pages cannot make
+	// browsers add one).
 	if ctype, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); ctype != "application/json" {
 		fail(w, http.StatusUnsupportedMediaType, "send JSON")
 		return
 	}
-	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+	if _, token := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); r.Header.Get("Sec-Fetch-Site") == "cross-site" && !token {
 		fail(w, http.StatusForbidden, "cross-site requests are not allowed")
 		return
 	}

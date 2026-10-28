@@ -1,3 +1,34 @@
+<script lang="ts" module>
+  import type { ConnectionInfo as Info } from "../lib/connectionInfo.svelte";
+  import type { SelfState } from "../lib/voice";
+
+  // Several servers' clients are mounted at once (one shown): which one set
+  // the page's title and icons, holds the media session and the Android
+  // voice service (all clients share one audio output), so that another's
+  // cleanup leaves them.
+  const page: Record<"title" | "icons" | "voice" | "service", object | null> = { title: null, icons: null, voice: null, service: null };
+
+  // Voice on another server (several servers in one client): its bar here,
+  // and mute and deafen act on it.
+  export type RemoteVoice = {
+    // Which server (its site).
+    key: string;
+    server: string;
+    channel: string;
+    selfMute: boolean;
+    selfDeaf: boolean;
+    info: Info;
+    setSelf: (s: SelfState) => void;
+    // Its channel is recorded (the bar says so, as there).
+    recording: boolean;
+    // Push-to-talk there (the phone's hold button here), and whether it sends.
+    ptt: (down: boolean) => void;
+    talking: boolean;
+    leave: () => void;
+    show: () => void;
+  };
+</script>
+
 <script lang="ts">
   import {
     type ChatMessage,
@@ -19,8 +50,10 @@
     registerSelf,
     setSelfState,
     voiceElsewhere,
+    selfOf,
   } from "@kallisti/protocol";
-  import { tick, untrack, type ComponentProps } from "svelte";
+  import { localStore } from "../lib/storage";
+  import { tick, untrack, type ComponentProps, type Snippet } from "svelte";
   import type { AccountActions } from "../lib/accounts";
   import { createChannelManagement } from "../lib/channelManagement.svelte";
   import { canManageText, canModerate } from "../lib/channelManagement";
@@ -78,7 +111,7 @@
   import { previewKey, previewsToAsk } from "../lib/linkPreview";
   import { shouldSendTyping, stoppedTyping, typed, typingNames, typingText, type Typers } from "../lib/typing";
   import { gainOf, userAudioFor } from "../lib/userAudio";
-  import { loadSelfState, micWanted, saveSelfState, soundHint, type SelfState } from "../lib/voice";
+  import { loadSelfState, micWanted, saveSelfState, soundHint } from "../lib/voice";
   import { documentPage, restartOnJoin, watchOutputDevices } from "../lib/voice/restart";
   import { keepRunningHidden } from "../lib/voice/background";
   import { listenOnlySessions } from "../lib/listenOnly";
@@ -110,9 +143,9 @@
   import Shortcuts from "./Shortcuts.svelte";
   import { IS_MAC, navAction, stepPlace } from "../lib/switcher";
   import { mirrorIds } from "../lib/mirrors";
-  import { tabTitle } from "../lib/title";
+  import { railBadge, tabTitle, type RailBadge } from "../lib/title";
   import { channelLink, messageLink, parseMessageLink } from "../lib/messageLink";
-  import { inviteLink, invitePlace, parseInviteLink } from "../lib/invites";
+  import { inviteLink, inviteOf, invitePlace, parseInviteLink } from "../lib/invites";
   import UserPanel from "./UserPanel.svelte";
   import VoiceBar from "./VoiceBar.svelte";
   import ObsDialog from "./ObsDialog.svelte";
@@ -133,6 +166,17 @@
     streams = { watching: [], lost: [] },
     openSettings = false,
     onSettingsOpened,
+    rail,
+    lost = false,
+    active = true,
+    pttHere = true,
+    remoteVoice = null,
+    onShow,
+    onBadge,
+    link = null,
+    onLinkUsed,
+    onInvite,
+    pushSync,
   }: {
     connection: Connection;
     account?: AccountActions;
@@ -157,10 +201,41 @@
     // Open the settings at once (back from a fediverse login for them).
     openSettings?: boolean;
     onSettingsOpened?: () => void;
+    // The rail of servers (several servers in one client; the caller's, so
+    // that it is the same while a server connects): without it, this one.
+    rail?: Snippet;
+    // The connection is lost: all but the rail takes no input (it would be
+    // lost).
+    lost?: boolean;
+    // Several servers: this one is on screen (the others are mounted,
+    // hidden: their voice, unread marks and notifications go on). Only it
+    // has the page's title, icons, shortcuts and swipes, and is seen.
+    active?: boolean;
+    // Push-to-talk acts here: in voice here, or on screen with no voice
+    // anywhere.
+    pttHere?: boolean;
+    remoteVoice?: RemoteVoice | null;
+    // Puts this server on screen (a click on one of its notifications).
+    onShow?: () => void;
+    // Its mark in the rail, on each change.
+    onBadge?: (badge: RailBadge) => void;
+    // A link of this server from elsewhere (an invite clicked on another
+    // server, ?join=, a push notice's ?open=): an invite is redeemed, a
+    // message opens; onLinkUsed once done.
+    link?: string | null;
+    onLinkUsed?: () => void;
+    // An invite link clicked here (any server's): true, the caller takes it.
+    onInvite?: (url: string) => boolean;
+    // An added server's push (see lib/push syncServerPush), with its quiet
+    // chats and blocks; none: the home server's own push (its settings).
+    pushSync?: (prefs: PushPrefs) => void;
   } = $props();
 
   const server = $derived(connection.state);
-  const me = $derived(server.session === null ? undefined : server.users[server.session]);
+  // A side panel that takes no input: lost, or not the one shown on a
+  // phone (the chat takes care of lost itself: its menu leads to the rail).
+  const noInput = (p: Panel) => lost || (phone && panel !== p);
+  const me = $derived(selfOf(server));
   // A text-only session (our account is in voice elsewhere) is in no
   // channel: it shows root.
   const textOnly = $derived(isTextOnly(server));
@@ -244,7 +319,7 @@
   const pttOn = $derived(prefs.mode === "ptt");
   const pttKey = $derived(prefs.pttKey);
   $effect(() => {
-    if (!isDesktop() || !pttOn || !capture) return;
+    if (!isDesktop() || !pttOn || !capture || !pttHere) return;
     const [key, target] = [pttKey, capture];
     let stop: (() => void) | null = null;
     let cancelled = false;
@@ -261,12 +336,12 @@
     t instanceof HTMLElement &&
     (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
   const onKey = (e: KeyboardEvent) => {
-    if (e.type === "keydown" && navKey(e)) return;
-    if (e.type === "keydown" && e.key === "Escape" && phone && panel !== "chat" && !menu && !document.querySelector("dialog[open]")) {
+    if (active && e.type === "keydown" && navKey(e)) return;
+    if (active && e.type === "keydown" && e.key === "Escape" && phone && panel !== "chat" && !menu && !document.querySelector("dialog[open]")) {
       panel = "chat";
       return;
     }
-    if (prefs.mode !== "ptt") return;
+    if (prefs.mode !== "ptt" || !pttHere) return;
     const ev = { code: e.code, repeat: e.repeat, editable: isEditable(e.target) };
     if (pttBlocksDefault(ev, prefs.pttKey)) e.preventDefault();
     const action = pttAction(e.type as "keydown" | "keyup", ev, prefs.pttKey);
@@ -282,6 +357,7 @@
     phoneQuery.addEventListener("change", update);
     return () => phoneQuery.removeEventListener("change", update);
   });
+  let layoutEl: HTMLElement | undefined = $state();
   let panel = $state<Panel>("chat");
   // Swipes do not count in dialogs, text fields, the hold button, or with
   // two fingers (pinch).
@@ -290,7 +366,7 @@
   const touchStart = (e: TouchEvent) => {
     const t = e.touches[0];
     const blocked = e.touches.length > 1 || (e.target instanceof Element && e.target.closest(NO_SWIPE));
-    touch = phone && t && !blocked ? { x: t.clientX, y: t.clientY, t: e.timeStamp } : null;
+    touch = active && phone && t && !blocked ? { x: t.clientX, y: t.clientY, t: e.timeStamp } : null;
   };
   // An opened drawer gets the focus; closing it returns focus to the header
   // button that belongs to it (not the active element: Safari does not
@@ -306,10 +382,10 @@
       await tick();
       if (p === "chat") {
         const button = closed === "channels" ? "button[aria-label=Channels]" : ".members-toggle";
-        if (closed !== "chat") document.querySelector<HTMLElement>(button)?.focus({ preventScroll: true });
+        if (closed !== "chat") layoutEl?.querySelector<HTMLElement>(button)?.focus({ preventScroll: true });
         return;
       }
-      const drawer = p === "channels" ? leftEl : document.querySelector<HTMLElement>(".layout > aside");
+      const drawer = p === "channels" ? leftEl : layoutEl?.querySelector<HTMLElement>(":scope > aside");
       // No scrolling: the drawer is still off-screen, and the browser would
       // scroll the layout to show it, pushing the chat aside.
       drawer?.querySelector<HTMLElement>("button, [href], input")?.focus({ preventScroll: true });
@@ -324,7 +400,8 @@
 
   const paneCommon = $derived({
     menuOpen: panel === "channels",
-    talking: capture?.transmitting ?? false,
+    lost,
+    talking: (voiceOn ? capture?.transmitting : remoteVoice?.talking) ?? false,
     membersOpen: phone ? panel === "members" : membersOpen,
     onToggleMembers: () => {
       if (phone) panel = panel === "members" ? "chat" : "members";
@@ -332,7 +409,12 @@
     },
     onMenu: phone ? () => (panel = "channels") : undefined,
     // Phones have no PTT key: a hold button instead.
-    onHoldTalk: phone && prefs.mode === "ptt" && voiceOn ? (down: boolean) => capture?.setPttDown(down) : undefined,
+    onHoldTalk:
+      phone && prefs.mode === "ptt" && voiceOn
+        ? (down: boolean) => capture?.setPttDown(down)
+        : phone && prefs.mode === "ptt" && remoteVoice
+          ? remoteVoice.ptt
+          : undefined,
   });
   // A stored chat's pane fields (null: not known yet). Errors: not the
   // quiet ones (quietError).
@@ -462,20 +544,34 @@
   );
   // In voice: keeps phones from freezing the page (see lib/mediaSession).
   const session = $derived(voiceHere === null ? null : voiceSession({ channel: server.channels[voiceHere]?.name ?? "", server: serverName, lobby }));
-  $effect(() =>
-    connection.playback?.setVoice(session, (action) => (action === "leave" ? leaveVoice() : updateSelf({ selfMute: true, selfDeaf: true }))),
-  );
-  $effect(() => () => connection.playback?.releaseVoice());
+  const own = {};
+  $effect(() => {
+    if (session === null && page.voice !== own) return;
+    page.voice = session === null ? null : own;
+    connection.playback?.setVoice(session, (action) => (action === "leave" ? leaveVoice() : updateSelf({ selfMute: true, selfDeaf: true })));
+  });
+  $effect(() => () => {
+    if (page.voice !== own) return;
+    page.voice = null;
+    connection.playback?.releaseVoice();
+  });
   // The Android app: its voice service while in voice (see desktop.ts).
   const voiceService = $derived(voiceHere === null || !androidApp() ? null : (server.channels[voiceHere]?.name ?? ""));
   // On for a channel; a new channel only changes its notification (Android
   // starts such a service only from the foreground), off when leaving.
   $effect(() => {
-    if (voiceService !== null) setVoiceService(true, voiceService).catch((err) => console.warn("voice service not started", err));
+    if (voiceService === null) return;
+    page.service = own;
+    setVoiceService(true, voiceService).catch((err) => console.warn("voice service not started", err));
   });
   const inVoiceService = $derived(voiceService !== null);
   $effect(() => {
-    if (inVoiceService) return () => void setVoiceService(false, null).catch(() => {});
+    if (inVoiceService)
+      return () => {
+        if (page.service !== own) return;
+        page.service = null;
+        void setVoiceService(false, null).catch(() => {});
+      };
   });
   // Mute and deafen sounds (see sounds.ts), not for about 3 s after a
   // reconnect: we restore our mute and deafen then. REJOIN_MS: how long
@@ -484,7 +580,7 @@
   let soundState: VoiceSnapshot | null = null;
   let lastSound = -Infinity;
   let restored = false;
-  const storage = typeof localStorage === "undefined" ? undefined : localStorage;
+  const storage = localStore();
   $effect(() => {
     if (restored || !me) return;
     restored = true;
@@ -652,7 +748,7 @@
   // this session, the quiet chats (see pushLists) and the blocked users
   // (as a string: the same prefs post nothing). A click on one in an open
   // window comes from the service worker.
-  const pushName = $derived(account && !account.temporary && browserPushSupport() !== "none" ? me?.name : undefined);
+  const pushName = $derived(!pushSync && account && !account.temporary && browserPushSupport() !== "none" ? me?.name : undefined);
   const pushPrefsKey = $derived(
     JSON.stringify({
       ...pushLists(channelPrefs.value, connection.httpBase, Object.keys(text.directs).map(Number)),
@@ -662,11 +758,15 @@
   const pushPrefs = $derived(JSON.parse(pushPrefsKey) as PushPrefs);
   $effect(() => {
     if (pushName && browserPushSupport() === "ok") void syncPush(connection.httpBase, pushName, pushPrefs);
+    // An added server's push (see lib/push syncServerPush): the caller's.
+    else if (pushSync && browserPushSupport() === "ok") pushSync(pushPrefs);
   });
   $effect(() => {
     const sw = navigator.serviceWorker;
     const onMessage = (e: MessageEvent) => {
-      if (e.data?.type === "open" && typeof e.data.url === "string") openMessage(parseMessageLink(e.data.url, site));
+      const link = e.data?.type === "open" && typeof e.data.url === "string" ? parseMessageLink(e.data.url, site) : null;
+      if (link) onShow?.();
+      openMessage(link);
     };
     sw?.addEventListener("message", onMessage);
     return () => sw?.removeEventListener("message", onMessage);
@@ -689,6 +789,17 @@
     untrack(() => connection.manage({ redeemInvite: token }));
     invited = null;
   });
+  $effect(() => {
+    const url = link;
+    // Not while lost: it would go nowhere (a new connection takes it).
+    if (!url || !text.available || lost) return;
+    untrack(() => {
+      const token = parseInviteLink(url, site);
+      if (token) connection.manage({ redeemInvite: token });
+      else openMessage(parseMessageLink(url, site));
+      onLinkUsed?.();
+    });
+  });
   // A link made in the members dialog: shown there once. A redeemed link
   // to a voice channel joins it, unless that would leave a call.
   let newInvite = $state<{ voice: number; token: string } | null>(null);
@@ -698,7 +809,8 @@
       if (ev.type !== "invite-joined") return;
       const place = invitePlace(ev);
       if (place.kind === "text") show(place);
-      else if (voiceOn && !(lobby && channelId === 0)) show({ kind: "voice" });
+      // In a call (here, or on another server): shown, not joined.
+      else if ((voiceOn && !(lobby && channelId === 0)) || remoteVoice) show({ kind: "voice" });
       else join(place.id);
     }),
   );
@@ -785,7 +897,7 @@
     () => (phone && threadId !== null ? [threadId] : [chatId, threadId]),
     () => me?.name ?? "",
     blockedUsers.has,
-    () => pageVisible,
+    () => pageVisible && active,
   );
   const unreadText = $derived(withoutMuted(textView.unread, mutedText));
   // Unread counts as shown (muted direct chats count none).
@@ -821,10 +933,10 @@
     };
   });
   const notify = (title: string, body: string, open: boolean, onOpen: () => void) => {
-    const visible = chatSeen({ visible: document.visibilityState === "visible", focused: document.hasFocus(), desktop: isDesktop() });
+    const visible = active && chatSeen({ visible: document.visibilityState === "visible", focused: document.hasFocus(), desktop: isDesktop() });
     const enabled = prefs.notifications;
     if (leader?.leads() !== false && shouldNotify({ enabled, permission: notifications.permission(), visible, deaf: me?.selfDeaf ?? false, dnd, open }))
-      notifications.show(title, body, onOpen);
+      notifications.show(title, body, () => (onShow?.(), onOpen()));
   };
   $effect(() =>
     connection.onTextEvent((ev) => {
@@ -1085,22 +1197,38 @@
   // Unread direct messages per sender name, marked read while open.
   let readCounts = $state<Record<string, number>>({});
   const unread = $derived(Object.fromEntries(Object.entries(unreadCounts(server.privateCounts, readCounts)).filter(([name]) => !blockedUsers.has(name))));
-  // The tab title: mentions and direct messages not read (see lib/title).
+  // The tab title and the rail's mark: mentions and direct messages not
+  // read (see lib/title).
+  const badge = $derived(railBadge(mentions, unread, unreadText));
   $effect(() => {
-    const sum = (r: Record<string | number, number>) => Object.values(r).reduce((a, n) => a + n, 0);
+    const b = badge;
+    untrack(() => onBadge?.(b));
+  });
+  // Gone (a lost login, a removed server): no mark of it stays.
+  $effect(() => () => untrack(() => onBadge)?.({ mentions: 0, unread: false }));
+  $effect(() => {
     const name = serverName;
-    document.title = tabTitle(name, sum(mentions) + sum(unread));
-    return () => (document.title = name);
+    if (!active) return;
+    const mine = {};
+    page.title = mine;
+    document.title = tabTitle(name, badge.mentions);
+    return () => {
+      if (page.title === mine) document.title = name;
+    };
   });
   // Once the server said (the page has its icons until then); Kallisti's
   // again when the client goes (another server may come next).
   $effect(() => {
-    if (text.logo === undefined) return;
+    if (text.logo === undefined || !active) return;
+    const mine = {};
+    page.icons = mine;
     showIcons(document, connection.httpBase, text.logo);
-    return () => showIcons(document, "", null);
+    return () => {
+      if (page.icons === mine) showIcons(document, "", null);
+    };
   });
   $effect(() => {
-    if (dm === null) return;
+    if (dm === null || !active || !pageVisible) return;
     const [name, count] = [dm.name, server.privateCounts[dm.name] ?? 0];
     untrack(() => {
       if (readCounts[name] !== count) readCounts = { ...readCounts, [name]: count };
@@ -1142,7 +1270,8 @@
     channelNames: text.channels.map((c) => c.name),
     onLink: (href: string) => {
       const link = parseMessageLink(href, site);
-      return link && (openMessage(link) ? "opened" : "unavailable");
+      if (link) return openMessage(link) ? "opened" : "unavailable";
+      return inviteOf(href) && onInvite?.(href) ? "opened" : null;
     },
     onReact: readOnly ? undefined : connection.react,
     onVote: readOnly ? undefined : connection.vote,
@@ -1500,6 +1629,8 @@
 <svelte:window onkeydown={onKey} onkeyup={onKey} onblur={() => capture?.setPttDown(false)} />
 <svelte:document ontouchstart={touchStart} ontouchend={touchEnd} onvisibilitychange={() => (pageVisible = document.visibilityState === "visible")} />
 
+<!-- Menus and dialogs act on the connection: none while it is lost. -->
+<div class="overlays" inert={lost}>
 {#if channels.menu}
   {@const m = channels.menu}
   <ChannelMenu
@@ -1764,6 +1895,9 @@
     messageRules={text.messageRules}
     onLoadMessageRules={mayChangeGuests(server, text) ? () => connection.manage({ messageRules: true }) : undefined}
     onSaveMessageRules={(rules) => connection.request({ setMessageRules: rules })}
+    homeServers={text.homeServers}
+    onLoadHomeServers={mayChangeGuests(server, text) ? () => connection.manage({ homeServers: true }) : undefined}
+    onSaveHomeServers={(homes) => connection.request({ setHomeServers: homes })}
     threadArchive={text.threadArchive}
     onThreadArchive={canManageText(server, text)
       ? (seconds) => connection.ask(threadRequest({ archiveAfter: seconds }), (ev) => ev.type === "thread-archive" && ev.seconds === seconds)
@@ -1817,17 +1951,23 @@
     onClose={() => (showSettings = false)}
   />
 {/if}
+</div>
 
 <div
   class="layout"
+  bind:this={layoutEl}
   class:members={membersOpen || side !== "members" || threadAside}
   class:side={side !== "members" || threadAside}
   class:thread={threadAside}
   data-panel={phone ? panel : undefined}
 >
   <div class="left" bind:this={leftEl} inert={phone && panel !== "channels"}>
-  <ServerRail {serverName} logo={text.logo ? iconHref(connection.httpBase, 192, text.logo) : null} />
-  <div class="sidebar">
+  {#if rail}
+    {@render rail()}
+  {:else}
+    <ServerRail servers={[{ id: "", name: serverName, logo: text.logo ? iconHref(connection.httpBase, 192, text.logo) : null, active: true }]} />
+  {/if}
+  <div class="sidebar" inert={lost}>
     <header>
       <span class="ellipsis">{serverName}</span>
       {#if moderation.any || moderation.emoji}
@@ -1908,6 +2048,8 @@
           entries={goLive.entries}
           {onGoLive}
         />
+      {:else if remoteVoice}
+        <VoiceBar channel="{remoteVoice.channel} · {remoteVoice.server}" recording={remoteVoice.recording} onLeave={remoteVoice.leave} info={remoteVoice.info} onShow={remoteVoice.show} />
       {:else if elsewhere}
         <VoiceBar
           channel={server.channels[elsewhere.channelId]?.name ?? ""}
@@ -1916,14 +2058,16 @@
           onJoinHere={() => join(elsewhere.channelId)}
         />
       {/if}
+      {@const away = remoteVoice}
       <UserPanel
-        {me}
-        status={elsewhere ? "In voice on another device" : !voiceOn ? "Not in voice" : lobby ? "Online" : "Voice connected"}
-        active={voiceOn && !lobby}
+        me={away ? { ...me, selfMute: away.selfMute, selfDeaf: away.selfDeaf } : me}
+        status={away ? "Voice connected" : elsewhere ? "In voice on another device" : !voiceOn ? "Not in voice" : lobby ? "Online" : "Voice connected"}
+        active={(voiceOn && !lobby) || !!away}
         info={voiceOn && !lobby ? connection.info : undefined}
         micError={micOn ? (capture ? capture.micError : noVoice) : null}
         noVoice={!capture && !!noVoice}
-        onSelfState={updateSelf}
+        onSelfState={away ? away.setSelf : updateSelf}
+        voiceKey={away ? away.key : site}
         onSettings={() => (showSettings = true)}
         presence={statusOf(me.session).presence}
         own={text.ownStatus}
@@ -2041,11 +2185,11 @@
     {/if}
   </div>
   {#if threadAside && thread}
-    <aside class="thread-pane">{@render threadPane(thread)}</aside>
+    <aside class="thread-pane" inert={lost}>{@render threadPane(thread)}</aside>
   {:else if side === "threads" && textId !== null}
     {@const list = text.archived[textId]}
     <ThreadList
-      inert={phone && panel !== "members"}
+      inert={noInput("members")}
       channel={textChannel?.name ?? ""}
       threads={threadList(text.threads, list?.threads ?? [], textId)}
       more={!list || archivedAsked !== null ? null : list.more}
@@ -2057,7 +2201,7 @@
     />
   {:else if side === "search"}
     <SearchPanel
-      inert={phone && panel !== "members"}
+      inert={noInput("members")}
       text={text.search ? searchQuery : null}
       messages={(text.search?.messages ?? []).filter((m) => !blockedUsers.has(m.author))}
       where={whereOf}
@@ -2065,12 +2209,12 @@
       onOpen={(m) => openMessage({ chat: m.channel, message: m.id })}
       onClose={() => {
         openSide("members");
-        document.querySelector<HTMLInputElement>('input[aria-label="Search messages"]')?.focus();
+        layoutEl?.querySelector<HTMLInputElement>('input[aria-label="Search messages"]')?.focus();
       }}
     />
   {:else if side === "pins" && chatId !== null}
     <SearchPanel
-      inert={phone && panel !== "members"}
+      inert={noInput("members")}
       text={text.pins[chatId] ? "" : null /* null: loading */}
       heading="Pinned messages"
       label="Pinned messages"
@@ -2086,7 +2230,7 @@
     />
   {:else if membersOpen || phone}
     <MemberList
-      inert={phone && panel !== "members"}
+      inert={noInput("members")}
       {channelName}
       {unread}
       {speaking}
@@ -2173,6 +2317,9 @@
     text-align: left;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  .overlays {
+    display: contents;
   }
   /* Desktop: the wrapper does not exist for the grid. Phone: left drawer. */
   .left,

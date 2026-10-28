@@ -409,3 +409,27 @@ func TestDeliverWithTheServersNameAndLogo(t *testing.T) {
 		t.Fatalf("with a brand: %+v", got)
 	}
 }
+
+// Another Kallisti page (several servers in one client) subscribes with
+// this server's token: cross-site, with CORS, no cookies.
+func TestSubscriptionsFromAnotherSite(t *testing.T) {
+	s, _, _ := newService(t)
+	r := httptest.NewRequest("OPTIONS", "/api/push/subscriptions", nil)
+	r.Header.Set("Origin", "https://home.example")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != "https://home.example" ||
+		!strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "Authorization") || w.Header().Get("Access-Control-Allow-Credentials") != "" {
+		t.Fatalf("preflight: %d %v", w.Code, w.Header())
+	}
+	r = httptest.NewRequest("POST", "/api/push/subscriptions", strings.NewReader(subscribe(phone)))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Origin", "https://home.example")
+	r.Header.Set("Sec-Fetch-Site", "cross-site")
+	r.Header.Set("Authorization", "Bearer unknown")
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized { // past the cross-site gate: a token, no cookie
+		t.Fatalf("with a token: %d %s", w.Code, w.Body)
+	}
+}

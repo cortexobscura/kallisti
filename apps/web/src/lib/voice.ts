@@ -39,3 +39,10 @@ export const micWanted = (s: {
 // Browsers may start the audio context suspended until the user clicks or
 // types (after a refresh: no gesture yet). In voice, a hint asks for one.
 export const soundHint = (state: string | null, inVoice: boolean) => inVoice && state === "suspended";
+
+// One voice channel across servers (several servers in one client): the
+// one that joined voice last (in now, not in before) stays, the others
+// leave, once (leaving takes the server's answer: until then both are in
+// voice); null: none joined.
+export const voiceJoined = (before: readonly string[], now: readonly string[]): string | null =>
+  now.filter((id) => !before.includes(id)).at(-1) ?? null;

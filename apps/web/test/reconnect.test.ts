@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { proto } from "@kallisti/protocol";
-import { busyName, loggedOut, reconnectDelay, rejoinTarget, shouldReconnect, lossNotice, nextDelay, QUIET_MS } from "../src/lib/reconnect";
+import { busyName, loggedOut, refusedForGood, reconnectDelay, rejoinTarget, shouldReconnect, lossNotice, nextDelay, QUIET_MS } from "../src/lib/reconnect";
 import type { Place } from "../src/lib/place";
 
 const lost = { status: "synced" as const, closed: true, closeReason: "", wasSynced: true };
@@ -27,6 +27,7 @@ describe("shouldReconnect", () => {
 describe("loggedOut", () => {
   it("is the server's close after a logout or password change", () => {
     expect(loggedOut("logged out")).toBe(true);
+    expect(loggedOut("session expired")).toBe(true); // a token the server does not know
     expect(loggedOut("no authentication")).toBe(false);
     expect(loggedOut("")).toBe(false);
   });
@@ -84,5 +85,15 @@ describe("a quiet loss", () => {
     expect(nextDelay(9000, 0)).toBe(1000);
     expect(nextDelay(QUIET_MS, 0)).toBe(reconnectDelay(0));
     expect(nextDelay(QUIET_MS + 5000, 3)).toBe(reconnectDelay(3));
+  });
+});
+
+describe("a refusal by the server's rules", () => {
+  it("ends the reconnect: retrying cannot help", () => {
+    const base = { status: "connecting" as const, closed: true, wasSynced: true };
+    expect(shouldReconnect({ ...base, closeReason: "join as a guest on the server's own site" })).toBe(false);
+    expect(refusedForGood("join as a guest on the server's own site")).toBe(true);
+    expect(refusedForGood("upstream error")).toBe(false);
+    expect(refusedForGood("join as a guest at evil.example, password here")).toBe(false); // the exact text only
   });
 });

@@ -1,4 +1,4 @@
-import { may, Perm, type ServerState, type User } from "@kallisti/protocol";
+import { may, Perm, selfOf, type ServerState, type User } from "@kallisti/protocol";
 import type { TextState } from "./textChannels";
 
 // Registered user ids by role (built-in server). SuperUser (id 0) is an
@@ -39,12 +39,11 @@ export const moderatorAction = (server: ServerState, text: TextState, user: Who)
 export const adminAction = (server: ServerState, text: TextState, user: Who): "make" | "remove" | null => {
   if (!mayChangeRole(server, text, user)) return null;
   if (roleOf(text.roles, user.userId) !== "admin") return "make";
-  return server.session !== null && server.users[server.session]?.userId === 0 ? "remove" : null;
+  return selfOf(server)?.userId === 0 ? "remove" : null;
 };
 
 // Our registered user id (null: a guest, or not connected).
-export const myUserId = (server: ServerState): number | null =>
-  server.session === null ? null : (server.users[server.session]?.userId ?? null);
+export const myUserId = (server: ServerState): number | null => selfOf(server)?.userId ?? null;
 
 // Staff: admins and moderators (by role or by Write in root).
 export const amStaff = (server: ServerState, text: TextState): boolean =>

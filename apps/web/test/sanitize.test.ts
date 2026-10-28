@@ -24,3 +24,44 @@ describe("sanitize with emoji", () => {
     expect(sanitize("hi 😀")).toBe("hi 😀");
   });
 });
+
+// The page may load pictures and media from other servers (several servers
+// in one client): message HTML must load nothing remote (readers' IPs).
+describe("sanitize loads nothing remote", () => {
+  const remote = (html: string) => {
+    const out = sanitize(html);
+    return /tracker\.example/.test(out) ? out : null;
+  };
+  it("drops remote addresses from styles, srcset, posters, SVG and media", () => {
+    for (const html of [
+      '<span style="background-image:url(https://tracker.example/a)">x</span>',
+      '<span style="background:\\75 rl(https://tracker.example/a)">x</span>',
+      '<span style="background-image:image-set(\'https://tracker.example/a\' 1x)">x</span>',
+      '<img srcset="https://tracker.example/a 1x" src="data:image/png;base64,AA==">',
+      '<video poster="https://tracker.example/a"></video>',
+      '<audio src="https://tracker.example/a"></audio>',
+      '<video><source src="https://tracker.example/a"></video>',
+      '<svg><image href="https://tracker.example/a"></image></svg>',
+      '<svg><image xlink:href="https://tracker.example/a"></image></svg>',
+      '<table background="https://tracker.example/a"><tr><td>x</td></tr></table>',
+      '<p>a</p><style>p{background:url(https://tracker.example/a)}</style>',
+      '<svg><style>circle{fill:url(https://tracker.example/a)}</style><circle r="5"/></svg>',
+      '<div><style>body{background-image:url(https://tracker.example/a)}</style></div>',
+      '<svg width="20" height="20"><rect width="20" height="20" mask="url(https://tracker.example/a)"/></svg>',
+      '<svg><circle r="5" fill="url(https://tracker.example/a#g)"/></svg>',
+      '<math><mi href="https://tracker.example/a">x</mi></math>',
+    ]) {
+      expect(remote(html), html).toBeNull();
+    }
+  });
+  it("keeps colours, links and inline pictures", () => {
+    expect(sanitize('<span style="color: red">x</span>')).toBe('<span style="color: red">x</span>');
+    expect(sanitize("<span style=\"font-family: 'Curlz MT'; color: red\">x</span>")).toContain("color: red");
+    expect(sanitize('<a href="https://x.org/">x</a>')).toContain('href="https://x.org/"');
+    expect(sanitize('<img src="data:image/png;base64,AA==">')).toContain("data:image/png");
+    // Text and link addresses may say url( (they load nothing by it).
+    const link = sanitize('<a href="https://example.org/url(example)/details" title="CSS url(...) syntax">x</a>');
+    expect(link).toContain('href="https://example.org/url(example)/details"');
+    expect(link).toContain('title="CSS url(...) syntax"');
+  });
+});

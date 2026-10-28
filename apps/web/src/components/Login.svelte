@@ -1,11 +1,14 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { parseInviteLink } from "../lib/invites";
+  import UserName from "./UserName.svelte";
+  import { serverOrigin } from "../lib/serverList";
   import { modeForError, type Account, type AccountsApi } from "../lib/accounts";
   import { solveInWorker } from "../lib/captcha";
-  import { formatFingerprint, type CertificateProblem } from "../lib/desktop";
+  import { formatFingerprint, isDesktop, type CertificateProblem } from "../lib/desktop";
   import type { Credentials } from "../lib/connection.svelte";
   import { iconHref, showIcons } from "../lib/serverLogo";
-  import { safeGet, safeSet } from "../lib/storage";
+  import { localStore, safeGet, safeSet, tabStorage } from "../lib/storage";
 
   let {
     error,
@@ -15,6 +18,8 @@
     onConnect,
     fediSignup = false,
     onFediSignupDone,
+    onHandoff,
+    keep,
     desktop = null,
     certificate = null,
     onTrust,
@@ -38,7 +43,19 @@
     // (see lib/fedi). onFediSignupDone: made, or given up.
     fediSignup?: boolean;
     onFediSignupDone?: () => void;
+    // A handoff's account was made (see Connect): its token waits.
+    onHandoff?: () => void;
+    // An address to come back to after a login through another server.
+    keep?: string;
   } = $props();
+
+  // An answer counts only for the server it was asked of, while this
+  // screen is open and the desktop app's server is the same ("Change"
+  // cancels it).
+  let open = true;
+  $effect(() => () => void (open = false));
+  const shown = () => `${desktop?.server ?? ""} ${desktop?.kind ?? ""}`;
+  const current = (used: AccountsApi, at: string) => open && used === api && shown() === at;
 
   type Mode = "guest" | "login" | "create";
   const MODES: [Mode, string][] = [
@@ -48,7 +65,7 @@
   ];
   // A guest who tried an account's name gets the Log in tab right away.
   let mode = $state<Mode>(untrack(() => modeForError(error)));
-  let username = $state(safeGet(localStorage, "username") ?? "");
+  let username = $state(safeGet(localStore(), "username") ?? "");
   let password = $state("");
   let serverPassword = $state("");
   let server = $state(untrack(() => desktop?.server) ?? "");
@@ -79,7 +96,7 @@
   };
 
   const connectAs = (name: string, isAccount: boolean, pw = serverPassword) => {
-    safeSet(localStorage, "username", name);
+    safeSet(localStore(), "username", name);
     onConnect({ username: name, password: pw, account: isAccount, ...(desktop && { server: desktop.server }) });
   };
 
@@ -93,24 +110,30 @@
     try {
       // A guest gets a temporary account where the server has them (its
       // name is kept, and it can keep the account with a password).
+      const used = api;
+      const at = shown();
       if (mode === "guest") {
         // A browser that cannot do the check joins as a classic guest (as
         // Mumble clients do).
         const proof = await prove().catch(() => null);
-        const guest = proof === null ? null : await api.guest(name, proof);
+        const guest = proof === null ? null : await used.guest(name, proof);
+        if (!current(used, at)) return;
         if (!guest) return connectAs(name, false);
         onAccountChange(guest);
         return connectAs(guest.name, true);
       }
       const result =
-        mode === "login" ? await api.login(name, password) : { name: await api.create(name, password, await prove()), mumble: false };
+        mode === "login" ? await used.login(name, password) : { name: await used.create(name, password, await prove()), mumble: false };
+      if (!current(used, at)) return;
       const pw = password;
       password = "";
       // A Mumble registration (SuperUser, for example) logs in to Mumble with
       // its password.
       if (result.mumble) return connectAs(result.name, false, pw);
       // With its password state and fediverse link, for the settings.
-      onAccountChange((await api.me()) ?? { name: result.name, temporary: false });
+      const account = (await used.me()) ?? { name: result.name, temporary: false };
+      if (!current(used, at)) return;
+      onAccountChange(account);
       connectAs(result.name, true);
     } catch (err) {
       apiError = err instanceof Error ? err.message : String(err);
@@ -142,7 +165,7 @@
   $effect(() => {
     if (!desktop) void api.fediEnabled().then((on) => (fediOn = on));
   });
-  let instance = $state(safeGet(localStorage, "fediInstance") ?? "");
+  let instance = $state(safeGet(localStore(), "fediInstance") ?? "");
   const fediLogin = async (event: SubmitEvent) => {
     event.preventDefault();
     if (!instance.trim()) return;
@@ -150,42 +173,78 @@
     apiError = null;
     try {
       const url = await api.fediStart(instance.trim());
-      safeSet(localStorage, "fediInstance", instance.trim());
+      safeSet(localStore(), "fediInstance", instance.trim());
+      // A link to come back to (an invite here, a ?join): kept over the
+      // login's pages (see App keptInvite); none: none.
+      safeSet(tabStorage(), "kallisti-invite", keep ?? (invite ? location.pathname : ""));
       location.assign(url); // to the instance, and back to the server
     } catch (err) {
       apiError = err instanceof Error ? err.message : String(err);
       busy = false;
     }
   };
-  // The name step: the server suggests the fediverse user name.
-  let signup = $state<{ name: string; handle: string } | null | undefined>(undefined);
+  // An invite to this server (the address /invite/...): people with an
+  // account on another Kallisti server open it there, at their home (its
+  // address remembered by this site).
+  const invite = !isDesktop() && !!parseInviteLink(location.href, location.origin);
+  let homeAddress = $state(safeGet(localStore(), "kallisti-home") ?? "");
+  let homeError = $state<string | null>(null);
+  const openAtHome = (event: SubmitEvent) => {
+    event.preventDefault();
+    const parsed = serverOrigin(homeAddress, "", false);
+    if ("error" in parsed) return void (homeError = parsed.error);
+    if (parsed.origin === location.origin) return void (homeError = "That is this server.");
+    safeSet(localStore(), "kallisti-home", homeAddress.trim());
+    location.assign(`${parsed.origin}/?join=${encodeURIComponent(location.href)}`);
+  };
+  // A new account from another server: named as at home (name@home), made
+  // at once; only a taken name asks for one (the server suggests it).
+  let signup = $state<{ name: string; handle: string; remote: string } | null | undefined>(undefined);
+  let chooseName = $state(false);
   $effect(() => {
     if (fediSignup && signup === undefined)
       void api.fediSignup().then((s) => {
         signup = s;
         if (s) username = s.name;
+        if (s) void createFromFedi();
       });
   });
-  const createFromFedi = async (event: SubmitEvent) => {
-    event.preventDefault();
-    const name = username.trim();
-    if (!name || !signup) return;
+  const createFromFedi = async (event?: SubmitEvent) => {
+    event?.preventDefault();
+    const name = chooseName ? username.trim() : "";
+    if ((chooseName && !name) || !signup) return;
     busy = true;
     apiError = null;
     try {
-      const made = await api.fediCreate(name, await prove());
+      const { name: made, handoff } = await api.fediCreate(name, await prove());
+      if (handoff) return void onHandoff?.();
       onAccountChange({ name: made, temporary: false, password: false, fedi: { handle: signup.handle, public: false } });
       onFediSignupDone?.();
       connectAs(made, true);
     } catch (err) {
       apiError = err instanceof Error ? err.message : String(err);
+      // Its remote name is taken here: the name step (other errors show).
+      if (!chooseName && err instanceof Error && "status" in err && err.status === 409) {
+        chooseName = true;
+        apiError = null;
+      }
     } finally {
       busy = false;
     }
   };
 
   const logout = async () => {
-    if (await api.logout()) onAccountChange(null);
+    const used = api;
+    const at = shown();
+    const ok = await used.logout({ session: account?.session, name: account?.name });
+    if (!current(used, at)) return;
+    if (ok === "other") {
+      // Another login is here now (another tab): show it, or none.
+      const answer = await used.check();
+      if (!current(used, at)) return;
+      if (answer === "unknown") apiError = "Another login is active in this browser now. Reload the page.";
+      else onAccountChange(answer);
+    } else if (ok) onAccountChange(null);
     else apiError = "Logging out did not finish: you may still be logged in. Try again.";
   };
 </script>
@@ -230,10 +289,21 @@
       <button class="link" onclick={logout}>Log out</button>
     </div>
   {:else if fediSignup}
-    {#if signup}
+    {#if signup && !chooseName}
+      <div class="card">
+        <h1>Welcome</h1>
+        <p class="sub" role="status">Making your account <strong><UserName name={signup.remote || signup.handle} /></strong>…</p>
+        {#if checking}<p class="hint" role="status">Checking your browser…</p>{/if}
+        {#if apiError}
+          <p class="error" role="alert">{apiError}</p>
+          <button class="primary" disabled={busy} onclick={() => void createFromFedi()}>Try again</button>
+          <button type="button" class="link" onclick={onFediSignupDone}>Cancel</button>
+        {/if}
+      </div>
+    {:else if signup}
       <form class="card" onsubmit={createFromFedi}>
         <h1>Choose your name</h1>
-        <p class="sub">Welcome, <strong>{signup.handle}</strong>. Choose the name people see here.</p>
+        <p class="sub">Welcome, <strong>{signup.handle}</strong>. {signup.remote} is taken here: choose the name people see here.</p>
         <label>
           Name
           <input bind:value={username} required maxlength="32" autocomplete="username" />
@@ -284,7 +354,7 @@
       {/if}
       <label>
         Name
-        <input bind:value={username} required maxlength="32" autocomplete="username" />
+        <input bind:value={username} required maxlength={mode === "login" ? 128 : 32} autocomplete="username" />
       </label>
       {#if mumbleOnly}
         <label>
@@ -319,14 +389,25 @@
       </button>
     </form>
     {/if}
+    {#if invite}
+      <form class="card fedi" onsubmit={openAtHome}>
+        <label>
+          Have an account on another Kallisti server?
+          <input bind:value={homeAddress} placeholder="chat.example.org" autocomplete="url" aria-describedby="home-hint" oninput={() => (homeError = null)} />
+        </label>
+        <p class="hint" id="home-hint">Open this invite there: this server joins your server list.</p>
+        {#if homeError}<p class="error" role="alert">{homeError}</p>{/if}
+        <button class="secondary" type="submit" disabled={!homeAddress.trim()}>Open in my Kallisti</button>
+      </form>
+    {/if}
     {#if fediOn && !desktop}
       <form class="card fedi" onsubmit={fediLogin}>
         <label>
-          Or use your fediverse account
-          <input bind:value={instance} placeholder="mastodon.social or @you@mastodon.social" autocomplete="url" aria-describedby="fedi-hint" />
+          Or use your account on another server
+          <input bind:value={instance} placeholder="chat.example.org or @you@mastodon.social" autocomplete="url" aria-describedby="fedi-hint" />
         </label>
-        <p class="hint" id="fedi-hint">Mastodon, Pleroma, Akkoma, GoToSocial and others. New here? You choose a name next.</p>
-        <button class="secondary" type="submit" disabled={busy || !instance.trim()}>Log in with the fediverse</button>
+        <p class="hint" id="fedi-hint">Another Kallisti server, or the fediverse: Mastodon, Pleroma, Akkoma, GoToSocial and others. New here? You choose a name next.</p>
+        <button class="secondary" type="submit" disabled={busy || !instance.trim()}>Continue with that account</button>
       </form>
     {/if}
   {/if}
@@ -367,7 +448,7 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-    width: min(400px, 90vw);
+    width: min(400px, 90%);
     padding: 32px;
     border-radius: 8px;
     background: var(--bg-main);

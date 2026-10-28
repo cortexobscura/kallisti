@@ -4,7 +4,6 @@ package auth
 
 import (
 	"cmp"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,8 +13,6 @@ import (
 	"mime"
 	"net/http"
 	"net/netip"
-	"net/url"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +34,12 @@ const (
 	// Account creation and login attempts per client IP.
 	perMinute = 10
 	burst     = 10
+	// Failed logins from other sites per account name, whatever the
+	// address (guesses spread over another site's visitors): 30 an hour
+	// after a burst of 10.
+	accountPerHour = 30
+	// No account (32) or Mumble registration has a longer name.
+	maxLoginName = 128
 	// Guest accounts per client IP: a few at once, then one per 10 minutes.
 	guestBurst = 5
 	guestEvery = 10 * time.Minute
@@ -87,11 +90,15 @@ type Service struct {
 	StreamKeyChanged func(name string)
 	// Fedi: logins with fediverse accounts (see fedi.go). Nil: off.
 	Fedi *FediLogin
+	// Provider: other Kallisti servers log in with accounts here (see
+	// provider.go); nil: off.
+	Provider *Provider
 	// SetAvatar gives an account an avatar (a JPEG, see avatarimg), only
 	// if it has none if onlyIfNone. Nil: none.
 	SetAvatar func(acc store.Account, avatar []byte, onlyIfNone bool)
 
 	logins, guests limiter
+	failures       failures
 	challenges     challenges
 }
 
@@ -124,6 +131,93 @@ func (l *limiter) allow(ip string, limit rate.Limit, burst int) bool {
 	return lim.Allow()
 }
 
+// failures counts failed logins per account name (hashed: names come from
+// anyone), for logins from other sites. An attempt takes a token before the
+// password work (parallel guesses count at once); a good login gives it
+// back, so a user's own logins do not use up the budget.
+type failures struct {
+	mu sync.Mutex
+	m  map[[16]byte]*bucket
+}
+
+type bucket struct {
+	tokens float64
+	at     time.Time
+}
+
+const maxFailureNames = 10_000
+
+func failureKey(name string) [16]byte {
+	sum := sha256.Sum256([]byte(names.Key(name)))
+	return [16]byte(sum[:16])
+}
+
+func (b *bucket) refill(now time.Time) {
+	b.tokens = min(burst, b.tokens+now.Sub(b.at).Hours()*accountPerHour)
+	b.at = now
+}
+
+// take: one attempt for this name; false: too many lately for it, or (full)
+// a new name while every name is counting.
+func (f *failures) take(name string, now time.Time) (ok, full bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.m == nil {
+		f.m = map[[16]byte]*bucket{}
+	}
+	key := failureKey(name)
+	b := f.m[key]
+	if b == nil {
+		if !f.room(now) {
+			return false, true
+		}
+		b = &bucket{tokens: burst, at: now}
+		f.m[key] = b
+	}
+	b.refill(now)
+	if b.tokens < 1 {
+		return false, false
+	}
+	b.tokens--
+	return true, false
+}
+
+// refund: the attempt was no failure.
+func (f *failures) refund(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if b := f.m[failureKey(name)]; b != nil {
+		b.tokens = min(burst, b.tokens+1)
+	}
+}
+
+// room keeps the map bounded: only names that are full again go (one
+// still counting is never dropped, or many other names could reset a
+// blocked account). False: every name is counting; a new one waits (only
+// logins from other sites, so nobody is locked out of our own).
+func (f *failures) room(now time.Time) bool {
+	if len(f.m) < maxFailureNames {
+		return true
+	}
+	for k, b := range f.m {
+		if b.refill(now); b.tokens >= burst {
+			delete(f.m, k)
+		}
+	}
+	return len(f.m) < maxFailureNames
+}
+
+// ownSite: new accounts and guests only on our own pages and in the apps,
+// else any site could make its visitors fill the server; it answers with
+// why not.
+func (a *Service) ownSite(w http.ResponseWriter, r *http.Request, why string) bool {
+	if config.OwnSite(a.AllowedOrigins, r.Header.Get("Origin")) {
+		return true
+	}
+	writeJSON(w, http.StatusForbidden, map[string]string{"error": why})
+	return false
+}
+
 type credentials struct {
 	Name     string `json:"name"`
 	Password string `json:"password"`
@@ -132,11 +226,22 @@ type credentials struct {
 	Nonce     string `json:"nonce"`
 }
 
+// Paths: what ServeHTTP answers (for the server's router).
+var Paths = []string{"/api/server", "/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/servers", "/api/stream-key", "/api/fedi", "/api/fedi/",
+	"/api/v1/", "/oauth/", "/.well-known/webfinger", "/api/oauth/"}
+
 func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	a.cors(w, r)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
+	}
+	// Other servers' requests: forms, no cookies (see provider.go).
+	if a.serveProvider(w, r) {
+		return
+	}
+	if r.Method == http.MethodDelete {
+		config.LimitBody(w)
 	}
 	if r.Method == http.MethodPost {
 		config.LimitBody(w)
@@ -147,11 +252,10 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "send JSON"})
 			return
 		}
-		// The desktop app is cross-site by nature, and never sends the
-		// cookie (a local page can pose as http://tauri.localhost).
-		_, noCookie := r.Cookie(CookieName)
-		app := config.IsAppOrigin(r.Header.Get("Origin")) && noCookie != nil
-		if r.Header.Get("Sec-Fetch-Site") == "cross-site" && !app {
+		// Other sites (another Kallisti's page, the apps) are cross-site by
+		// nature and log in with a token: never with the cookie.
+		tokens := !config.CookieOrigin(a.AllowedOrigins, r.Header.Get("Origin")) && a.cookie(r, CookieName) == ""
+		if r.Header.Get("Sec-Fetch-Site") == "cross-site" && !tokens {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "cross-site requests are not allowed"})
 			return
 		}
@@ -183,11 +287,19 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.logoutAll(w, r)
 	case r.URL.Path == "/api/password" && r.Method == http.MethodPost:
 		a.changePassword(w, r)
+	case r.URL.Path == "/api/oauth/request" && r.Method == http.MethodGet && a.Provider != nil:
+		a.oauthRequest(w, r)
+	case r.URL.Path == "/api/oauth/approve" && r.Method == http.MethodPost && a.Provider != nil:
+		a.oauthApprove(w, r)
+	case r.URL.Path == "/api/oauth/grants" && (r.Method == http.MethodGet || r.Method == http.MethodDelete) && a.Provider != nil:
+		a.oauthGrants(w, r)
+	case r.URL.Path == "/api/servers":
+		a.servers(w, r)
 	case r.URL.Path == "/api/stream-key":
 		a.streamKey(w, r)
 	case r.URL.Path == "/api/me" && r.Method == http.MethodGet:
 		if acc, ok := a.AccountFor(r); ok {
-			me := map[string]any{"name": acc.Name, "temporary": acc.Temporary, "password": acc.PasswordHash != ""}
+			me := map[string]any{"name": acc.Name, "temporary": acc.Temporary, "password": acc.PasswordHash != "", "session": sessionID(a.SessionKey(r))}
 			if f := a.fediMe(acc); f != nil {
 				me["fedi"] = f
 			}
@@ -204,7 +316,7 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // token the desktop app got at login, in a header or (WebSockets cannot
 // have headers in browsers) as a subprotocol. "": none.
 // A token comes first: a leftover cookie must not win over it.
-func sessionToken(r *http.Request) string {
+func (a *Service) sessionToken(r *http.Request) string {
 	if token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 		return token
 	}
@@ -213,10 +325,26 @@ func sessionToken(r *http.Request) string {
 			return token
 		}
 	}
-	if c, err := r.Cookie(CookieName); err == nil {
-		return c.Value
+	// Other pages use tokens: the cookie counts only without an origin (a
+	// navigation, a page's own GET) or from our own origins, not from a
+	// sibling subdomain (the same site: its requests carry the cookie).
+	if !config.CookieOrigin(a.AllowedOrigins, r.Header.Get("Origin")) {
+		return ""
 	}
-	return ""
+	return a.cookie(r, CookieName)
+}
+
+// TokenEnded: the request brings a session token (header or subprotocol,
+// not a cookie) that is no session (any more): expired, or ended. Not on
+// other errors (a busy database): those are worth another try.
+func (a *Service) TokenEnded(r *http.Request) bool {
+	token := a.sessionToken(r)
+	_, hasBearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if token == "" || !(hasBearer || strings.Contains(r.Header.Get("Sec-WebSocket-Protocol"), SessionProtocol)) {
+		return false
+	}
+	_, err := a.Store.AccountBySession(tokenHash(token), a.Now())
+	return errors.Is(err, store.ErrNotFound)
 }
 
 // SessionProtocol: the desktop app's WebSocket subprotocol with its token.
@@ -224,7 +352,7 @@ const SessionProtocol = "kallisti.session."
 
 // AccountFor returns the account of a request's session.
 func (a *Service) AccountFor(r *http.Request) (store.Account, bool) {
-	token := sessionToken(r)
+	token := a.sessionToken(r)
 	if token == "" {
 		return store.Account{}, false
 	}
@@ -233,8 +361,8 @@ func (a *Service) AccountFor(r *http.Request) (store.Account, bool) {
 }
 
 // SessionKey is the stored key of a request's session, or "".
-func SessionKey(r *http.Request) string {
-	if token := sessionToken(r); token != "" {
+func (a *Service) SessionKey(r *http.Request) string {
+	if token := a.sessionToken(r); token != "" {
 		return tokenHash(token)
 	}
 	return ""
@@ -246,6 +374,15 @@ func (a *Service) revoke(match func(accountID int64, session string) bool) {
 	}
 }
 
+// endLogins ends what lives on of the account's logins but the session
+// keep ("": none) after its sessions ended: connections, the stream key,
+// Mumble app logins.
+func (a *Service) endLogins(acc store.Account, keep string) {
+	a.revoke(func(id int64, session string) bool { return id == acc.ID && (keep == "" || session != keep) })
+	a.endStreamKey(acc)
+	a.endPasswordLogins(acc)
+}
+
 func (a *Service) endPasswordLogins(acc store.Account) {
 	if a.EndPasswordLogins != nil {
 		a.EndPasswordLogins(acc)
@@ -254,6 +391,11 @@ func (a *Service) endPasswordLogins(acc store.Account) {
 
 // DeleteExpiredSessions ends the expired sessions and their connections.
 func (a *Service) DeleteExpiredSessions() error {
+	if a.Provider != nil {
+		if err := a.Store.DeleteExpiredOAuthTokens(a.Now()); err != nil {
+			return err
+		}
+	}
 	n, err := a.Store.DeleteExpiredSessions(a.Now())
 	if err != nil || n == 0 {
 		return err
@@ -266,6 +408,9 @@ func (a *Service) DeleteExpiredSessions() error {
 }
 
 func (a *Service) create(w http.ResponseWriter, r *http.Request) {
+	if !a.ownSite(w, r, "create an account on the server's own site") {
+		return
+	}
 	if !a.allow(r) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 		return
@@ -295,7 +440,7 @@ func (a *Service) create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot create the account"})
 		return
 	}
-	if acc, token, ok := a.newAccount(w, r, store.Account{Name: name, PasswordHash: hash}, a.createAccount); ok {
+	if acc, token, ok := a.newAccount(w, r, store.Account{Name: name, PasswordHash: hash}, true, a.createAccount); ok {
 		writeJSON(w, http.StatusCreated, withToken(map[string]any{"name": acc.Name}, token))
 	}
 }
@@ -303,6 +448,9 @@ func (a *Service) create(w http.ResponseWriter, r *http.Request) {
 // guest makes a temporary account: no password, kept by its session
 // cookie, deleted after a day without a visit.
 func (a *Service) guest(w http.ResponseWriter, r *http.Request) {
+	if !a.ownSite(w, r, "join as a guest on the server's own site") {
+		return
+	}
 	if !a.allow(r) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 		return
@@ -325,15 +473,25 @@ func (a *Service) guest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many guests from your address, try again later"})
 		return
 	}
-	if acc, token, ok := a.newAccount(w, r, store.Account{Name: name, Temporary: true}, a.createAccount); ok {
+	if acc, token, ok := a.newAccount(w, r, store.Account{Name: name, Temporary: true}, true, a.createAccount); ok {
 		writeJSON(w, http.StatusCreated, withToken(map[string]any{"name": acc.Name, "temporary": true}, token))
 	}
 }
 
 // checkName answers the request if a new account may not have the name.
 func (a *Service) checkName(w http.ResponseWriter, raw string) (string, bool) {
+	return a.checkNameBy(w, raw, names.Check)
+}
+
+// checkRemoteName: the same for an account from another server (see
+// names.CheckRemote).
+func (a *Service) checkRemoteName(w http.ResponseWriter, raw string) (string, bool) {
+	return a.checkNameBy(w, raw, names.CheckRemote)
+}
+
+func (a *Service) checkNameBy(w http.ResponseWriter, raw string, check func(string) string) (string, bool) {
 	name := norm.NFC.String(strings.TrimSpace(raw))
-	if msg := names.Check(name); msg != "" {
+	if msg := check(name); msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
 		return "", false
 	}
@@ -350,8 +508,9 @@ func (a *Service) createAccount(acc store.Account) (store.Account, error) {
 }
 
 // newAccount stores an account with a new certificate (by create) and logs
-// it in; on failure it answers the request.
-func (a *Service) newAccount(w http.ResponseWriter, r *http.Request, acc store.Account, create func(store.Account) (store.Account, error)) (store.Account, string, bool) {
+// it in; on failure it answers the request (session: with a session; a
+// handoff makes its own, see fediHandoff).
+func (a *Service) newAccount(w http.ResponseWriter, r *http.Request, acc store.Account, session bool, create func(store.Account) (store.Account, error)) (store.Account, string, bool) {
 	fail := func() (store.Account, string, bool) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot create the account"})
 		return store.Account{}, "", false
@@ -373,6 +532,9 @@ func (a *Service) newAccount(w http.ResponseWriter, r *http.Request, acc store.A
 		slog.Error("create account", "err", err)
 		return fail()
 	}
+	if !session {
+		return acc, "", true
+	}
 	token, ok := a.startSession(w, r, acc)
 	return acc, token, ok
 }
@@ -387,7 +549,42 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
+	// Names longer than any account's: wrong at once, not counted.
+	if utf8.RuneCountInString(c.Name) > maxLoginName {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong name or password"})
+		return
+	}
+	// From other sites: a limit per account (guesses spread over their
+	// visitors' addresses); our own pages and the apps keep the limit per
+	// address only, so nobody outside can lock an account.
+	guarded := !config.OwnSite(a.AllowedOrigins, r.Header.Get("Origin"))
+	if guarded {
+		if ok, full := a.failures.take(c.Name, a.Now()); !ok {
+			why := "too many attempts for this name, try again later"
+			if full {
+				why = "too many logins from other sites right now, try again later or on the server's own site"
+			}
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": why})
+			return
+		}
+	}
 	acc, err := a.Store.AccountByName(c.Name)
+	// From other sites, a name without a web account gives its token back
+	// (random names cannot fill the table) and is answered before the
+	// password, so the answer says nothing about the password (that the
+	// name has no web account shows, as signing up shows "taken"): wrong,
+	// or (with the built-in server) maybe a Mumble registration, whose
+	// socket uses the name and password, which other sites cannot (theirs
+	// need a token).
+	if guarded && errors.Is(err, store.ErrNotFound) {
+		a.failures.refund(c.Name)
+		if a.MumbleLogin != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "log in with a Mumble registration on the server's own site"})
+		} else {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong name or password"})
+		}
+		return
+	}
 	hash := acc.PasswordHash
 	if err != nil || acc.Temporary || hash == "" {
 		hash = password.Dummy // same work for unknown names; no login without a password
@@ -396,6 +593,9 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 	ok := password.Check(hash, c.Password)
 	release()
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		if guarded {
+			a.failures.refund(c.Name) // our fault, no failed guess
+		}
 		slog.Error("login", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "please try again later"})
 		return
@@ -414,6 +614,9 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong name or password"})
 		return
 	}
+	if guarded {
+		a.failures.refund(c.Name)
+	}
 	token, ok := a.startSession(w, r, acc)
 	if !ok {
 		return
@@ -425,7 +628,21 @@ func (a *Service) login(w http.ResponseWriter, r *http.Request) {
 // without it: it ends too (the cleanup removes it at its next round), so
 // its name is free soon.
 func (a *Service) logout(w http.ResponseWriter, r *http.Request) {
-	if acc, ok := a.AccountFor(r); ok && acc.Temporary {
+	// It may name the session it means (see sessionID): a login screen that
+	// still shows an older login must not end the one now in this browser.
+	// It may also name the account (a guest has no fingerprint).
+	var body struct {
+		Session string `json:"session"`
+		Name    string `json:"name"`
+	}
+	json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+	acc, ok := a.AccountFor(r)
+	key := a.SessionKey(r)
+	if (body.Session != "" && key != "" && body.Session != sessionID(key)) || (body.Name != "" && ok && names.Key(body.Name) != names.Key(acc.Name)) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "another login is active here now"})
+		return
+	}
+	if ok && acc.Temporary {
 		if err := a.Store.ExpireAccount(acc.ID); err != nil {
 			slog.Error("ending a guest account", "account", acc.Name, "err", err)
 		}
@@ -436,11 +653,11 @@ func (a *Service) logout(w http.ResponseWriter, r *http.Request) {
 
 // clearSession ends this session and its connections.
 func (a *Service) clearSession(w http.ResponseWriter, r *http.Request) {
-	if key := SessionKey(r); key != "" {
+	if key := a.SessionKey(r); key != "" {
 		a.Store.DeleteSession(key)
 		a.revoke(func(_ int64, session string) bool { return session == key })
 	}
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	a.clearCookie(w, r, CookieName)
 }
 
 // logoutAll ends every session of the account, this one too.
@@ -454,10 +671,8 @@ func (a *Service) logoutAll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot log out"})
 		return
 	}
-	a.revoke(func(id int64, _ string) bool { return id == acc.ID })
-	a.endStreamKey(acc)
-	a.endPasswordLogins(acc)
-	http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	a.endLogins(acc, "")
+	a.clearCookie(w, r, CookieName)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -490,7 +705,7 @@ func (a *Service) changePassword(w http.ResponseWriter, r *http.Request) {
 	// fediverse account in this session: a stolen session cannot set one and
 	// lock the owner out (the change ends the other sessions). With
 	// fediverse logins off there is no other way back in: no check then.
-	if acc.PasswordHash == "" && !acc.Temporary && a.Fedi != nil && !a.Fedi.takeProof(SessionKey(r), acc.ID, a.Now()) {
+	if acc.PasswordHash == "" && !acc.Temporary && a.Fedi != nil && !a.Fedi.takeProof(a.SessionKey(r), acc.ID, a.Now()) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "confirm with your fediverse account first", "code": "reauth"})
 		return
 	}
@@ -508,7 +723,7 @@ func (a *Service) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	// acc is from before the body was read: the store checks again that
 	// the session and the old password are still current.
-	keep := SessionKey(r)
+	keep := a.SessionKey(r)
 	if err == nil {
 		err = a.Store.ChangePassword(acc.ID, keep, acc.PasswordHash, hash, a.Now())
 	}
@@ -520,9 +735,7 @@ func (a *Service) changePassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot change the password"})
 		return
 	}
-	a.revoke(func(id int64, session string) bool { return id == acc.ID && session != keep })
-	a.endStreamKey(acc)
-	a.endPasswordLogins(acc)
+	a.endLogins(acc, keep)
 	if acc.Temporary && a.OnPermanent != nil {
 		a.OnPermanent(acc.Name)
 	}
@@ -532,15 +745,13 @@ func (a *Service) changePassword(w http.ResponseWriter, r *http.Request) {
 // startSession sets the cookie; the token for clients that asked for it
 // (the desktop app, header X-Kallisti-Session: token), else "".
 func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store.Account) (string, bool) {
-	b := make([]byte, 32)
-	rand.Read(b)
-	token := hex.EncodeToString(b)
-	if err := a.Store.CreateSession(tokenHash(token), acc.ID, a.Now().Add(sessionLifetime)); err != nil {
+	token, err := a.newSession(acc)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot log in"})
 		return "", false
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
+		Name:     a.cookieName(r, CookieName),
 		Value:    token,
 		Path:     "/",
 		MaxAge:   int(sessionLifetime.Seconds()),
@@ -554,43 +765,60 @@ func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store
 	return token, true
 }
 
+// newSession is a new session's token.
+func (a *Service) newSession(acc store.Account) (string, error) {
+	token := randomHex(32)
+	return token, a.Store.CreateSession(tokenHash(token), acc.ID, a.Now().Add(sessionLifetime))
+}
+
+// cookieName: with HTTPS the __Host- prefix: browsers take such a cookie
+// only from this host itself (Secure, Path=/, no Domain), so a sibling
+// subdomain cannot plant one (a session or a fediverse flow of its own).
+func (a *Service) cookieName(r *http.Request, base string) string {
+	if a.secure(r) {
+		return "__Host-" + base
+	}
+	return base
+}
+
+// cookie is the value of our cookie of this name ("": none).
+func (a *Service) cookie(r *http.Request, base string) string {
+	if c, err := r.Cookie(a.cookieName(r, base)); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// clearCookie removes it, and one of the plain name from before.
+func (a *Service) clearCookie(w http.ResponseWriter, r *http.Request, base string) {
+	for _, name := range []string{a.cookieName(r, base), base} {
+		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: a.secure(r), SameSite: http.SameSiteLaxMode})
+	}
+}
+
 func (a *Service) secure(r *http.Request) bool {
 	return r.TLS != nil || (a.TrustForwardedFor && r.Header.Get("X-Forwarded-Proto") == "https")
 }
 
-// cors allows the web app's origin to call the API with its cookie. With
-// ALLOWED_ORIGINS=* (development) only localhost origins get credentials:
-// a production server set to * by mistake is not open to every site.
+// cors allows every site to call the API with a token, and the web app's
+// own origin with its cookie. With ALLOWED_ORIGINS=* (development) only
+// localhost origins get credentials: a production server set to * by
+// mistake is not open to every site's cookie requests.
 func (a *Service) cors(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Vary", "Origin")
 	origin := r.Header.Get("Origin")
-	if origin == "" || !config.OriginAllowed(a.AllowedOrigins, origin) {
-		return
-	}
-	if !slices.Contains(a.AllowedOrigins, origin) && !isLocalhost(origin) && !config.IsAppOrigin(origin) {
-		return
-	}
-	h := w.Header()
-	h.Set("Access-Control-Allow-Origin", origin)
-	h.Set("Access-Control-Allow-Methods", "GET, POST, DELETE")
-	h.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Kallisti-Session")
-	// The desktop app sends its token, never cookies.
-	if !config.IsAppOrigin(origin) {
-		h.Set("Access-Control-Allow-Credentials", "true")
-	}
+	config.CORS(w, origin, "GET, POST, DELETE", "Content-Type, Authorization, X-Kallisti-Session", config.CookieOrigin(a.AllowedOrigins, origin))
 }
 
 func (a *Service) allow(r *http.Request) bool {
 	return a.logins.allow(clientip.Of(r, a.TrustForwardedFor), rate.Limit(perMinute)/60, burst)
 }
 
-func isLocalhost(origin string) bool {
-	u, err := url.Parse(origin)
-	if err != nil {
-		return false
-	}
-	host := u.Hostname()
-	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+// sessionID: a short name of a session (in /api/me) that a logout can
+// name, so a page showing an older login does not end a newer one; derived
+// from its key, not the key.
+func sessionID(key string) string {
+	sum := sha256.Sum256([]byte("session-id:" + key))
+	return hex.EncodeToString(sum[:8])
 }
 
 func tokenHash(token string) string {

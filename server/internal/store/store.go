@@ -245,7 +245,7 @@ func Open(path string) (*Store, error) {
 	// One writer at a time is all SQLite allows anyway, and an in-memory
 	// database exists only for one connection.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + reactionsTable + ";" + statusTable + ";" + emojiTable + ";" + userEmojiTables + ";" + stickersTable + ";" + invitesTable + ";" + pushTables + ";" + streamKeysTable + ";" + categoriesTable + ";" + threadsTable + ";" + fediTables + ";" + pollsTables + ";" + logoTable); err != nil {
+	if _, err := db.Exec(schema + reactionsTable + ";" + statusTable + ";" + emojiTable + ";" + userEmojiTables + ";" + stickersTable + ";" + invitesTable + ";" + pushTables + ";" + streamKeysTable + ";" + categoriesTable + ";" + threadsTable + ";" + fediTables + ";" + pollsTables + ";" + logoTable + ";" + accountServersTable + ";" + oauthTables); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
@@ -1425,9 +1425,14 @@ func createAccount(db interface {
 const accountColumns = `a.id, a.name, a.password_hash, a.cert_pem, a.key_pem, a.created_at, a.temporary`
 
 func scanAccount(row interface{ Scan(...any) error }) (Account, error) {
+	return scanAccountWith(row)
+}
+
+// scanAccountWith reads an account and more columns after its own.
+func scanAccountWith(row interface{ Scan(...any) error }, more ...any) (Account, error) {
 	var a Account
 	var at int64
-	err := row.Scan(&a.ID, &a.Name, &a.PasswordHash, &a.CertPEM, &a.KeyPEM, &at, &a.Temporary)
+	err := row.Scan(append([]any{&a.ID, &a.Name, &a.PasswordHash, &a.CertPEM, &a.KeyPEM, &at, &a.Temporary}, more...)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Account{}, ErrNotFound
 	}

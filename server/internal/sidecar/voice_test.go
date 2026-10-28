@@ -3,6 +3,7 @@ package sidecar
 import (
 	"errors"
 	"fmt"
+	"kallisti.chat/server/internal/homes"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,9 +18,10 @@ import (
 
 // fakeVoice: session 1 may use every channel; session 2 not channel 9.
 type fakeVoice struct {
-	mu   sync.Mutex
-	sent []string
-	mods []uint32
+	mu    sync.Mutex
+	homes homes.Rules
+	sent  []string
+	mods  []uint32
 	// Admins besides user 7.
 	admins []uint32
 	// Text channel mirrors: the last sync, Mumble channels by name, and

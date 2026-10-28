@@ -14,6 +14,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,6 +64,9 @@ type Options struct {
 	// next failed ping). Long, so a page the system suspends for a while (a
 	// macOS app in the background, Android) keeps its session. 0: 2 minutes.
 	PingGrace time.Duration
+	// TokenEnded: the request brings a session token (not a cookie) that is
+	// no session any more (see auth.Service.TokenEnded).
+	TokenEnded func(r *http.Request) bool
 }
 
 // Upstream is who a connection is for.
@@ -218,6 +222,17 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(MaxPayload)
 
 	acc, isAccount := b.lookup(ws, r)
+	// A token that is no session (any more): the client asks for a login.
+	if !isAccount && b.opts.TokenEnded != nil && b.opts.TokenEnded(r) {
+		ws.Close(websocket.StatusPolicyViolation, "session expired")
+		return
+	}
+	// Guests only on our own pages and in the apps: else any site could
+	// make its visitors join (other sites connect with an account's token).
+	if !isAccount && !config.OwnSite(b.opts.AllowedOrigins, r.Header.Get("Origin")) {
+		ws.Close(websocket.StatusPolicyViolation, "join as a guest on the server's own site")
+		return
+	}
 	if isAccount {
 		defer func() {
 			b.mu.Lock()
@@ -244,6 +259,10 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case isAccount && name != names.Key(acc.Name):
 			reject(pb.Reject_InvalidUsername, "Use your account name, "+acc.Name+".")
+			return
+		case !isAccount && strings.Contains(name, "@"):
+			// name@host: an account from another server's (see names.Remote).
+			reject(pb.Reject_InvalidUsername, "Guests take names without @.")
 			return
 		case !isAccount && b.opts.IsAccountName != nil && b.opts.IsAccountName(name):
 			reject(pb.Reject_UsernameInUse, "This name belongs to an account. Log in to use it.")

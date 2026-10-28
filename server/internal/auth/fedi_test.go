@@ -66,6 +66,10 @@ func (b *browser) do(method, path string, body any) (*http.Response, map[string]
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// Back from the instance: a navigation from another site.
+	if strings.Contains(u, "/api/fedi/callback") {
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+	}
 	resp, err := b.c.Do(req)
 	if err != nil {
 		b.t.Fatal(err)
@@ -159,12 +163,20 @@ func TestFediStateIsChecked(t *testing.T) {
 	if sessionCookie(resp) != nil {
 		t.Fatal("a session without the state cookie")
 	}
-	// A wrong state in the right browser fails too, and ends the flow.
+	// A wrong or missing state in the right browser fails too, but leaves
+	// the flow alone (a link from anywhere cannot cancel a login); the real
+	// callback then works, once.
 	cb, _ := url.Parse(callback)
-	q := cb.Query()
-	q.Set("state", "wrong")
-	resp, _ = b.do("GET", srv.URL+"/api/fedi/callback?"+q.Encode(), nil)
-	wantRedirect(t, resp, home+"?fedi=error&reason=expired")
+	for _, state := range []string{"wrong", ""} {
+		q := cb.Query()
+		q.Set("state", state)
+		resp, _ = b.do("GET", srv.URL+"/api/fedi/callback?"+q.Encode(), nil)
+		wantRedirect(t, resp, home+"?fedi=error&reason=expired")
+	}
+	resp, _ = b.do("GET", callback, nil)
+	if loc := resp.Header.Get("Location"); strings.Contains(loc, "reason=expired") {
+		t.Fatalf("the real callback after a wrong one: %s", loc)
+	}
 	resp, _ = b.do("GET", callback, nil)
 	wantRedirect(t, resp, home+"?fedi=error&reason=expired")
 
@@ -567,5 +579,245 @@ func TestFediReauthExpiresAndNeedsALink(t *testing.T) {
 	}
 	if resp, _ := b.do("POST", "/api/password", map[string]any{"old": "longpassword", "new": "newpassword"}); resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("password change: %d", resp.StatusCode)
+	}
+}
+
+// A new account from a fediverse login is made on our own site only, as
+// other new accounts.
+func TestFediSignupOnlyOnTheOwnSite(t *testing.T) {
+	_, srv, _ := fediSetup(t, &fedifake.Instance{})
+	req, _ := http.NewRequest("POST", srv.URL+"/api/fedi/signup", strings.NewReader(`{"name":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://other.example")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("from another site: %d, want 403", resp.StatusCode)
+	}
+}
+
+// Cookies of the old path (/api/fedi) go when a flow starts: over plain
+// HTTP they have the same name and the browser sends them first.
+func TestFediStartRemovesOldPathCookies(t *testing.T) {
+	_, srv, inst := fediSetup(t, &fedifake.Instance{})
+	b := newBrowser(t, srv)
+	resp, _ := b.do("POST", "/api/fedi/start", map[string]any{"instance": inst})
+	gone := map[string]bool{}
+	for _, c := range resp.Cookies() {
+		if c.Path == fediPath && c.MaxAge < 0 {
+			gone[c.Name] = true
+		}
+	}
+	if !gone[stateCookie] || !gone[signupCookie] {
+		t.Fatalf("cookies %v", resp.Cookies())
+	}
+}
+
+// An admin's lists (see package homes): a blocked home server's accounts
+// cannot start a login, nor finish one started before the block.
+func TestFediLoginFromABlockedServer(t *testing.T) {
+	f := &fedifake.Instance{}
+	a, srv, instURL := fediSetup(t, f)
+	host := strings.TrimPrefix(instURL, "https://")
+	blocked := true
+	a.Fedi.AllowsHome = func(h string) bool { return !(blocked && h == host) }
+	b := newBrowser(t, srv)
+	if resp, v := b.do("POST", "/api/fedi/start", map[string]any{"instance": host}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("start: %d %v", resp.StatusCode, v)
+	}
+	blocked = false
+	resp, v := b.do("POST", "/api/fedi/start", map[string]any{"instance": host})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("start: %d %v", resp.StatusCode, v)
+	}
+	blocked = true
+	callback, err := f.Approve(v["url"].(string), "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, _ = b.do("GET", callback, nil)
+	wantRedirect(t, resp, srv.URL+"/?fedi=error&reason=blocked")
+}
+
+// Handoff (another server's page adds this one, in a popup): no cookie
+// here; the token once, for the provider's origin only.
+func TestFediHandoff(t *testing.T) {
+	f := &fedifake.Instance{}
+	_, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	b := newBrowser(t, srv)
+	handoff := func() map[string]any {
+		resp, v := b.do("POST", "/api/fedi/handoff", map[string]any{})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("handoff: %d %v", resp.StatusCode, v)
+		}
+		return v
+	}
+	session := func() bool {
+		_, v := b.do("GET", "/api/me", nil)
+		return v["name"] != nil
+	}
+	// A new account: the name first, then the token.
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host, "handoff": true}, "Alice"), home+"?fedi=register")
+	resp, v := b.do("POST", "/api/fedi/signup", map[string]any{"name": "alice"})
+	if resp.StatusCode != http.StatusCreated || v["handoff"] != true {
+		t.Fatalf("signup: %d %v", resp.StatusCode, v)
+	}
+	if session() {
+		t.Fatal("a handoff signup set a session cookie")
+	}
+	v = handoff()
+	if v["name"] != "alice" || v["origin"] != inst || v["token"] == "" {
+		t.Fatalf("handoff: %v", v)
+	}
+	// Once only.
+	if resp, _ := b.do("POST", "/api/fedi/handoff", map[string]any{}); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("a second handoff: %d", resp.StatusCode)
+	}
+	// The token is a session here.
+	req, _ := http.NewRequest("GET", srv.URL+"/api/me", nil)
+	req.Header.Set("Authorization", "Bearer "+v["token"].(string))
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("the token: %v %v", resp, err)
+	}
+	// A known account: back with the token at once, still no cookie.
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host, "handoff": true}, "Alice"), home+"?fedi=connect")
+	if session() {
+		t.Fatal("a handoff login set a session cookie")
+	}
+	if v := handoff(); v["name"] != "alice" {
+		t.Fatalf("handoff again: %v", v)
+	}
+	// Not with a link or a reauth.
+	if resp, _ := b.do("POST", "/api/fedi/start", map[string]any{"instance": host, "handoff": true, "link": true}); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("handoff and link: %d", resp.StatusCode)
+	}
+}
+
+// Without a name, the account gets its remote one (name@home, as the
+// fediverse writes it); taken: the name step.
+func TestFediSignupWithTheRemoteName(t *testing.T) {
+	f := &fedifake.Instance{}
+	a, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	b := newBrowser(t, srv)
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host}, "Alice"), home+"?fedi=register")
+	if _, v := b.do("GET", "/api/fedi/signup", nil); v["remote"] != "Alice@"+host {
+		t.Fatalf("signup info: %v", v)
+	}
+	resp, v := b.do("POST", "/api/fedi/signup", map[string]any{})
+	if resp.StatusCode != http.StatusCreated || v["name"] != "Alice@"+host {
+		t.Fatalf("signup: %d %v", resp.StatusCode, v)
+	}
+	// Named after its home: it stays linked.
+	if resp, _ := b.do("POST", "/api/fedi/unlink", map[string]any{}); resp.StatusCode != http.StatusConflict {
+		t.Fatalf("unlink of a remote name: %d", resp.StatusCode)
+	}
+	// Taken already (an account of that name from before): the name step.
+	a.Store.CreateAccount(store.Account{Name: "Bob@" + host, PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, time.Now())
+	b2 := newBrowser(t, srv)
+	wantRedirect(t, b2.fediFlow(f, map[string]any{"instance": host}, "Bob"), home+"?fedi=register")
+	if resp, _ := b2.do("POST", "/api/fedi/signup", map[string]any{}); resp.StatusCode != http.StatusConflict {
+		t.Fatalf("a taken remote name: %d", resp.StatusCode)
+	}
+	if resp, v := b2.do("POST", "/api/fedi/signup", map[string]any{"name": "bob2"}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("the name step: %d %v", resp.StatusCode, v)
+	}
+	// Names of here take no "@": nobody poses as a remote account.
+	if resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "bob@" + host, "password": "longpassword"}, nil); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a local name with @: %d", resp.StatusCode)
+	}
+}
+
+// A known account's confirmed home domain counts for the block list, also
+// when today's handle lookup gives only the instance's host.
+func TestFediBlockUsesTheKnownDomain(t *testing.T) {
+	f := &fedifake.Instance{}
+	a, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	b := newBrowser(t, srv)
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host}, "Alice"), home+"?fedi=register")
+	b.do("POST", "/api/fedi/signup", map[string]any{})
+	b.do("POST", "/api/logout", map[string]any{})
+	acc, _ := a.Store.AccountByName("Alice@" + host)
+	id, _ := a.Store.FediIdentityOf(acc.ID)
+	a.Store.UpdateFediHandle(id.Host, id.RemoteID, "@alice@blocked.example") // confirmed at an earlier login
+	a.Fedi.AllowsHome = func(h string) bool { return h != "blocked.example" }
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host}, "Alice"), home+"?fedi=error&reason=blocked")
+	if id, _ := a.Store.FediIdentityOf(acc.ID); id.Handle != "@alice@blocked.example" {
+		t.Fatalf("the confirmed handle changed: %q", id.Handle)
+	}
+}
+
+// Blocking a home server ends the logins of the accounts that log in only
+// with it (their connections too); others stay.
+func TestEndBlockedHomes(t *testing.T) {
+	f := &fedifake.Instance{}
+	a, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	b := newBrowser(t, srv)
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host}, "Alice"), home+"?fedi=register")
+	if resp, v := b.do("POST", "/api/fedi/signup", map[string]any{"name": "alice"}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("signup: %d %v", resp.StatusCode, v)
+	}
+	loggedIn := func() bool {
+		_, v := b.do("GET", "/api/me", nil)
+		return v["name"] == "alice"
+	}
+	var revoked []int64
+	a.Revoke = func(match func(int64, string) bool) {
+		for id := int64(1); id < 10; id++ {
+			if match(id, "") {
+				revoked = append(revoked, id)
+			}
+		}
+	}
+	// An account with a password, linked to the same home: it stays.
+	now := time.Now()
+	bob, _ := a.Store.CreateAccount(store.Account{Name: "bob", PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, now)
+	a.Store.CreateSession(tokenHash("bob"), bob.ID, now.Add(time.Hour))
+	if err := a.Store.LinkFedi(bob.ID, tokenHash("bob"), store.FediIdentity{Host: host, RemoteID: "bob-id", Handle: "@bob@" + host}, now); err != nil {
+		t.Fatal(err)
+	}
+	var keysEnded []string
+	a.StreamKeyChanged = func(name string) { keysEnded = append(keysEnded, name) }
+	blocked := false
+	a.Fedi.AllowsHome = func(h string) bool { return !(blocked && h == host) }
+	a.EndBlockedHomes()
+	if !loggedIn() || len(revoked) != 0 {
+		t.Fatalf("not blocked: logged in %v, revoked %v", loggedIn(), revoked)
+	}
+	blocked = true
+	a.EndBlockedHomes()
+	if loggedIn() || len(revoked) != 1 {
+		t.Fatalf("blocked: logged in %v, revoked %v", loggedIn(), revoked)
+	}
+	if len(keysEnded) != 1 || keysEnded[0] != "alice" {
+		t.Fatalf("stream keys ended: %v", keysEnded)
+	}
+	if _, err := a.Store.AccountBySession(tokenHash("bob"), time.Now()); err != nil {
+		t.Fatalf("the account with a password was logged out: %v", err)
+	}
+}
+
+// A handoff waiting when the admins block its home server is not taken.
+func TestFediHandoffAfterABlock(t *testing.T) {
+	f := &fedifake.Instance{}
+	a, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	blocked := false
+	a.Fedi.AllowsHome = func(h string) bool { return !(blocked && h == host) }
+	b := newBrowser(t, srv)
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host, "handoff": true}, "Alice"), home+"?fedi=register")
+	if resp, v := b.do("POST", "/api/fedi/signup", map[string]any{"name": "alice"}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("signup: %d %v", resp.StatusCode, v)
+	}
+	blocked = true
+	if resp, v := b.do("POST", "/api/fedi/handoff", map[string]any{}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("handoff after the block: %d %v", resp.StatusCode, v)
 	}
 }

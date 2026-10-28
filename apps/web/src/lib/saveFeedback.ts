@@ -74,6 +74,7 @@ export const confirmsManage = (a: ManageAction): ((ev: ServerEvent) => boolean) 
   if ("serverName" in a) return (ev) => ev.type === "server-name" && ev.name === a.serverName.trim();
   if ("removeLogo" in a) return (ev) => ev.type === "logo" && ev.version === "";
   if ("setMessageRules" in a || "messageRules" in a) return is("message-rules");
+  if ("setHomeServers" in a || "homeServers" in a) return is("home-servers");
   if ("setPrivate" in a) return (ev) => ev.type === "private" && ev.channels.some((c) => c.channel === a.setPrivate) === a.on;
   if ("createPrivateVoice" in a) return is("private");
   if ("invites" in a || "deleteInvite" in a) return is("invites");

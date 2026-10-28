@@ -27,6 +27,7 @@
     rulesFrom,
     type MessageRules,
   } from "../lib/messageRules";
+  import { homeServersFrom, type HomeServers } from "../lib/homeServers";
   import { describeRecording, type FinishedRecording } from "../lib/recording";
   import { busyLabel } from "../lib/saveFeedback";
   import { createSave } from "../lib/saveFeedback.svelte";
@@ -67,6 +68,9 @@
     messageRules = null,
     onLoadMessageRules,
     onSaveMessageRules,
+    homeServers = null,
+    onLoadHomeServers,
+    onSaveHomeServers,
     recordings = null,
     recording = [],
     onLoadRecordings,
@@ -114,6 +118,11 @@
     messageRules?: MessageRules | null;
     onLoadMessageRules?: () => void;
     onSaveMessageRules?: (rules: MessageRules) => Promise<void>;
+    // Admins: which other servers' accounts log in (null: not loaded yet);
+    // without onLoadHomeServers, not shown.
+    homeServers?: HomeServers | null;
+    onLoadHomeServers?: () => void;
+    onSaveHomeServers?: (homes: HomeServers) => Promise<void>;
     // Staff: the finished recordings (null: not loaded yet), asked for
     // again when a recording starts or stops (recording: the recorded
     // channels); without onLoadRecordings, no tab.
@@ -141,6 +150,7 @@
     captcha: createSave(),
     archive: createSave(),
     rules: createSave(),
+    homes: createSave(),
   };
   const setGuests = (el: HTMLInputElement) =>
     onGuestsReadOnly && saves.guests.run(() => onGuestsReadOnly(el.checked), () => (el.checked = guestsReadOnly === true));
@@ -206,6 +216,21 @@
     rulesDomains = formatList(messageRules.domains);
     rulesReplacements = formatReplacements(messageRules.replacements);
   });
+  // Which other servers' accounts log in: loaded with the server tab.
+  $effect(() => {
+    if (tab === "server") untrack(() => onLoadHomeServers)?.();
+  });
+  let homesMode = $state<HomeServers["mode"]>("all");
+  let homesHosts = $state("");
+  $effect(() => {
+    if (!homeServers) return;
+    homesMode = homeServers.mode;
+    homesHosts = homeServers.hosts.join("\n");
+  });
+  const saveHomes = (e: SubmitEvent) => {
+    e.preventDefault();
+    if (onSaveHomeServers) saves.homes.run(() => onSaveHomeServers(homeServersFrom(homesMode, homesHosts)));
+  };
   const saveRules = (e: SubmitEvent) => {
     e.preventDefault();
     rulesError = minutesError(rulesMinutes);
@@ -305,6 +330,35 @@
         The logo: a square picture (PNG, JPEG, GIF or WebP, at most 2 MB; the middle of others). In the top left, as the tab's icon,
         on the login page and as the installed app's icon (installed apps may show a new one only later).
       </p>
+    {/if}
+    {#if onLoadHomeServers}
+      <h3>Accounts from other servers</h3>
+      {#if homeServers === null}
+        <p class="note">Loading…</p>
+      {:else}
+        <form class="rules" onsubmit={saveHomes}>
+          <label>
+            Who may log in with an account from another server
+            <select bind:value={homesMode}>
+              <option value="all">Accounts from all servers</option>
+              <option value="block">All but the servers below</option>
+              <option value="allow">Only the servers below</option>
+            </select>
+          </label>
+          {#if homesMode !== "all"}
+            <label for="home-hosts">Servers, one address per line</label>
+            <textarea id="home-hosts" rows="4" bind:value={homesHosts} placeholder="chat.example.org"></textarea>
+          {/if}
+          <div class="row">
+            <button type="submit" disabled={saves.homes.busy}>{busyLabel(saves.homes.state, "Save")}</button>
+            <SaveStatus save={saves.homes.state} />
+          </div>
+        </form>
+        <p class="note">
+          Another Kallisti server or a fediverse server (Mastodon and others) where the account lives. Accounts that log in only
+          with a server you exclude are logged out here when you save.
+        </p>
+      {/if}
     {/if}
   {:else if tab === "guests"}
     <label class="check">

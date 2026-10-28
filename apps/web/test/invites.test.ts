@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inviteExpiry, inviteLink, invitePlace, inviteUses, parseInviteLink } from "../src/lib/invites";
+import { inviteExpiry, inviteLink, inviteOf, invitePlace, inviteRoute, inviteUses, parseInviteLink } from "../src/lib/invites";
 import { initialTextState, manageRequest, parseServerEvent, reduceText } from "../src/lib/textChannels";
 
 const token = "AbC-_123456789012345678901234567";
@@ -72,5 +72,28 @@ describe("invite events", () => {
     expect(JSON.parse(manageRequest({ createInvite: 11, seconds: 86400, uses: 5 }))).toEqual({ type: "create-invite", voice: 11, seconds: 86400, uses: 5 });
     expect(JSON.parse(manageRequest({ deleteInvite: 3 }))).toEqual({ type: "delete-invite", invite: 3 });
     expect(JSON.parse(manageRequest({ redeemInvite: token }))).toEqual({ type: "redeem-invite", token });
+  });
+});
+
+describe("an invite link of any server", () => {
+  it("gives the server's origin and the token", () => {
+    const token = "abcdefghij0123456789xyz";
+    expect(inviteOf(`https://chat.other.org/invite/${token}`)).toEqual({ origin: "https://chat.other.org", token });
+    expect(inviteOf(`http://127.0.0.1:18800/invite/${token}`)).toEqual({ origin: "http://127.0.0.1:18800", token });
+    for (const bad of ["https://x.org/invite/short", `ftp://x.org/invite/${token}`, `http://x.org/invite/${token}`, `https://x.org/other/${token}`, "not a url", `https://x.org/invite/${token}/more`]) {
+      expect(inviteOf(bad), bad).toBeNull();
+    }
+  });
+});
+
+describe("where an invite leads", () => {
+  it("the home server, a server here, its login, the add dialog, or nothing for guests", () => {
+    const home = "https://home.example";
+    expect(inviteRoute("https://home.example", home, undefined, true)).toBe("home");
+    expect(inviteRoute("https://b.example", home, { session: true }, false)).toBe("show");
+    expect(inviteRoute("https://b.example", home, { session: false }, false)).toBe("login");
+    expect(inviteRoute("https://b.example", home, undefined, false)).toBe("add");
+    expect(inviteRoute("https://b.example", home, undefined, true)).toBeNull();
+    expect(inviteRoute("https://b.example", home, { session: true }, true)).toBe("show");
   });
 });

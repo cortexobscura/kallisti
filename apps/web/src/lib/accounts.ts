@@ -4,12 +4,14 @@
 // is third-party there): it keeps the server's token and sends it.
 import type { Challenge, Proof } from "./captcha";
 import type { FediLink } from "./fedi";
+import { type SavedServer, savedServers } from "./serverList";
 
 // A logged-in account; temporary: a guest account without a password (the
 // server deletes it after a day without a visit). password false: made
 // with a fediverse login, no password yet (undefined: not known). fedi:
 // the linked fediverse account.
-export type Account = { name: string; temporary: boolean; password?: boolean; fedi?: FediLink | null };
+// session: a short name of this login (see the server's sessionID).
+export type Account = { name: string; temporary: boolean; password?: boolean; fedi?: FediLink | null; session?: string };
 
 // An answer the server refused, with its status.
 class ApiError extends Error {
@@ -24,9 +26,15 @@ class ApiError extends Error {
 
 export type SessionStore = { get: () => string | null; set: (token: string | null) => void };
 
+// A token kept in memory only.
+export const memoryStore = (token: string | null = null): SessionStore => ({ get: () => token, set: (t) => void (token = t) });
+
 export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, session?: SessionStore) => {
   type Answer = { name?: string; mumble?: boolean; temporary?: boolean; token?: string } & Partial<Challenge> &
-    Partial<StreamKey> & { key?: string; url?: string; handle?: string; password?: boolean; fedi?: FediLink };
+    Partial<StreamKey> & { key?: string; url?: string; handle?: string; password?: boolean; fedi?: FediLink; session?: string };
+  const clearIf = (token: string | null | undefined) => {
+    if (session && session.get() === token) session.set(null);
+  };
   const call = async (path: string, body?: unknown, method = body === undefined ? "GET" : "POST"): Promise<Answer> => {
     const token = session?.get();
     const headers: Record<string, string> = {
@@ -42,11 +50,20 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       ...(body !== undefined && { body: JSON.stringify(body) }),
     });
     const data = (await res.json().catch(() => ({}))) as Answer & { error?: string; code?: string };
-    // The server no longer knows the token (not: a wrong password).
-    if (res.status === 401 && path === "/api/me") session?.set(null);
+    // The server no longer knows the token (not: a wrong password); only
+    // if it is still the one sent (a new login may have come meanwhile).
+    if (res.status === 401 && path === "/api/me") clearIf(token);
     if (!res.ok) throw new ApiError(data.error ?? `request failed (${res.status})`, res.status, data.code);
     if (data.token) session?.set(data.token);
     return data;
+  };
+  const check = async (): Promise<Account | null | "unknown"> => {
+    try {
+      const data = await call("/api/me");
+      return data.name ? { name: data.name, temporary: data.temporary === true, password: data.password, fedi: data.fedi, session: data.session } : null;
+    } catch (err) {
+      return err instanceof ApiError && err.status === 401 ? null : "unknown";
+    }
   };
   return {
     // The server's address (for pictures from it: see lib/serverLogo).
@@ -77,14 +94,22 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       }
     },
     // false: the server did not confirm (the session cookie may remain).
-    logout: async () =>
-      call("/api/logout", {}).then(
-        () => (session?.set(null), true),
-        () => false,
-      ),
+    // The token goes only if it is still the one logged out. expected: the
+    // login meant (its fingerprint, and the account's name: a guest has no
+    // fingerprint); "other": another login is active here now (the server
+    // refused to end it).
+    logout: async (expected: { session?: string; name?: string } = {}): Promise<boolean | "other"> => {
+      const token = session?.get();
+      const body = { ...(expected.session && { session: expected.session }), ...(expected.name && { name: expected.name }) };
+      return call("/api/logout", body).then(
+        () => (clearIf(token), true),
+        (err) => (err instanceof ApiError && err.status === 409 ? "other" : false),
+      );
+    },
     logoutAll: async () => {
+      const token = session?.get();
       await call("/api/logout-all", {});
-      session?.set(null);
+      clearIf(token);
     },
     changePassword: async (old: string, next: string) => {
       await call("/api/password", { old, new: next });
@@ -96,6 +121,22 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       const data = await call("/api/stream-key").catch(() => ({}) as Answer);
       return { enabled: data.enabled === true, exists: data.exists === true };
     },
+    // The home account's list of the servers it joined (the rail; not for
+    // guests). account: the one meant (another login here now: refused).
+    servers: async (account: string) =>
+      savedServers(((await call(`/api/servers?account=${encodeURIComponent(account)}`)) as { servers?: unknown }).servers),
+    addServer: async (server: SavedServer, account: string) => void (await call("/api/servers", { ...server, account })),
+    removeServer: async (origin: string, account: string) => void (await call("/api/servers", { origin, account }, "DELETE")),
+    // Another server asks who you are (Kallisti as a login provider): the
+    // question for this authorize query, and the answer (where to go).
+    oauthRequest: async (query: string) =>
+      (await call(`/api/oauth/request?${query}`)) as { site: string; account: string; deny: string; ticket: string },
+    // The answer is for exactly the request shown (its ticket).
+    oauthApprove: async (ticket: string) => ((await call("/api/oauth/approve", { ticket })) as { redirect: string }).redirect,
+    // The sites this account allowed to log in with it (only on its own
+    // site); one taken back asks again next time.
+    allowedSites: async () => ((await call("/api/oauth/grants")) as { sites?: AllowedSite[] }).sites ?? [],
+    revokeSite: async (redirect: string) => void (await call("/api/oauth/grants", { redirect }, "DELETE")),
     // A new key (the old one stops working): shown this once.
     newStreamKey: async () => (await call("/api/stream-key", {})).key ?? "",
     removeStreamKey: async () => {
@@ -113,16 +154,21 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     fediEnabled: async () => (await call("/api/fedi").catch(() => ({}) as Answer & { enabled?: boolean })).enabled === true,
     // The instance's page to go to, for a login (or a link: with the
     // account's password, "" for one without).
-    fediStart: async (instance: string, linkPassword?: string) => {
-      const { url } = await call("/api/fedi/start", { instance, ...(linkPassword !== undefined && { link: true, password: linkPassword }) });
+    fediStart: async (instance: string, linkPassword?: string, handoff = false) => {
+      const { url } = await call("/api/fedi/start", {
+        instance,
+        ...(linkPassword !== undefined && { link: true, password: linkPassword }),
+        ...(handoff && { handoff: true }),
+      });
       if (!url) throw new Error("No answer from the server. Please try again.");
       return url;
     },
     // After a login with an unlinked fediverse account: the suggested name
     // and the handle; null: none (expired).
-    fediSignup: async (): Promise<{ name: string; handle: string } | null> => {
-      const data = await call("/api/fedi/signup").catch(() => null);
-      return data ? { name: data.name ?? "", handle: data.handle ?? "" } : null;
+    // remote: the name the account gets (name@home), unless it is taken.
+    fediSignup: async (): Promise<{ name: string; handle: string; remote: string } | null> => {
+      const data = (await call("/api/fedi/signup").catch(() => null)) as (Answer & { remote?: string }) | null;
+      return data ? { name: data.name ?? "", handle: data.handle ?? "", remote: data.remote ?? "" } : null;
     },
     // A fresh login with the linked account, for the first password.
     fediReauth: async (instance: string) => {
@@ -130,7 +176,13 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       if (!url) throw new Error("No answer from the server. Please try again.");
       return url;
     },
-    fediCreate: async (name: string, proof?: Proof) => (await call("/api/fedi/signup", { name, ...proof })).name ?? name,
+    // handoff: its token waits for the popup (see Connect), no session here.
+    fediCreate: async (name: string, proof?: Proof) => {
+      const data = (await call("/api/fedi/signup", { name, ...proof })) as Answer & { handoff?: boolean };
+      return { name: data.name ?? name, handoff: data.handoff === true };
+    },
+    // A handoff's token, once: for the provider's origin (see Connect).
+    fediHandoff: async () => (await call("/api/fedi/handoff", {})) as { token: string; name: string; origin: string },
     fediUnlink: async () => {
       await call("/api/fedi/unlink", {});
     },
@@ -139,13 +191,12 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     },
     // The logged-in account, or null (also for servers without accounts).
     me: async (): Promise<Account | null> => {
-      try {
-        const data = await call("/api/me");
-        return data.name ? { name: data.name, temporary: data.temporary === true, password: data.password, fedi: data.fedi } : null;
-      } catch {
-        return null;
-      }
+      const result = await check();
+      return result === "unknown" ? null : result;
     },
+    // The same, telling "no login" (null) from "unknown" (the server or the
+    // network failed): only a sure answer may end what goes with a login.
+    check,
   };
 };
 
@@ -166,6 +217,10 @@ export const modeForError = (error: string | null): "guest" | "login" =>
 
 // What a logged-in user can do from the settings (temporary: a guest
 // account, which gets its first password without an old one).
+// A site the account allowed (Kallisti as a login provider): its origin,
+// the redirect URI it was allowed for, since when (RFC 3339).
+export type AllowedSite = { site: string; redirect: string; since: string };
+
 export type AccountActions = {
   temporary: boolean;
   logout: () => Promise<void>;
@@ -189,4 +244,11 @@ export type AccountActions = {
   // A fresh login with the linked account (goes to the instance, and back
   // to the settings), needed for the first password.
   fediReauth: () => Promise<void>;
+  // The sites allowed to log in with this account (undefined: not here,
+  // only on its home server's own site).
+  sites?: { list: () => Promise<AllowedSite[]>; revoke: (redirect: string) => Promise<void> };
 };
+
+// The API of another server, with this login's own token (not the cookie).
+export const apiWithToken = (origin: string, token: string | null, fetchFn: typeof fetch = fetch) =>
+  createAccountsApi(origin, fetchFn, memoryStore(token));

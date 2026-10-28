@@ -22,6 +22,16 @@ describe("mentions", () => {
     expect(mentions("a&amp;@lain", "lain")).toBe(false);
   });
 
+  it("tells a name here from another server's account of it", () => {
+    expect(mentions("@lain@chat.example hi", "lain")).toBe(false);
+    expect(mentions("@lain. hi", "lain")).toBe(true);
+    expect(mentions("hi @lain@chat.example", "lain@chat.example")).toBe(true);
+    expect(mentions("@lain@chat.example.org", "lain@chat.example")).toBe(false);
+    expect(highlightMentions("@lain@chat.example and @lain", "me", undefined, ["lain", "lain@chat.example"])).toBe(
+      '<span class="mention">@lain@chat.example</span> and <span class="mention">@lain</span>',
+    );
+  });
+
   it("never counts our own messages", () => {
     expect(mentionsMe("@lain hi", "bob", "lain")).toBe(true);
     expect(mentionsMe("@lain hi", "Lain", "lain")).toBe(false);

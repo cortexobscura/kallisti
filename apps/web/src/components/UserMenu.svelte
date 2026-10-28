@@ -1,4 +1,5 @@
 <script lang="ts">
+  import UserName from "./UserName.svelte";
   import type { Role } from "../lib/roles";
   import type { User } from "@kallisti/protocol";
   import type { UserStatus } from "../lib/presence";
@@ -99,7 +100,7 @@
   <div class="who">
     <Avatar name={user.name} size={32} status={status?.presence} registered={byId} />
     <span class="names">
-      <span class="line"><span>{user.name}</span><RoleTag {role} /></span>
+      <span class="line"><span><UserName name={user.name} /></span><RoleTag {role} /></span>
       {#if handle}
         <span class="handle" title="Verified: linked with a fediverse login"><span aria-hidden="true">✓</span> {handle}</span>
       {/if}

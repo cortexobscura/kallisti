@@ -78,8 +78,11 @@ func ParseInstance(input string, dev bool) (Instance, error) {
 	if port != "" && port != "443" {
 		return Instance{}, ErrInstance
 	}
-	host, err = idna.Lookup.ToASCII(strings.TrimSuffix(host, "."))
-	if err != nil || !strings.Contains(host, ".") || strings.Contains(host, "..") || net.ParseIP(host) != nil || len(host) > 253 {
+	// IDNA first (it maps other full stops to "."), then one root dot.
+	host, err = idna.Lookup.ToASCII(host)
+	host = strings.TrimSuffix(host, ".")
+	if err != nil || !strings.Contains(host, ".") || strings.Contains(host, "..") || strings.HasSuffix(host, ".") ||
+		net.ParseIP(host) != nil || len(host) > 253 {
 		return Instance{}, ErrInstance
 	}
 	return Instance{Host: host, Base: "https://" + host}, nil
@@ -358,7 +361,7 @@ func (c *Client) VerifyCredentials(ctx context.Context, inst Instance, token str
 	if json.Unmarshal(a.ID, &id) != nil && numericID.Match(a.ID) {
 		id = string(a.ID)
 	}
-	if !remoteID.MatchString(id) || !validUsername(a.Username) {
+	if !remoteID.MatchString(id) || !ValidUsername(a.Username) {
 		return Account{}, fmt.Errorf("%w: unexpected account", ErrUnreachable)
 	}
 	avatar := a.AvatarStatic
@@ -405,9 +408,9 @@ func (c *Client) Avatar(ctx context.Context, avatarURL string) ([]byte, error) {
 	return avatarimg.Make(body)
 }
 
-// validUsername: user names as instances make them (letters, digits, _ . -),
+// ValidUsername: user names as instances make them (letters, digits, _ . -),
 // nothing to mislead in a handle (spaces, @, control or format characters).
-func validUsername(s string) bool {
+func ValidUsername(s string) bool {
 	if s == "" || len(s) > 64 {
 		return false
 	}

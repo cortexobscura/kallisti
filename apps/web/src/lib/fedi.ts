@@ -3,7 +3,8 @@
 // for errors, a reason code. Only known codes become text: the address
 // can be made by anyone.
 
-export type FediResult = { kind: "register" } | { kind: "linked" | "reauth" | "error"; text: string };
+// connect: a handoff's token waits (see Connect).
+export type FediResult = { kind: "register" | "connect" } | { kind: "linked" | "reauth" | "error"; text: string };
 
 const REASONS: Record<string, string> = {
   expired: "The fediverse login expired or was started elsewhere. Please try again.",
@@ -11,6 +12,7 @@ const REASONS: Record<string, string> = {
   unreachable: "Could not check the login with the fediverse server. Please try again.",
   taken: "This fediverse account is linked to another account already.",
   other: "That is not the fediverse account linked to your account.",
+  blocked: "This server does not take logins from that server.",
 };
 const FAILED = "The fediverse login did not work. Please try again.";
 
@@ -19,6 +21,8 @@ export const fediResult = (search: string): FediResult | null => {
   switch (q.get("fedi")) {
     case "register":
       return { kind: "register" };
+    case "connect":
+      return { kind: "connect" };
     case "linked":
       return { kind: "linked", text: "Fediverse account linked: you can log in with it now." };
     // A fresh login for the first password (see SettingsDialog).

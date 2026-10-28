@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadSelfState, micWanted, saveSelfState, soundHint } from "../src/lib/voice";
+import { loadSelfState, micWanted, saveSelfState, soundHint, voiceJoined } from "../src/lib/voice";
 
 describe("micWanted", () => {
   const s = { inVoice: true, selfMute: false, settingsOpen: false, closeWhenMuted: false };
@@ -51,5 +51,18 @@ describe("soundHint", () => {
     expect(soundHint("running", true)).toBe(false);
     expect(soundHint("closed", true)).toBe(false);
     expect(soundHint(null, true)).toBe(false);
+  });
+});
+
+describe("one voice channel across servers", () => {
+  it("the server that joined last stays (the others leave once)", () => {
+    expect(voiceJoined([], ["home"])).toBe("home");
+    expect(voiceJoined(["home"], ["home"])).toBeNull();
+    expect(voiceJoined(["home"], ["home", "b"])).toBe("b");
+    // Until the server answers, both are in voice: no second leave, no flip.
+    expect(voiceJoined(["home", "b"], ["home", "b"])).toBeNull();
+    expect(voiceJoined(["home", "b"], ["b"])).toBeNull();
+    // Two at once (a reload restoring both): the last one stays.
+    expect(voiceJoined([], ["home", "b"])).toBe("b");
   });
 });

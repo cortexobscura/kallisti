@@ -21,7 +21,8 @@ import (
 // "@" plus the whole name, any case, after a space (as JavaScript's \s) or
 // an opening mark.
 func mentionPattern(name string) *regexp.Regexp {
-	return regexp.MustCompile(`(?i)(?:^|[\s\v\p{Z}\x{FEFF}(\[{,:])@` + regexp.QuoteMeta(name) + `(?:$|[^\p{L}\p{N}_-])`)
+	// Not followed by "@host": that is another server's account of the name.
+	return regexp.MustCompile(`(?i)(?:^|[\s\v\p{Z}\x{FEFF}(\[{,:])@` + regexp.QuoteMeta(name) + `(?:$|[^\p{L}\p{N}_@.-]|[@.](?:$|[^\p{L}\p{N}]))`)
 }
 
 func mentionsName(text, name string) bool { return mentionPattern(name).MatchString(text) }

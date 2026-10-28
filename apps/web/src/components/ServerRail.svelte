@@ -1,18 +1,38 @@
 <script lang="ts">
   import { initials } from "../lib/avatar";
 
-  // logo: the server's logo (null: its initials).
-  let { serverName, logo = null }: { serverName: string; logo?: string | null } = $props();
+  // A server in the rail: logo null shows its initials; mentions (a red
+  // count) and unread (a dot) when it is not on screen.
+  export type RailServer = { id: string; name: string; logo: string | null; active: boolean; mentions?: number; unread?: boolean };
+
+  // Several servers in one client (see lib/serverList): a click shows one,
+  // (+) adds one; without onAdd, no (+).
+  let { servers, onSelect, onAdd }: { servers: readonly RailServer[]; onSelect?: (id: string) => void; onAdd?: () => void } = $props();
 </script>
 
 <nav class="rail" aria-label="Servers">
-  <div class="item">
-    <span class="pill active" aria-hidden="true"></span>
-    <button class="server active" title={serverName} aria-current="true">
-      {#if logo}<img src={logo} alt="" />{:else}{initials(serverName)}{/if}
-    </button>
-  </div>
-  <!-- Adding other servers comes later (meta/issues/multiple-servers.md). -->
+  {#each servers as s (s.id)}
+    {@const mentions = s.active ? 0 : (s.mentions ?? 0)}
+    <div class="item">
+      <span class="pill" class:active={s.active} class:unread={!s.active && s.unread} aria-hidden="true"></span>
+      <button
+        class="server"
+        class:active={s.active}
+        title={s.name}
+        aria-label={mentions ? `${s.name}, ${mentions} unread ${mentions === 1 ? "mention or direct message" : "mentions or direct messages"}` : !s.active && s.unread ? `${s.name}, unread messages` : s.name}
+        aria-current={s.active ? "true" : undefined}
+        onclick={() => onSelect?.(s.id)}
+      >
+        {#if s.logo}<img src={s.logo} alt="" />{:else}{initials(s.name)}{/if}
+      </button>
+      {#if mentions}<span class="badge" aria-hidden="true">{mentions > 99 ? "99+" : mentions}</span>{/if}
+    </div>
+  {/each}
+  {#if onAdd}
+    <div class="item">
+      <button class="server add" title="Add a server" aria-label="Add a server" onclick={onAdd}>+</button>
+    </div>
+  {/if}
 </nav>
 
 <style>
@@ -53,6 +73,28 @@
     height: 40px;
     opacity: 1;
   }
+  .pill.unread {
+    opacity: 1;
+  }
+  /* The red count of mentions, at the icon's lower right. */
+  .badge {
+    position: absolute;
+    right: 12px;
+    bottom: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border: 3px solid var(--bg-rail);
+    border-radius: 8px;
+    box-sizing: content-box;
+    background: #c62f32; /* in both themes: white on it is readable */
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    pointer-events: none;
+  }
   .server {
     width: 40px;
     height: 40px;
@@ -71,6 +113,11 @@
     height: 100%;
     border-radius: inherit;
     object-fit: cover;
+  }
+  .add {
+    color: var(--accent);
+    font-size: 22px;
+    font-weight: 400;
   }
   .server.active,
   .server:hover:not(:disabled) {

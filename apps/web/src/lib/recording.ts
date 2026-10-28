@@ -1,4 +1,4 @@
-import { may, Perm, type ServerState } from "@kallisti/protocol";
+import { may, Perm, selfOf, type ServerState } from "@kallisti/protocol";
 import { formatDuration } from "./media";
 import { roleOf } from "./roles";
 import type { TextState } from "./textChannels";
@@ -45,7 +45,7 @@ export const parseRecordings = (v: unknown): FinishedRecording[] | null => {
 // Admins and moderators record (as the server's isStaff), if the server
 // records at all.
 export const mayRecord = (server: ServerState, text: TextState) => {
-  const userId = server.session === null ? null : (server.users[server.session]?.userId ?? null);
+  const userId = selfOf(server)?.userId ?? null;
   return text.recording !== null && (may(server, 0, Perm.Write) || roleOf(text.roles, userId) !== null);
 };
 

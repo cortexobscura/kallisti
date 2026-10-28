@@ -28,3 +28,7 @@ there and could come to main on their own (cherry-picks, checked again):
 
 - Each brought over in its own commit with its tests, reviewed again
   (Claude and Astra).
+
+## Result (2026-10-28)
+
+Done by the merge of the branch to main (no cherry-picks).

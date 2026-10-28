@@ -1,4 +1,5 @@
 <script lang="ts">
+  import UserName from "./UserName.svelte";
   import { autosize } from "../lib/autosize";
   import { afterImageError, asSpoiler, attachmentView, chatSrc, imageBox, lightboxOf } from "../lib/media";
   import { emojiImages } from "../lib/emojiImages.svelte";
@@ -96,6 +97,7 @@
     onEndPoll,
     onMenu,
     menuOpen = false,
+    lost = false,
     onHoldTalk,
     talking = false,
     onSend,
@@ -167,6 +169,9 @@
     // Phones: open the channel list, and push-to-talk as a hold button.
     onMenu?: () => void;
     menuOpen?: boolean;
+    // The connection is lost: only the menu (to the rail) and the title
+    // take input (the rest would be lost).
+    lost?: boolean;
     onHoldTalk?: (down: boolean) => void;
     // Really sending (also false after a window blur released the key).
     talking?: boolean;
@@ -643,8 +648,8 @@
   const canReply = $derived((stored || kind === "text") && !!onSend);
   const canReact = $derived(canReply && !!onReact && myId !== null);
   let picking = $state<number | null>(null);
-  const inLine = (id: number | null, selector: string) =>
-    document.querySelector<HTMLElement>(`[data-message="${id}"] ${selector}`);
+  // In this pane (another server's hidden client may have the same ids).
+  const inLine = (id: number | null, selector: string) => list?.querySelector<HTMLElement>(`[data-message="${id}"] ${selector}`);
   const openPicker = async (id: number) => {
     picking = id;
     await tick();
@@ -718,7 +723,7 @@
   };
   // After Info from the phone sheet, the focus goes back to the message.
   const closeInfo = () => {
-    const line = document.querySelector<HTMLElement>(`li[data-message="${infoFor}"]`);
+    const line = list?.querySelector<HTMLElement>(`li[data-message="${infoFor}"]`);
     infoFor = null;
     if (line && !line.contains(document.activeElement)) {
       line.tabIndex = -1;
@@ -1000,7 +1005,7 @@
   <header>
     {#if parts.searchIcon && searching}
       <button class="back" onclick={closeSearch} title="Close search" aria-label="Close search"><Icon name="back" size={22} /></button>
-      {@render searchForm()}
+      <div class="search-wrap" inert={lost}>{@render searchForm()}</div>
     {:else}
     {#if onMenu}
       <button class="menu" onclick={onMenu} aria-label="Channels" aria-expanded={menuOpen}>
@@ -1027,7 +1032,7 @@
       <span class="divider-v" aria-hidden="true"></span>
       <span class="topic ellipsis" title={topic}>{topic}</span>
     {/if}
-    <div class="tools">
+    <div class="tools" inert={lost}>
       {#if parts.searchBox}
         {@render searchForm()}
       {/if}
@@ -1072,6 +1077,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="scroller"
+    inert={lost}
     bind:this={list}
     onscroll={trackBottom}
     onkeydown={(e) => {
@@ -1148,6 +1154,7 @@
   {#if onHoldTalk}
     <button
       class="hold"
+      inert={lost}
       class:held={talking}
       onpointerdown={(e) => {
         if (e.button !== 0) return;
@@ -1162,7 +1169,7 @@
       {talking ? "Talking…" : "Hold to talk"}
     </button>
   {/if}
-  <form class="send" onsubmit={submit}>
+  <form class="send" inert={lost} onsubmit={submit}>
     {#if away}
       <div class="present">
         <span
@@ -1375,6 +1382,8 @@
   </form>
 </main>
 
+<!-- Menus, sheets and pickers act on the connection: none while it is lost. -->
+<div class="overlays" inert={lost}>
 {#if emojiMenu}
   <EmojiMenu {...emojiMenu} onAdd={onAddEmoji} onRemove={onRemoveEmoji} onClose={() => (emojiMenu = null)} />
 {/if}
@@ -1420,9 +1429,6 @@
     onClose={() => ((allEmoji = null), inLine(id, '[aria-label="More emoji"]')?.focus())}
   />
 {/if}
-{#if notice.n}
-  {#key notice.n}<Toast text={notice.text} />{/key}
-{/if}
 {#if reactionsFor && reactionsMessage?.reactions?.length}
   <ReactionsSheet
     reactions={reactionsMessage.reactions}
@@ -1442,6 +1448,10 @@
 {/if}
 {#if pollForm && onPoll}
   <PollForm onSubmit={onPoll} onClose={() => ((pollForm = false), messageInput?.focus())} />
+{/if}
+</div>
+{#if notice.n}
+  {#key notice.n}<Toast text={notice.text} />{/key}
 {/if}
 {#if lightbox}
   <Lightbox {...lightbox} onClose={() => (lightbox = null)} />
@@ -1464,7 +1474,7 @@
         </div>
         <div class="body">
           <div class="meta">
-            <span class="author">{group.actorName ?? "Server"}</span>
+            <span class="author">{#if group.actorName}<UserName name={group.actorName} />{:else}Server{/if}</span>
             {#if "verified" in m && m.verified}
               <span class="verified" title="Registered on the server">✓<span class="sr-only">registered</span></span>
             {/if}
@@ -1808,6 +1818,10 @@
 {/snippet}
 
 <style>
+  .overlays,
+  .search-wrap {
+    display: contents;
+  }
   .chat {
     display: flex;
     flex-direction: column;

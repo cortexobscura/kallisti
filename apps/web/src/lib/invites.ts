@@ -8,16 +8,37 @@ export type Invite = { id: number; creator: string; created: number; expires?: n
 
 export const inviteLink = (origin: string, token: string) => `${origin}/invite/${token}`;
 
-// null: not an invite link to this server (origin).
-export const parseInviteLink = (url: string, origin: string): string | null => {
+// An invite link of any server (several servers in one client): its
+// origin and token; null: none.
+export const inviteOf = (url: string): { origin: string; token: string } | null => {
   let u: URL;
   try {
-    u = new URL(url, origin);
+    u = new URL(url);
   } catch {
     return null;
   }
   const m = /^\/invite\/([\w-]{20,100})$/.exec(u.pathname);
-  return u.origin === new URL(origin).origin && m ? m[1]! : null;
+  // http only on this computer (development), as servers may be added.
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+  return (u.protocol === "https:" || (u.protocol === "http:" && local)) && m ? { origin: u.origin, token: m[1]! } : null;
+};
+
+// Where an invite of origin leads (known: the server in the rail, with a
+// session here or not): "home", "show" it, its "login" first, "add" it
+// first; null: a guest adds no servers (the link opens as a page).
+export const inviteRoute = (origin: string, home: string, known: { session: boolean } | undefined, guest: boolean) =>
+  origin === home ? "home" : known?.session ? "show" : guest ? null : known ? "login" : "add";
+
+// null: not an invite link to this server (origin).
+export const parseInviteLink = (url: string, origin: string): string | null => {
+  let full: string;
+  try {
+    full = new URL(url, origin).href;
+  } catch {
+    return null;
+  }
+  const i = inviteOf(full);
+  return i && i.origin === new URL(origin).origin ? i.token : null;
 };
 
 // Choices when making a link (0: no end, no limit); the defaults first.

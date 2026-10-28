@@ -44,12 +44,11 @@ func setupHandler(t *testing.T, maxBytes int64) (*httptest.Server, *store.Store,
 	}
 	t.Cleanup(func() { s.Close() })
 	h := &Handler{
-		Store:          s,
-		Dir:            t.TempDir(),
-		MaxBytes:       maxBytes,
-		QuotaBytes:     3 * maxBytes,
-		AllowedOrigins: []string{"https://app.example"},
-		Now:            func() time.Time { return time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) },
+		Store:      s,
+		Dir:        t.TempDir(),
+		MaxBytes:   maxBytes,
+		QuotaBytes: 3 * maxBytes,
+		Now:        func() time.Time { return time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC) },
 		Redeem: func(token string) (string, bool) {
 			return "alice", token == "good"
 		},
@@ -203,11 +202,12 @@ func TestPreflight(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent || !strings.Contains(resp.Header.Get("Access-Control-Allow-Headers"), "X-Upload-Token") {
 		t.Fatalf("preflight: %d %v", resp.StatusCode, resp.Header)
 	}
-	req.Header.Set("Origin", "https://evil.example")
+	// Other sites (another Kallisti's page) upload with their token too.
+	req.Header.Set("Origin", "https://other-kallisti.example")
 	resp, _ = http.DefaultClient.Do(req)
 	resp.Body.Close()
-	if resp.Header.Get("Access-Control-Allow-Origin") != "" {
-		t.Error("CORS allowed for an unknown origin")
+	if resp.Header.Get("Access-Control-Allow-Origin") != "https://other-kallisti.example" {
+		t.Error("no CORS for another site")
 	}
 }
 

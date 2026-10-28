@@ -313,3 +313,4 @@
 - [x] [WHIP streams: picture and sound out of sync](issues/whip-av-sync.md)
 - [x] [Desktop (Linux, Wayland): GPU use while minimised](issues/wayland-minimised-gpu.md)
 - [x] [Mobile apps (Android and iOS) with background calls](issues/mobile-apps.md)
+- [x] [Cross-origin access with tokens](issues/cross-origin-tokens.md)

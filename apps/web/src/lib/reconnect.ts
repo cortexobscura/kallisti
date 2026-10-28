@@ -5,7 +5,14 @@ import type { Place } from "./place";
 // The server closed the connection because its session ended (a logout,
 // also on another device, or a password change there). Same reason text as
 // the bridge's Revoke.
-export const loggedOut = (closeReason: string) => closeReason === "logged out";
+// Also a token the server does not know (expired, or ended on its site).
+export const loggedOut = (closeReason: string) => closeReason === "logged out" || closeReason === "session expired";
+
+// Refused by the server's rules (a guest on another site): retrying cannot
+// help. The bridge's reason text, exactly (another server cannot make the
+// client show text of its own).
+export const GUEST_ELSEWHERE = "join as a guest on the server's own site";
+export const refusedForGood = (closeReason: string) => closeReason === GUEST_ELSEWHERE;
 
 // Coming back by itself after a lost connection (a background tab, the
 // network, a server restart): only for a connection that was in, and not
@@ -19,6 +26,7 @@ export const shouldReconnect = (c: {
 }) =>
   c.closed && c.wasSynced && c.status !== "kicked" && c.status !== "rejected" &&
   !loggedOut(c.closeReason) &&
+  !refusedForGood(c.closeReason) &&
   certificateProblem(c.closeReason) === null;
 
 const DELAYS_MS = [1000, 2000, 5000, 10_000, 20_000, 30_000];

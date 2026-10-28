@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createAccountsApi, modeForError, whipUrl } from "../src/lib/accounts";
+import { apiWithToken, createAccountsApi, modeForError, whipUrl } from "../src/lib/accounts";
 
 type Call = { url: string; init: RequestInit };
 const fakeFetch = (status: number, body: unknown, calls: Call[]) =>
@@ -13,6 +13,20 @@ const fakeFetch = (status: number, body: unknown, calls: Call[]) =>
   }) as unknown as typeof fetch;
 
 describe("accounts API", () => {
+  it("reads and changes the account's server list", async () => {
+    const calls: Call[] = [];
+    const list = { servers: [{ origin: "https://b.example", name: "lain" }, { origin: "not an origin", name: "x" }, { origin: "https://c.example" }] };
+    const api = createAccountsApi("http://srv", fakeFetch(200, list, calls));
+    expect(await api.servers("al ice")).toEqual([{ origin: "https://b.example", name: "lain" }]);
+    await api.addServer({ origin: "https://b.example", name: "lain" }, "alice");
+    await api.removeServer("https://b.example", "alice");
+    expect(calls.map((c) => [c.url, c.init.method, c.init.body && JSON.parse(String(c.init.body))])).toEqual([
+      ["http://srv/api/servers?account=al%20ice", "GET", undefined],
+      ["http://srv/api/servers", "POST", { origin: "https://b.example", name: "lain", account: "alice" }],
+      ["http://srv/api/servers", "DELETE", { origin: "https://b.example", account: "alice" }],
+    ]);
+  });
+
   it("logs in with the cookie included", async () => {
     const calls: Call[] = [];
     const api = createAccountsApi("http://srv:8080", fakeFetch(200, { name: "Alice" }, calls));
@@ -160,5 +174,29 @@ describe("stream keys (OBS)", () => {
 
   it("gives OBS the server's WHIP address", () => {
     expect(whipUrl("https://chat.example")).toBe("https://chat.example/api/whip");
+  });
+});
+
+describe("allowed sites", () => {
+  it("lists the sites the account allowed, and takes one back", async () => {
+    const calls: Call[] = [];
+    const sites = [{ site: "https://b.example", redirect: "https://b.example/api/fedi/callback", since: "2026-10-28T12:00:00Z" }];
+    const api = createAccountsApi("http://srv", fakeFetch(200, { sites }, calls));
+    expect(await api.allowedSites()).toEqual(sites);
+    await api.revokeSite("https://b.example/api/fedi/callback");
+    expect(calls.map((c) => [c.url, c.init.method, c.init.body && JSON.parse(String(c.init.body))])).toEqual([
+      ["http://srv/api/oauth/grants", "GET", undefined],
+      ["http://srv/api/oauth/grants", "DELETE", { redirect: "https://b.example/api/fedi/callback" }],
+    ]);
+  });
+});
+
+describe("apiWithToken", () => {
+  it("sends its own token, and forgets it after a logout", async () => {
+    const calls: Call[] = [];
+    const api = apiWithToken("http://srv", "tok", fakeFetch(204, null, calls));
+    await api.logout();
+    await api.logout();
+    expect(calls.map((c) => (c.init.headers as Record<string, string>).Authorization)).toEqual(["Bearer tok", undefined]);
   });
 });

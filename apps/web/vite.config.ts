@@ -5,6 +5,9 @@ import { noiseSuppressionAudioWorkletVitePlugin } from "@workadventure/noise-sup
 export default defineConfig({
   // DeepFilterNet3's worklet and model in development (the build copies them).
   plugins: [svelte(), noiseSuppressionAudioWorkletVitePlugin()],
+  // Tests: Svelte's browser build, where effects run (the server build
+  // skips them; tests of effects also need the jsdom environment).
+  ...(process.env.VITEST ? { resolve: { conditions: ["browser"] } } : {}),
   // Workspace source package: do not pre-bundle, or edits are not picked up.
   optimizeDeps: { exclude: ["@kallisti/protocol"] },
   build: {

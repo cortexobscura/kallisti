@@ -108,14 +108,25 @@ func (s *Store) CreateFediAccount(a Account, id FediIdentity, at time.Time) (Acc
 	return a, tx.Commit()
 }
 
-// LinkFedi links a remote account to an account; a guest account becomes
-// a normal one (it can log in again now).
-func (s *Store) LinkFedi(accountID int64, id FediIdentity, at time.Time) error {
+// ErrSessionGone: the session that started a change ended meanwhile.
+var ErrSessionGone = errors.New("the session ended")
+
+// LinkFedi links a remote account to an account, while the session that
+// asked for it (by its stored key) still lasts; a guest account becomes a
+// normal one (it can log in again now).
+func (s *Store) LinkFedi(accountID int64, session string, id FediIdentity, at time.Time) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE token_hash = ? AND account_id = ? AND expires_at > ?`, session, accountID, at.UnixMilli()).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrSessionGone
+	}
 	if err := linkFedi(tx, accountID, id, at); err != nil {
 		return err
 	}
@@ -162,6 +173,33 @@ func (s *Store) AccountByFedi(host, remoteID string) (Account, FediIdentity, err
 	a, err := scanAccount(s.db.QueryRow(`SELECT `+accountColumns+` FROM accounts a JOIN fedi_identities i ON i.account_id = a.id
 		WHERE i.host = ? AND i.remote_id = ?`, host, remoteID))
 	return a, id, err
+}
+
+// FediOnly is an account that logs in only with its remote account (no
+// password).
+type FediOnly struct {
+	AccountID int64
+	Name      string
+	Identity  FediIdentity
+}
+
+// FediOnlyAccounts are all such accounts.
+func (s *Store) FediOnlyAccounts() ([]FediOnly, error) {
+	rows, err := s.db.Query(`SELECT i.account_id, a.name, ` + identityColumns + ` FROM fedi_identities i JOIN accounts a ON a.id = i.account_id
+		WHERE a.password_hash = ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FediOnly
+	for rows.Next() {
+		var f FediOnly
+		if err := rows.Scan(&f.AccountID, &f.Name, &f.Identity.Host, &f.Identity.RemoteID, &f.Identity.Handle, &f.Identity.Public); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 // FediIdentityOf is an account's remote account (ErrNotFound: none).

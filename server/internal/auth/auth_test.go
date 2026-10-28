@@ -3,12 +3,15 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -287,7 +290,7 @@ func TestEndedSessionsAreRevoked(t *testing.T) {
 			t.Fatalf("%s: nothing revoked", what)
 		}
 		for c, revoked := range want {
-			if match(acc.ID, SessionKey(requestWith(c))) != revoked {
+			if match(acc.ID, (&Service{}).SessionKey(requestWith(c))) != revoked {
 				t.Errorf("%s: session revoked %v, want %v", what, !revoked, revoked)
 			}
 		}
@@ -311,17 +314,79 @@ func TestExpiredSessionsAreRevoked(t *testing.T) {
 	var match func(int64, string) bool
 	a.Revoke = func(m func(int64, string) bool) { match = m }
 	resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "hank", "password": "longpassword"}, nil)
-	old := SessionKey(requestWith(sessionCookie(resp)))
+	old := (&Service{}).SessionKey(requestWith(sessionCookie(resp)))
 	acc, _ := a.Store.AccountBySession(old, now)
 	now = now.Add(sessionLifetime / 2)
 	resp, _ = post(t, srv, "/api/login", map[string]string{"name": "hank", "password": "longpassword"}, nil)
-	current := SessionKey(requestWith(sessionCookie(resp)))
+	current := (&Service{}).SessionKey(requestWith(sessionCookie(resp)))
 	now = now.Add(sessionLifetime / 2)
 	if err := a.DeleteExpiredSessions(); err != nil {
 		t.Fatal(err)
 	}
 	if match == nil || !match(acc.ID, old) || match(acc.ID, current) {
 		t.Fatal("want only the expired session revoked")
+	}
+}
+
+// Other sites (another Kallisti's page, the apps) log in with a token: CORS
+// without credentials, and a cross-site request's cookie does not count.
+func TestOtherSitesUseTokens(t *testing.T) {
+	a, srv := setup(t)
+	a.AllowedOrigins = []string{"https://chat.example"}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("OPTIONS", "/api/login", nil)
+	r.Header.Set("Origin", "https://other-kallisti.example")
+	a.cors(w, r)
+	if w.Header().Get("Access-Control-Allow-Origin") != "https://other-kallisti.example" || w.Header().Get("Access-Control-Allow-Credentials") != "" {
+		t.Fatalf("cors %v", w.Header())
+	}
+	post := func(path, origin string) int {
+		req, _ := http.NewRequest("POST", srv.URL+path, strings.NewReader(`{"name":"x","password":"y"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if post("/api/login", "https://other-kallisti.example") == http.StatusForbidden {
+		t.Fatal("a token login from another site was refused")
+	}
+	// Guest accounts only on our own pages and in the apps: else any site
+	// could make its visitors fill the server with guests.
+	a.GuestAccounts = true
+	if got := post("/api/guest", "https://other-kallisti.example"); got != http.StatusForbidden {
+		t.Fatalf("a guest from another site: %d, want 403", got)
+	}
+	if got := post("/api/guest", "tauri://localhost"); got == http.StatusForbidden {
+		t.Fatalf("a guest in the app: %d", got)
+	}
+	// New accounts too (they would stay for ever); other servers' users
+	// come with their home login, existing accounts log in from anywhere.
+	if got := post("/api/accounts", "https://other-kallisti.example"); got != http.StatusForbidden {
+		t.Fatalf("an account from another site: %d, want 403", got)
+	}
+	if got := post("/api/accounts", "tauri://localhost"); got == http.StatusForbidden {
+		t.Fatalf("an account in the app: %d", got)
+	}
+	// The cookie counts only without an origin or from our own: not from a
+	// sibling subdomain (same site: the browser sends the cookie), nor from
+	// another site.
+	for origin, counts := range map[string]bool{
+		"":                               true, // a navigation (the fedi callback is cross-site, without an origin)
+		"https://chat.example":           true,
+		"https://test.chat.example":      false,
+		"https://other-kallisti.example": false,
+	} {
+		r := httptest.NewRequest("GET", "/api/me", nil)
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		r.Header.Set("Sec-Fetch-Site", "cross-site")
+		r.AddCookie(&http.Cookie{Name: CookieName, Value: "x"})
+		if got := a.SessionKey(r) != ""; got != counts {
+			t.Errorf("%q: cookie counted %v, want %v", origin, got, counts)
+		}
 	}
 }
 
@@ -374,7 +439,7 @@ func TestLoginWithAMumbleRegistration(t *testing.T) {
 	if _, ok := a.AccountFor(requestWith(bob)); ok {
 		t.Fatal("web session kept")
 	}
-	if match == nil || !match(0, SessionKey(requestWith(bob))) {
+	if match == nil || !match(0, (&Service{}).SessionKey(requestWith(bob))) {
 		t.Fatal("the web session's connections were not revoked")
 	}
 	a.MumbleLogin = func(netip.Addr, string, string) (string, bool) { return "bob", true }
@@ -428,7 +493,7 @@ func TestDesktopAppTokens(t *testing.T) {
 	}
 	ws := httptest.NewRequest("GET", "/", nil)
 	ws.Header.Set("Sec-WebSocket-Protocol", "kallisti, kallisti.session."+token)
-	if SessionKey(ws) != tokenHash(token) {
+	if (&Service{}).SessionKey(ws) != tokenHash(token) {
 		t.Fatal("the WebSocket subprotocol carries no session")
 	}
 }
@@ -466,7 +531,7 @@ func TestTheTokenComesBeforeACookie(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.AddCookie(&http.Cookie{Name: CookieName, Value: "old"})
 	r.Header.Set("Authorization", "Bearer new")
-	if SessionKey(r) != tokenHash("new") {
+	if (&Service{}).SessionKey(r) != tokenHash("new") {
 		t.Fatal("the cookie won")
 	}
 }
@@ -541,5 +606,300 @@ func TestServerSaysItsNameAndLogo(t *testing.T) {
 	}
 	if v := get(); v["logo"] != version {
 		t.Fatalf("with a logo %v", v)
+	}
+}
+
+// Password guessing from another site, spread over its visitors'
+// addresses, stops at a limit per account; only failures count, and logins
+// on our own pages are not held up (no lockout from outside).
+func TestLoginsPerAccountAreLimited(t *testing.T) {
+	a, srv := setup(t)
+	post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	post(t, srv, "/api/accounts", map[string]string{"name": "bob", "password": "longpassword"}, nil)
+	a.TrustForwardedFor = true
+	login := func(name, origin string, i int) int {
+		req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(fmt.Sprintf(`{"name":%q,"password":"guess"}`, name)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", origin)
+		if origin != "https://app.example" {
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+		}
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("203.0.%d.%d", i/250, i%250+1))
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	const other = "https://other.example"
+	status := 0
+	for i := range 40 {
+		if status = login("alice", other, i); status == http.StatusTooManyRequests {
+			break
+		}
+	}
+	if status != http.StatusTooManyRequests {
+		t.Fatalf("40 guesses from 40 addresses: %d", status)
+	}
+	if got := login("bob", other, 100); got != http.StatusUnauthorized {
+		t.Fatalf("bob: %d", got)
+	}
+	if got := login("alice", "https://app.example", 101); got != http.StatusUnauthorized {
+		t.Fatalf("alice on our own page: %d", got)
+	}
+	// A name too long for any account is refused before it is counted.
+	if got := login(strings.Repeat("x", 200), other, 102); got != http.StatusUnauthorized {
+		t.Fatalf("a long name: %d", got)
+	}
+}
+
+// A Mumble registration logs in without a session (the socket uses the
+// name and password): not from another site, whose sockets need a token.
+func TestMumbleRegistrationLoginsOnlyOnTheOwnSite(t *testing.T) {
+	a, srv := setup(t)
+	a.MumbleLogin = func(netip.Addr, string, string) (string, bool) { return "SuperUser", true }
+	req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(`{"name":"superuser","password":"adminpw"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://other.example")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	resp, _ := http.DefaultClient.Do(req)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("from another site: %d, want 403", resp.StatusCode)
+	}
+}
+
+// Parallel guesses are counted before the password work, not after.
+func TestLoginsPerAccountHoldInParallel(t *testing.T) {
+	a, srv := setup(t)
+	post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	a.TrustForwardedFor = true
+	var wg sync.WaitGroup
+	var limited atomic.Int32
+	for i := range 60 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(`{"name":"alice","password":"guess"}`))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Origin", "https://other.example")
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+			req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", i+1))
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return
+			}
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusTooManyRequests {
+				limited.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := limited.Load(); n < 60-burst-1 {
+		t.Fatalf("%d of 60 parallel guesses limited", n)
+	}
+}
+
+// From another site, a name without a web account gets the same answer
+// whatever the password (no hint that a Mumble password was right).
+func TestMumbleRegistrationAnswerFromOtherSitesDoesNotDependOnThePassword(t *testing.T) {
+	a, srv := setup(t)
+	a.MumbleLogin = func(_ netip.Addr, _, pw string) (string, bool) { return "SuperUser", pw == "adminpw" }
+	status := func(pw string) int {
+		req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(fmt.Sprintf(`{"name":"superuser","password":%q}`, pw)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "https://other.example")
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if right, wrong := status("adminpw"), status("nope"); right != wrong {
+		t.Fatalf("right %d, wrong %d", right, wrong)
+	}
+}
+
+// With HTTPS the cookie is __Host- (only this host can set it: a sibling
+// subdomain cannot plant one), and a plain-named one does not count.
+func TestHostOnlyCookiesOverHTTPS(t *testing.T) {
+	a, srv := setup(t)
+	a.TrustForwardedFor = true
+	req, _ := http.NewRequest("POST", srv.URL+"/api/accounts", strings.NewReader(`{"name":"alice","password":"longpassword"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	var c *http.Cookie
+	for _, x := range resp.Cookies() {
+		if x.Name == "__Host-"+CookieName {
+			c = x
+		}
+	}
+	if c == nil || !c.Secure || c.Path != "/" || c.Domain != "" {
+		t.Fatalf("cookies %v", resp.Cookies())
+	}
+	me := func(name string) bool {
+		r := httptest.NewRequest("GET", "/api/me", nil)
+		r.Header.Set("X-Forwarded-Proto", "https")
+		r.AddCookie(&http.Cookie{Name: name, Value: c.Value})
+		_, ok := a.AccountFor(r)
+		return ok
+	}
+	if !me("__Host-" + CookieName) {
+		t.Fatal("the __Host- cookie did not count")
+	}
+	if me(CookieName) {
+		t.Fatal("a plain-named cookie counted over HTTPS")
+	}
+}
+
+// A full table never drops a name that is still counting: a blocked
+// account cannot be reset by many other names; new names wait instead.
+func TestFailuresKeepActiveNamesWhenFull(t *testing.T) {
+	var f failures
+	now := time.Now()
+	for range burst {
+		f.take("alice", now)
+	}
+	if ok, full := f.take("alice", now); ok || full {
+		t.Fatal("alice not blocked by name")
+	}
+	for i := range maxFailureNames {
+		f.take(fmt.Sprintf("junk%d", i), now)
+	}
+	if ok, full := f.take("alice", now); ok || full {
+		t.Fatal("alice reset by a full table, or blamed on it")
+	}
+	if ok, full := f.take("newcomer", now); ok || !full {
+		t.Fatal("a new name got in while every name is counting")
+	}
+	// Later, names that are full again make room.
+	if ok, _ := f.take("newcomer", now.Add(time.Hour)); !ok {
+		t.Fatal("no room after an hour")
+	}
+}
+
+// Names without a web account give their token back (also with Murmur):
+// random names cannot fill the table.
+func TestUnknownNamesFromOtherSitesDoNotFillTheTable(t *testing.T) {
+	a, srv := setup(t)
+	a.TrustForwardedFor = true
+	for i := range 20 {
+		req, _ := http.NewRequest("POST", srv.URL+"/api/login", strings.NewReader(fmt.Sprintf(`{"name":"nobody%d","password":"guess"}`, i)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "https://other.example")
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("198.51.100.%d", i+1))
+		resp, _ := http.DefaultClient.Do(req)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("nobody%d: %d", i, resp.StatusCode)
+		}
+	}
+	a.failures.mu.Lock()
+	defer a.failures.mu.Unlock()
+	for _, b := range a.failures.m {
+		if b.tokens < burst {
+			t.Fatal("an unknown name kept its token")
+		}
+	}
+}
+
+// /api/me names the session by a short fingerprint (not its key): the
+// same login gives the same one, another login of the account another.
+func TestMeNamesTheSession(t *testing.T) {
+	_, srv := setup(t)
+	resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	first := sessionCookie(resp)
+	resp, _ = post(t, srv, "/api/login", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	second := sessionCookie(resp)
+	me := func(c *http.Cookie) string {
+		req, _ := http.NewRequest("GET", srv.URL+"/api/me", nil)
+		req.AddCookie(c)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var v map[string]any
+		json.NewDecoder(resp.Body).Decode(&v)
+		s, _ := v["session"].(string)
+		return s
+	}
+	a, b := me(first), me(second)
+	if a == "" || len(a) != 16 || a != me(first) || a == b || strings.Contains(tokenHash(first.Value), a) {
+		t.Fatalf("sessions %q %q", a, b)
+	}
+}
+
+// A logout can name the session it means (a login screen that shows an
+// older login): another one is not logged out.
+func TestLogoutOfAnotherSessionIsRefused(t *testing.T) {
+	a, srv := setup(t)
+	resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	c := sessionCookie(resp)
+	key := (&Service{}).SessionKey(requestWith(c))
+	resp, _ = post(t, srv, "/api/logout", map[string]string{"session": "0000000000000000"}, c)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("another session: %d, want 409", resp.StatusCode)
+	}
+	if _, ok := a.AccountFor(requestWith(c)); !ok {
+		t.Fatal("the session ended")
+	}
+	if resp, _ = post(t, srv, "/api/logout", map[string]string{"session": sessionID(key)}, c); resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		t.Fatalf("its own session: %d", resp.StatusCode)
+	}
+	if _, ok := a.AccountFor(requestWith(c)); ok {
+		t.Fatal("still logged in")
+	}
+}
+
+// Without any session (already logged out) a named logout is no conflict.
+func TestLogoutNamingASessionWithoutOne(t *testing.T) {
+	_, srv := setup(t)
+	if resp, _ := post(t, srv, "/api/logout", map[string]string{"session": "0123456789abcdef"}, nil); resp.StatusCode == http.StatusConflict {
+		t.Fatal("409 without a session")
+	}
+}
+
+// A logout can name the account it shows (a guest has no fingerprint):
+// another account's login is not ended.
+func TestLogoutOfAnotherAccountIsRefused(t *testing.T) {
+	a, srv := setup(t)
+	resp, _ := post(t, srv, "/api/accounts", map[string]string{"name": "bob", "password": "longpassword"}, nil)
+	c := sessionCookie(resp)
+	resp, _ = post(t, srv, "/api/logout", map[string]string{"name": "guest1"}, c)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("another account: %d, want 409", resp.StatusCode)
+	}
+	if _, ok := a.AccountFor(requestWith(c)); !ok {
+		t.Fatal("bob was logged out")
+	}
+	if resp, _ = post(t, srv, "/api/logout", map[string]string{"name": "Bob"}, c); resp.StatusCode == http.StatusConflict {
+		t.Fatal("bob's own logout refused")
+	}
+}
+
+// TokenEnded: a token that is no session; not a cookie, not a valid token.
+func TestTokenEnded(t *testing.T) {
+	a, srv := setup(t)
+	req := func(h, v string) *http.Request {
+		r := httptest.NewRequest("GET", "/ws", nil)
+		r.Header.Set(h, v)
+		return r
+	}
+	if !a.TokenEnded(req("Authorization", "Bearer dead")) || !a.TokenEnded(req("Sec-WebSocket-Protocol", "kallisti, "+SessionProtocol+"dead")) {
+		t.Fatal("a dead token is not ended")
+	}
+	resp, v := post(t, srv, "/api/accounts", map[string]string{"name": "alice", "password": "longpassword"}, nil)
+	_ = v
+	c := sessionCookie(resp)
+	if a.TokenEnded(req("Authorization", "Bearer "+c.Value)) {
+		t.Fatal("a valid token counts as ended")
+	}
+	if a.TokenEnded(requestWith(&http.Cookie{Name: CookieName, Value: "dead"})) {
+		t.Fatal("a cookie counts as a token")
 	}
 }

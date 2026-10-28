@@ -17,6 +17,7 @@ import {
   missingDescriptions,
   missingTextures,
   privateMessagesWith,
+  selfOf,
   usersIn,
   usersSorted,
 } from "../src/selectors";
@@ -301,5 +302,13 @@ describe("commentsToFetch", () => {
   it("forgets users who left", () => {
     const { asked } = commentsToFetch(withHash("aa"), [2], new Set());
     expect(commentsToFetch(initialState, [], asked).asked.size).toBe(0);
+  });
+});
+
+describe("selfOf", () => {
+  it("is the own user, none before the sync", () => {
+    const users = { 7: user(7, "ann", 0) };
+    expect(selfOf({ ...initialState, users, session: 7 })?.name).toBe("ann");
+    expect(selfOf({ ...initialState, users })).toBeUndefined();
   });
 });

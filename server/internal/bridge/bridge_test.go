@@ -174,15 +174,49 @@ func TestUpstreamDialErrorCloses1011(t *testing.T) {
 	}
 }
 
-func TestRejectsOriginsThatAreNotAllowed(t *testing.T) {
+// Other sites connect with an account (their token); guests only on our
+// own pages and in the apps. Requests without an origin only with "*".
+func TestOrigins(t *testing.T) {
 	echo := startEcho(t)
-	url := startBridge(t, Options{Dial: dialer(echo.addr), AllowedOrigins: []string{"https://good.example"}})
-	_, resp, err := connect(t, url, "https://evil.example")
-	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("got %v %v, want 403", resp, err)
+	withAccount := func(r *http.Request) (Account, bool) {
+		return Account{Name: "alice"}, r.Header.Get("Authorization") != ""
 	}
-	if echo.open.Load() != 0 {
-		t.Error("upstream was dialed")
+	url := startBridge(t, Options{Dial: dialer(echo.addr), AllowedOrigins: []string{"https://good.example"}, Account: withAccount})
+	dial := func(origin string, token bool) error {
+		h := http.Header{"Origin": {origin}}
+		if token {
+			h.Set("Authorization", "Bearer t")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		c, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: h})
+		if err != nil {
+			return err
+		}
+		defer c.CloseNow()
+		_, _, err = c.Read(ctx) // a refused guest is closed at once
+		return err
+	}
+	for _, c := range []struct {
+		origin string
+		token  bool
+		ok     bool
+	}{
+		{"https://good.example", false, true},
+		{"tauri://localhost", false, true},
+		{"https://other-kallisti.example", true, true},
+		{"https://other-kallisti.example", false, false},
+	} {
+		err := dial(c.origin, c.token)
+		var ce websocket.CloseError
+		refused := errors.As(err, &ce) && ce.Code == websocket.StatusPolicyViolation
+		if refused == c.ok {
+			t.Errorf("%s (token %v): %v", c.origin, c.token, err)
+		}
+	}
+	_, resp, err := connect(t, url, "")
+	if err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("no origin: got %v %v, want 403", resp, err)
 	}
 }
 

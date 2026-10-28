@@ -23,3 +23,64 @@ describe("the server's name", () => {
     expect(await info(404, {})).toEqual({ password: true, name: null, logo: null }); // an older server
   });
 });
+
+describe("the login check", () => {
+  const api = (status: number | "offline", body: unknown = {}) =>
+    createAccountsApi(
+      "http://srv",
+      (async () => {
+        if (status === "offline") throw new TypeError("Failed to fetch");
+        return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+      }) as unknown as typeof fetch,
+    );
+  it("tells an account, no login, and unknown (a server or network error) apart", async () => {
+    expect(await api(200, { name: "alice", session: "0123456789abcdef" }).check()).toMatchObject({ name: "alice", session: "0123456789abcdef" });
+    expect(await api(401, { error: "not logged in" }).check()).toBeNull();
+    expect(await api(200, {}).check()).toBeNull();
+    expect(await api(502).check()).toBe("unknown");
+    expect(await api(500).check()).toBe("unknown");
+    expect(await api("offline").check()).toBe("unknown");
+  });
+});
+
+describe("the session token", () => {
+  it("is cleared by a late answer only if it is still the one that request used", async () => {
+    let stored: string | null = "t1";
+    const store = { get: () => stored, set: (t: string | null) => void (stored = t) };
+    let release!: () => void;
+    const fetchFn = (async () => {
+      await new Promise<void>((r) => (release = r));
+      return new Response(JSON.stringify({ error: "not logged in" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const api = createAccountsApi("http://srv", fetchFn, store);
+    const late = api.check();
+    await Promise.resolve();
+    stored = "t2"; // a new login meanwhile
+    release();
+    expect(await late).toBeNull();
+    expect(stored).toBe("t2");
+    const out = api.logout();
+    await Promise.resolve();
+    stored = "t3";
+    release();
+    await out;
+    expect(stored).toBe("t3");
+  });
+});
+
+describe("logging out", () => {
+  it("names the session it means", async () => {
+    const bodies: unknown[] = [];
+    const fetchFn = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof fetch;
+    await createAccountsApi("http://srv", fetchFn).logout({ session: "0123456789abcdef", name: "alice" });
+    await createAccountsApi("http://srv", fetchFn).logout({ name: "guest1" });
+    expect(bodies).toEqual([{ session: "0123456789abcdef", name: "alice" }, { name: "guest1" }]);
+  });
+  it("says when another login is active here now (409)", async () => {
+    const conflict = (async () => new Response(JSON.stringify({ error: "another login is active here now" }), { status: 409 })) as unknown as typeof fetch;
+    expect(await createAccountsApi("http://srv", conflict).logout({ session: "0123456789abcdef" })).toBe("other");
+  });
+});

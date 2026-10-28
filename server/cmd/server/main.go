@@ -101,6 +101,11 @@ func run() error {
 		ServerPassword:    cfg.Builtin == nil || cfg.Builtin.Password != "",
 	}
 	accounts.Fedi = fediLogin(cfg)
+	// Other Kallisti servers log in with accounts here (it needs the
+	// public address: the issuer).
+	if public := publicBase(cfg.AllowedOrigins); public != "" {
+		accounts.Provider = &auth.Provider{Public: public}
+	}
 	// Before the built-in server listens: Mumble messages may bring images.
 	if err := os.MkdirAll(cfg.UploadDir, 0o700); err != nil {
 		return fmt.Errorf("create upload directory: %w", err)
@@ -110,7 +115,6 @@ func run() error {
 		Dir:             cfg.UploadDir,
 		MaxBytes:        cfg.UploadMaxBytes,
 		QuotaBytes:      cfg.UploadQuotaBytes,
-		AllowedOrigins:  cfg.AllowedOrigins,
 		Now:             time.Now,
 		Redeem:          hub.RedeemUploadToken,
 		RedeemEmoji:     hub.RedeemEmojiToken,
@@ -178,6 +182,10 @@ func run() error {
 		accounts.MumbleLogin = mumble.srv.CheckPassword
 		accounts.GuestAccounts = true // the built-in server can remove their registrations
 		accounts.Captcha = mumble.srv.Captcha
+		if accounts.Fedi != nil {
+			accounts.Fedi.AllowsHome = mumble.srv.AllowsHome // the admins' lists
+			hub.OnHomesChanged = accounts.EndBlockedHomes
+		}
 		accounts.ServerName = mumble.srv.ServerName
 		accounts.EndPasswordLogins = func(acc store.Account) { mumble.srv.EndPasswordLogins(accountCertHash(acc)) }
 		accounts.SetAvatar = func(acc store.Account, avatar []byte, onlyIfNone bool) {
@@ -218,9 +226,10 @@ func run() error {
 				slog.Error("load account certificate", "account", acc.Name, "err", err)
 				return bridge.Account{}, false
 			}
-			return bridge.Account{Name: acc.Name, Cert: &cert, ID: acc.ID, Session: auth.SessionKey(r)}, true
+			return bridge.Account{Name: acc.Name, Cert: &cert, ID: acc.ID, Session: accounts.SessionKey(r)}, true
 		},
 		IsAccountName: accountExists(db),
+		TokenEnded:    accounts.TokenEnded,
 	})
 	// Ended sessions end their open connections.
 	accounts.Revoke = b.Revoke
@@ -241,7 +250,7 @@ func run() error {
 	}()
 	mux := http.NewServeMux()
 	mux.Handle("/api/upload", fileHandler)
-	for _, path := range []string{"/api/server", "/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/stream-key", "/api/fedi", "/api/fedi/"} {
+	for _, path := range auth.Paths {
 		mux.Handle(path, accounts)
 	}
 	mux.Handle("/files/", fileHandler)
@@ -331,7 +340,7 @@ func startPush(cfg config.Config, db *store.Store, accounts *auth.Service, hub *
 		Sender: push.NewWebPush(public, private, cfg.Push.Subject, publicBase(cfg.AllowedOrigins)),
 		Account: func(r *http.Request) (store.Account, string, bool) {
 			acc, ok := accounts.AccountFor(r)
-			return acc, auth.SessionKey(r), ok
+			return acc, accounts.SessionKey(r), ok
 		},
 	}
 	svc.Start(pushWorkers, pushQueue)
