@@ -435,6 +435,11 @@ func (a *Service) token(w http.ResponseWriter, r *http.Request) {
 		tokenError(w, "invalid_grant")
 		return
 	}
+	// The site removed in the settings since the code was made.
+	if granted, err := a.Store.HasOAuthGrant(code.account, redirect); err != nil || !granted {
+		tokenError(w, "invalid_grant")
+		return
+	}
 	token := randomHex(32)
 	if err := a.Store.CreateOAuthToken(tokenHash(token), code.account, id, code.scopes, now.Add(tokenLifetime)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})

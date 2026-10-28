@@ -803,3 +803,21 @@ func TestEndBlockedHomes(t *testing.T) {
 		t.Fatalf("the account with a password was logged out: %v", err)
 	}
 }
+
+// A handoff waiting when the admins block its home server is not taken.
+func TestFediHandoffAfterABlock(t *testing.T) {
+	f := &fedifake.Instance{}
+	a, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	blocked := false
+	a.Fedi.AllowsHome = func(h string) bool { return !(blocked && h == host) }
+	b := newBrowser(t, srv)
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host, "handoff": true}, "Alice"), home+"?fedi=register")
+	if resp, v := b.do("POST", "/api/fedi/signup", map[string]any{"name": "alice"}); resp.StatusCode != http.StatusCreated {
+		t.Fatalf("signup: %d %v", resp.StatusCode, v)
+	}
+	blocked = true
+	if resp, v := b.do("POST", "/api/fedi/handoff", map[string]any{}); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("handoff after the block: %d %v", resp.StatusCode, v)
+	}
+}

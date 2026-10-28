@@ -753,6 +753,11 @@ func (a *Service) takeHandoff(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "the login expired, please try again"})
 		return
 	}
+	// Its home server blocked meanwhile (see EndBlockedHomes).
+	if id, err := a.Store.FediIdentityOf(h.account.ID); err == nil && !a.Fedi.allowsIdentity(id) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "this server does not take accounts from your home server"})
+		return
+	}
 	token, err := a.newSession(h.account)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "please try again"})

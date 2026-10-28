@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"log/slog"
 	"net/http"
 
@@ -44,9 +42,7 @@ func (a *Service) streamKey(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 			return
 		}
-		b := make([]byte, 32)
-		rand.Read(b)
-		key := hex.EncodeToString(b)
+		key := randomHex(32)
 		if a.Store.SetStreamKey(acc.ID, tokenHash(key), a.Now()) != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot make a stream key"})
 			return

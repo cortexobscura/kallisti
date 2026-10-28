@@ -107,6 +107,7 @@ func TestProviderCodesAndTokens(t *testing.T) {
 	}
 	other, _ := client.RegisterApp(ctx, inst, "C", "https://c.example/api/fedi/callback", "")
 	acc, _ := p.Store.CreateAccount(store.Account{Name: "lain", PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, time.Now())
+	p.Store.GrantOAuth(acc.ID, redirect, time.Now())
 	code := func(c fedi.App, uri, verifier string) string {
 		return p.Provider.issue(acc.ID, c.ClientID, uri, "read:accounts", fedi.Challenge(verifier), time.Now())
 	}
@@ -140,6 +141,12 @@ func TestProviderCodesAndTokens(t *testing.T) {
 	}
 	if _, err := client.VerifyCredentials(ctx, inst, "not-a-token"); err == nil {
 		t.Error("a made-up token worked")
+	}
+	// A code from before the site was removed in the settings.
+	pending := code(app, redirect, v)
+	p.Store.RevokeOAuth(acc.ID, redirect, app.ClientID)
+	if _, err := client.Token(ctx, inst, app, redirect, pending, v); err == nil {
+		t.Error("a code worked after the site was removed")
 	}
 	// The account's handle, by WebFinger.
 	if h, err := client.DiscoverHandle(ctx, inst, "lain", true); err != nil || h != "@lain@"+inst.Host {
