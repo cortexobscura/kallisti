@@ -1457,6 +1457,16 @@ func (s *Store) AccountBySession(tokenHash string, now time.Time) (Account, erro
 		WHERE x.token_hash = ? AND x.expires_at > ?`, tokenHash, now.UnixMilli()))
 }
 
+// SessionExpires is when a session ends (ErrNotFound: none).
+func (s *Store) SessionExpires(tokenHash string) (time.Time, error) {
+	var at int64
+	err := s.db.QueryRow(`SELECT expires_at FROM sessions WHERE token_hash = ?`, tokenHash).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, ErrNotFound
+	}
+	return time.UnixMilli(at), err
+}
+
 func (s *Store) DeleteSession(tokenHash string) error {
 	_, err := s.db.Exec(`DELETE FROM sessions WHERE token_hash = ?`, tokenHash)
 	return err

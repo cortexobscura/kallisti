@@ -754,16 +754,22 @@ func TestHostOnlyCookiesOverHTTPS(t *testing.T) {
 }
 
 // Sessions from before the __Host- cookies keep counting with the plain
-// name until plainCookiesUntil, and /api/me moves them to the new name.
+// name (until plainCookiesUntil: they end by then), and /api/me moves them
+// to the new name. A session made later (one a sibling subdomain could
+// plant now) does not count with it.
 func TestPlainCookiesMoveToHostOnly(t *testing.T) {
 	a, srv := setup(t)
 	a.TrustForwardedFor = true
+	a.Now = func() time.Time { return plainCookiesUntil.Add(-2 * time.Hour) }
 	acc, _ := a.Store.CreateAccount(store.Account{Name: "alice", PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, time.Now())
-	a.Store.CreateSession(tokenHash("old"), acc.ID, plainCookiesUntil.Add(2*time.Hour))
-	get := func() *http.Response {
+	a.Store.CreateSession(tokenHash("old"), acc.ID, plainCookiesUntil.Add(-time.Hour))
+	a.Store.CreateSession(tokenHash("new"), acc.ID, plainCookiesUntil.Add(time.Hour))
+	get := func(cookies ...*http.Cookie) *http.Response {
 		req, _ := http.NewRequest("GET", srv.URL+"/api/me", nil)
 		req.Header.Set("X-Forwarded-Proto", "https")
-		req.AddCookie(&http.Cookie{Name: CookieName, Value: "old"})
+		for _, c := range cookies {
+			req.AddCookie(c)
+		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -771,19 +777,21 @@ func TestPlainCookiesMoveToHostOnly(t *testing.T) {
 		resp.Body.Close()
 		return resp
 	}
-	a.Now = func() time.Time { return plainCookiesUntil.Add(-time.Hour) }
-	resp := get()
+	resp := get(&http.Cookie{Name: CookieName, Value: "old"})
 	set := map[string]*http.Cookie{}
 	for _, c := range resp.Cookies() {
 		set[c.Name] = c
 	}
 	if resp.StatusCode != http.StatusOK || set["__Host-"+CookieName] == nil || set["__Host-"+CookieName].Value != "old" ||
 		set[CookieName] == nil || set[CookieName].MaxAge >= 0 {
-		t.Fatalf("before the date: %d %v", resp.StatusCode, resp.Cookies())
+		t.Fatalf("an old session: %d %v", resp.StatusCode, resp.Cookies())
 	}
-	a.Now = func() time.Time { return plainCookiesUntil.Add(time.Hour) }
-	if resp := get(); resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("after the date a plain-named cookie counted over HTTPS: %d", resp.StatusCode)
+	if resp := get(&http.Cookie{Name: CookieName, Value: "new"}); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("a newer session with the plain name: %d", resp.StatusCode)
+	}
+	// The __Host- cookie wins, also when its session ended.
+	if resp := get(&http.Cookie{Name: "__Host-" + CookieName, Value: "gone"}, &http.Cookie{Name: CookieName, Value: "old"}); resp.StatusCode != http.StatusUnauthorized || len(resp.Cookies()) != 0 {
+		t.Fatalf("both cookies: %d %v", resp.StatusCode, resp.Cookies())
 	}
 }
 

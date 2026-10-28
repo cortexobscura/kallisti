@@ -341,8 +341,9 @@ func (a *Service) sessionToken(r *http.Request) string {
 
 // plainCookiesUntil: sessions from before the __Host- cookies (deployed
 // 2026-10-28) count with their plain-named cookie over HTTPS until then
-// (sessions last 30 days), and /api/me moves them to the new name, so
-// nobody has to log in again. Remove after the date.
+// (sessions last 30 days: one made after the deploy ends later), and
+// /api/me moves them to the new name, so nobody has to log in again.
+// Remove after the date.
 var plainCookiesUntil = time.Date(2026, 11, 28, 0, 0, 0, 0, time.UTC)
 
 // sessionCookie is the session cookie's value; plain: the old name.
@@ -350,9 +351,13 @@ func (a *Service) sessionCookie(r *http.Request) (string, bool) {
 	if token := a.cookie(r, CookieName); token != "" {
 		return token, false
 	}
+	// Only a session from before (it ends by then: sessions are not
+	// extended): a sibling subdomain cannot plant a new one.
 	if a.secure(r) && a.Now().Before(plainCookiesUntil) {
 		if c, err := r.Cookie(CookieName); err == nil && c.Value != "" {
-			return c.Value, true
+			if ends, err := a.Store.SessionExpires(tokenHash(c.Value)); err == nil && !ends.After(plainCookiesUntil) {
+				return c.Value, true
+			}
 		}
 	}
 	return "", false

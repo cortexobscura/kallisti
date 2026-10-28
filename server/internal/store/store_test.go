@@ -1043,3 +1043,16 @@ func TestMessagesAfterHaveTheirFiles(t *testing.T) {
 		t.Fatalf("%+v %v", got, err)
 	}
 }
+
+func TestSessionExpires(t *testing.T) {
+	s := open(t)
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	acc, _ := s.CreateAccount(Account{Name: "lain", PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, now)
+	s.CreateSession("h", acc.ID, now.Add(time.Hour))
+	if got, err := s.SessionExpires("h"); err != nil || !got.Equal(now.Add(time.Hour)) {
+		t.Fatalf("expires: %v %v", got, err)
+	}
+	if _, err := s.SessionExpires("none"); err != ErrNotFound {
+		t.Fatalf("unknown: %v", err)
+	}
+}
