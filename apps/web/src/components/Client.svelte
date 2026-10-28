@@ -807,7 +807,8 @@
       if (ev.type !== "invite-joined") return;
       const place = invitePlace(ev);
       if (place.kind === "text") show(place);
-      else if (voiceOn && !(lobby && channelId === 0)) show({ kind: "voice" });
+      // In a call (here, or on another server): shown, not joined.
+      else if ((voiceOn && !(lobby && channelId === 0)) || remoteVoice) show({ kind: "voice" });
       else join(place.id);
     }),
   );
