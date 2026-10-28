@@ -23,4 +23,5 @@
 - [ ] [Firefox: no stream controls on hover](issues/firefox-stream-controls.md)
 - [ ] [Message HTML: forms](issues/message-forms.md)
 - [ ] [Mentions of names with emoji](issues/mention-emoji-names.md)
+- [ ] [Remove the fallback for plain-named session cookies (after 2026-11-28)](issues/remove-plain-cookie-fallback.md)
 - [x] [Fixes from the multi-server branch that main could use](issues/hardening-from-multi-server.md) (merged with the branch)
