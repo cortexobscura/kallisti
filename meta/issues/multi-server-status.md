@@ -47,6 +47,12 @@ rest. test.kallisti.chat runs this branch.
 - Push from added servers while the page is closed: a service worker
   registration per server, on while the home server's push is on.
 
+## Done after the final review (2026-10-28)
+
+The cleanup (see multi-server-cleanup.md): App.svelte in lib units, one
+view for all clients, shared helpers; a home block logs out its
+accounts; the settings list the sites an account allowed.
+
 ## Still to do
 
 - Step 4 part 2: servers you join update the list at home, and the rail
