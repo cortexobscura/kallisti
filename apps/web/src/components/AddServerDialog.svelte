@@ -3,6 +3,8 @@
   import type { Account, AccountsApi } from "../lib/accounts";
   import { isKallisti } from "../lib/desktop";
   import { serverOrigin } from "../lib/serverList";
+  import { iconHref } from "../lib/serverLogo";
+  import { initials } from "../lib/avatar";
 
   // Another Kallisti server for the rail (several servers in one client):
   // its address, then a login there. New accounts and guests are made on
@@ -43,6 +45,16 @@
   // svelte-ignore state_referenced_locally
   let address = $state(startAddress);
   let found = $state<{ origin: string } | null>(preset ? { origin: preset.origin } : null);
+  // The server's name and logo (its public /api/server), once found.
+  let info = $state<{ name: string | null; logo: string | null } | null>(null);
+  $effect(() => {
+    const origin = found?.origin;
+    info = null;
+    if (origin)
+      void untrack(() => apiFor(origin))
+        .api.serverInfo()
+        .then((i) => found?.origin === origin && (info = i));
+  });
   let name = $state(preset?.name ?? "");
   // The name and password fields: hidden until asked for (no home account
   // to use in the desktop app: shown).
@@ -196,7 +208,17 @@
     </form>
   {:else}
     <form onsubmit={logIn}>
-      <p class="server">{found.origin}</p>
+      <div class="server">
+        {#if info?.logo}
+          <img src={iconHref(found.origin, 192, info.logo)} alt="" />
+        {:else}
+          <span class="initial" aria-hidden="true">{initials(info?.name ?? new URL(found.origin).host)}</span>
+        {/if}
+        <div class="names">
+          {#if info?.name}<strong class="ellipsis">{info.name}</strong>{/if}
+          <span class="ellipsis">{found.origin}</span>
+        </div>
+      </div>
       <!-- The home account first (an account there is made if needed); a
            password there only when asked for (and in the desktop app). -->
       {#if homeCookie}
@@ -298,8 +320,40 @@
     font-size: 13px;
   }
   .server {
-    color: var(--text);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    min-width: 0;
+  }
+  .server img,
+  .initial {
+    flex: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+  }
+  .initial {
+    display: grid;
+    place-items: center;
+    background: var(--bg-input);
+    font-size: 20px;
     font-weight: 600;
+  }
+  .names {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+  .names strong {
+    color: var(--text);
+    font-size: 16px;
+  }
+  .ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .error {
     margin: 0;
