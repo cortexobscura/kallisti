@@ -356,4 +356,17 @@ describe("the added servers", () => {
     hub.expire(A, "ta");
     expect(hub.servers[0]!.token).toBe("tb");
   });
+
+  it("after a detach, the ended login's tokens go once nobody is logged in at home (not another login's)", async () => {
+    const { hub, revoked, storage } = setup();
+    hub.add(A, "alice", "ta");
+    await flush();
+    hub.detach();
+    expect(revoked).toEqual([]);
+    hub.endLoginTokens("home bob"); // another login's: nothing
+    expect(revoked).toEqual([]);
+    hub.endLoginTokens("home alice");
+    expect(revoked).toEqual([[A, "ta"]]);
+    expect(loadTokens(storage).tokens).toEqual({});
+  });
 });

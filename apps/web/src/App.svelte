@@ -202,12 +202,15 @@
   });
   // The session ended on the server (a logout or password change on
   // another device): back to the login screen, as after a logout. The
-  // added servers only close: whoever ended it ended their tokens (a tab
-  // that wakes late must not end a newer login's).
+  // added servers close at once; their tokens are logged out there once
+  // the home server says nobody is logged in (a tab that wakes late must
+  // not end a newer login's, which may use the same tokens).
   $effect(() => {
     if (connection?.closed && loggedOut(connection.closeReason))
       untrack(() => {
+        const ended = owner;
         hub.detach();
+        if (ended !== null) void api.check().then((acc) => acc === null && hub.endLoginTokens(ended));
         account = null;
         void stopPush();
         leave("You were logged out.", false);
