@@ -299,6 +299,10 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.streamKey(w, r)
 	case r.URL.Path == "/api/me" && r.Method == http.MethodGet:
 		if acc, ok := a.AccountFor(r); ok {
+			if token, plain := a.sessionCookie(r); plain && token == a.sessionToken(r) {
+				a.setSessionCookie(w, r, token)
+				http.SetCookie(w, &http.Cookie{Name: CookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
+			}
 			me := map[string]any{"name": acc.Name, "temporary": acc.Temporary, "password": acc.PasswordHash != "", "session": sessionID(a.SessionKey(r))}
 			if f := a.fediMe(acc); f != nil {
 				me["fedi"] = f
@@ -331,7 +335,27 @@ func (a *Service) sessionToken(r *http.Request) string {
 	if !config.CookieOrigin(a.AllowedOrigins, r.Header.Get("Origin")) {
 		return ""
 	}
-	return a.cookie(r, CookieName)
+	token, _ := a.sessionCookie(r)
+	return token
+}
+
+// plainCookiesUntil: sessions from before the __Host- cookies (deployed
+// 2026-10-28) count with their plain-named cookie over HTTPS until then
+// (sessions last 30 days), and /api/me moves them to the new name, so
+// nobody has to log in again. Remove after the date.
+var plainCookiesUntil = time.Date(2026, 11, 28, 0, 0, 0, 0, time.UTC)
+
+// sessionCookie is the session cookie's value; plain: the old name.
+func (a *Service) sessionCookie(r *http.Request) (string, bool) {
+	if token := a.cookie(r, CookieName); token != "" {
+		return token, false
+	}
+	if a.secure(r) && a.Now().Before(plainCookiesUntil) {
+		if c, err := r.Cookie(CookieName); err == nil && c.Value != "" {
+			return c.Value, true
+		}
+	}
+	return "", false
 }
 
 // TokenEnded: the request brings a session token (header or subprotocol,
@@ -750,15 +774,7 @@ func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot log in"})
 		return "", false
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     a.cookieName(r, CookieName),
-		Value:    token,
-		Path:     "/",
-		MaxAge:   int(sessionLifetime.Seconds()),
-		HttpOnly: true,
-		Secure:   a.secure(r),
-		SameSite: http.SameSiteLaxMode,
-	})
+	a.setSessionCookie(w, r, token)
 	if r.Header.Get("X-Kallisti-Session") != "token" {
 		token = ""
 	}
@@ -769,6 +785,18 @@ func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store
 func (a *Service) newSession(acc store.Account) (string, error) {
 	token := randomHex(32)
 	return token, a.Store.CreateSession(tokenHash(token), acc.ID, a.Now().Add(sessionLifetime))
+}
+
+func (a *Service) setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     a.cookieName(r, CookieName),
+		Value:    token,
+		Path:     "/",
+		MaxAge:   int(sessionLifetime.Seconds()),
+		HttpOnly: true,
+		Secure:   a.secure(r),
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 // cookieName: with HTTPS the __Host- prefix: browsers take such a cookie

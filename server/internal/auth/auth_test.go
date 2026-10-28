@@ -719,7 +719,8 @@ func TestMumbleRegistrationAnswerFromOtherSitesDoesNotDependOnThePassword(t *tes
 }
 
 // With HTTPS the cookie is __Host- (only this host can set it: a sibling
-// subdomain cannot plant one), and a plain-named one does not count.
+// subdomain cannot plant one; a plain-named one: see
+// TestPlainCookiesMoveToHostOnly).
 func TestHostOnlyCookiesOverHTTPS(t *testing.T) {
 	a, srv := setup(t)
 	a.TrustForwardedFor = true
@@ -750,8 +751,39 @@ func TestHostOnlyCookiesOverHTTPS(t *testing.T) {
 	if !me("__Host-" + CookieName) {
 		t.Fatal("the __Host- cookie did not count")
 	}
-	if me(CookieName) {
-		t.Fatal("a plain-named cookie counted over HTTPS")
+}
+
+// Sessions from before the __Host- cookies keep counting with the plain
+// name until plainCookiesUntil, and /api/me moves them to the new name.
+func TestPlainCookiesMoveToHostOnly(t *testing.T) {
+	a, srv := setup(t)
+	a.TrustForwardedFor = true
+	acc, _ := a.Store.CreateAccount(store.Account{Name: "alice", PasswordHash: "h", CertPEM: []byte("c"), KeyPEM: []byte("k")}, time.Now())
+	a.Store.CreateSession(tokenHash("old"), acc.ID, plainCookiesUntil.Add(2*time.Hour))
+	get := func() *http.Response {
+		req, _ := http.NewRequest("GET", srv.URL+"/api/me", nil)
+		req.Header.Set("X-Forwarded-Proto", "https")
+		req.AddCookie(&http.Cookie{Name: CookieName, Value: "old"})
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	a.Now = func() time.Time { return plainCookiesUntil.Add(-time.Hour) }
+	resp := get()
+	set := map[string]*http.Cookie{}
+	for _, c := range resp.Cookies() {
+		set[c.Name] = c
+	}
+	if resp.StatusCode != http.StatusOK || set["__Host-"+CookieName] == nil || set["__Host-"+CookieName].Value != "old" ||
+		set[CookieName] == nil || set[CookieName].MaxAge >= 0 {
+		t.Fatalf("before the date: %d %v", resp.StatusCode, resp.Cookies())
+	}
+	a.Now = func() time.Time { return plainCookiesUntil.Add(time.Hour) }
+	if resp := get(); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("after the date a plain-named cookie counted over HTTPS: %d", resp.StatusCode)
 	}
 }
 
