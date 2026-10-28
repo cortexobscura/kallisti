@@ -26,6 +26,7 @@
   import { httpBase } from "./lib/textChannels";
   import { serverOrigin } from "./lib/serverList";
   import { safeGet, safeSet, tabStorage } from "./lib/storage";
+  import { popupLogin, type ConnectPhase } from "./lib/popupLogin";
   import { proxyUrl } from "./lib/status";
   import { loggedOut } from "./lib/reconnect";
   import { untrack, type Snippet } from "svelte";
@@ -112,53 +113,33 @@
   // This page is the popup in which a Kallisti page adds this server (see
   // Connect): its home server, kept in this tab over the login's pages.
   // Such a page is only that popup: no account here, no servers of its own.
-  const popupLogin = (() => {
-    const tab = tabStorage();
-    if (isDesktop()) return { home: null, kept: true, resumed: false, tab };
+  const tab = tabStorage();
+  const popup = (() => {
+    if (isDesktop()) return popupLogin({ asked: null, mark: null, back: null, kept: true });
     const asked = new URLSearchParams(location.search).get("kallisti-connect");
-    // kept: it survives the login's pages (else it could never finish).
-    // It stays until the token is delivered, fails or is given up (the
-    // tab goes with the popup).
+    // kept: it survives the login's pages (until delivered, failed or given up).
     const kept = !asked || safeSet(tab, "kallisti-connect", asked);
-    const mark = safeGet(tab, "kallisti-connect") || null;
-    // A reload in the name step: no result in the address any more.
-    const resumed = !asked && !fediBack && !!mark;
-    const back = (fediBack && ["connect", "register", "error"].includes(fediBack.kind)) || resumed ? mark : null;
-    return { home: asked ?? back, kept, resumed, tab };
+    return popupLogin({ asked, mark: safeGet(tab, "kallisti-connect") || null, back: fediBack, kept });
   })();
-  const connectHome = popupLogin.home;
-  let connectPhase = $state<"start" | "deliver" | { error: string } | null>(
-    !connectHome
-      ? null
-      : !popupLogin.kept
-        ? { error: "This browser keeps no data for this window. Log in with a password there instead." }
-        : popupLogin.resumed
-          ? null // the name step again
-          : !fediBack
-            ? "start"
-            : fediBack.kind === "connect"
-              ? "deliver"
-              : fediBack.kind === "error"
-                ? { error: fediBack.text }
-                : null, // register: the name first (Login), then deliver
-  );
+  const connectHome = popup.home;
+  let connectPhase = $state<ConnectPhase>(popup.phase);
   // Delivered or failed: a later login in this tab is a normal one.
   $effect(() => {
-    if (connectPhase !== null && connectPhase !== "start") safeSet(popupLogin.tab, "kallisti-connect", "");
+    if (connectPhase !== null && connectPhase !== "start") safeSet(tab, "kallisti-connect", "");
   });
   // Back from a login through another server with an invite (see Login):
   // its address again, so the client redeems it.
   // Kept just before the page went to that login (a known account comes
   // back without a result in the address): used by the next page, once.
-  const keptInvite = safeGet(popupLogin.tab, "kallisti-invite");
-  if (keptInvite) safeSet(popupLogin.tab, "kallisti-invite", "");
+  const keptInvite = safeGet(tab, "kallisti-invite");
+  if (keptInvite) safeSet(tab, "kallisti-invite", "");
   // A link in the address wins (a newer one).
   const explicit = /^\/invite\//.test(location.pathname) || /[?&](join|open|authorize)=/.test(location.search);
   const restore = !explicit && /^\/(invite\/|\?(join|authorize)=)/.test(keptInvite ?? "") ? keptInvite : null;
   if (restore) history.replaceState(history.state, "", restore);
   else if (fediBack) history.replaceState(history.state, "", withoutFediResult(location.pathname + location.search + location.hash));
   const authorizeQuery = isDesktop() ? null : new URLSearchParams(location.search).get("authorize");
-  let fediSignup = $state(fediBack?.kind === "register" || popupLogin.resumed);
+  let fediSignup = $state(fediBack?.kind === "register" || popup.resumed);
   let fediNotice = $state<string | null>(null);
   // Back from a fresh login for the first password: to the settings again.
   let reopenSettings = $state(fediBack?.kind === "reauth");
