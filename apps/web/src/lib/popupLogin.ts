@@ -21,7 +21,7 @@ export const popupLogin = (s: { asked: string | null; mark: string | null; back:
           ? "start"
           : s.back.kind === "connect"
             ? "deliver"
-            : "text" in s.back
+            : s.back.kind === "error"
               ? { error: s.back.text }
               : null;
   return { home, resumed, phase };

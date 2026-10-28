@@ -1,4 +1,5 @@
 import { inVoice, isLobby, joinChannel, selfOf, setSelfState, type ServerState } from "@kallisti/protocol";
+import { untrack } from "svelte";
 import type { RemoteVoice } from "../components/Client.svelte";
 import type { ConnectionInfo } from "./connectionInfo.svelte";
 import type { Place } from "./place";
@@ -50,11 +51,13 @@ export const createVoiceAcross = (deps: {
       const stays = voiceJoined(before, ids);
       before = ids;
       if (stays === null) return;
-      for (const v of views.filter((x) => x.id !== stays)) {
-        if (ids.includes(v.id)) leaveVoiceOn(v.id);
-        const place = v.session.place;
-        if (place?.voice != null) v.session.keepPlace({ ...place, voice: null });
-      }
+      untrack(() => {
+        for (const v of views.filter((x) => x.id !== stays)) {
+          if (ids.includes(v.id)) leaveVoiceOn(v.id);
+          const place = v.session.place;
+          if (place?.voice != null) v.session.keepPlace({ ...place, voice: null });
+        }
+      });
     });
   });
   return {

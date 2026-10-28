@@ -23,5 +23,7 @@ describe("the popup in which a Kallisti page adds this server", () => {
   });
   it("is no popup back from another kind of login (a normal one in this tab)", () => {
     expect(popupLogin({ asked: null, mark: HOME, back: { kind: "linked", text: "x" }, kept: true }).home).toBeNull();
+    // Asked, with another kind's result in the address: no error from it.
+    expect(popupLogin({ asked: HOME, mark: HOME, back: { kind: "linked", text: "x" }, kept: true }).phase).toBeNull();
   });
 });
