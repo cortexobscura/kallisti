@@ -10,9 +10,11 @@ A link to a voice channel (like the text channel links
 Join. "Copy link" in the channel menu for voice and text channels (on
 desktop too: today only the phone sheet has it, for text).
 
-- The link gives no access: a private channel's link works only for its
-  members (others: "This channel does not exist or is private"). Access
-  comes from invite links.
+- Private channels (later private categories): "Copy link" by staff
+  and the channel's moderators makes a one-use invite link, valid 7 days
+  (decided 2026-10-29); it makes the opener a member, then the same
+  dialog. Others copy a plain link, which works only for members (others:
+  "This channel does not exist or is private").
 - Invite links that join voice today join at once: they get the same
   dialog.
 - Another server's link opens that server first (as message links do);
