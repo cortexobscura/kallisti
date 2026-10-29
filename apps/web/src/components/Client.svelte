@@ -757,26 +757,14 @@
     return true;
   };
   // "Copy link" (see linkPlan): a one-use invite (valid a week) for who
-  // manages a private channel, else a plain link. The invite comes from
-  // the server first (not shown in the members dialog: copyingInvite).
+  // manages a private channel, else a plain link. No clipboard: no invite.
   const INVITE_SECONDS = 7 * 24 * 3600;
-  let copyingInvite: number | null = null;
-  const inviteFor = (access: number) =>
-    new Promise<string>((resolve, reject) => {
-      copyingInvite = access;
-      const done = () => (off(), queueMicrotask(() => (copyingInvite = null)));
-      const off = connection.onTextEvent((ev) => {
-        if (ev.type === "invite-created" && ev.voice === access) {
-          done();
-          resolve(inviteLink(site, ev.token));
-        }
-      });
-      connection.request({ createInvite: access, seconds: INVITE_SECONDS, uses: 1 }).catch((err: unknown) => (done(), reject(err)));
-    });
   const copyLink = (kind: ChannelKind, id: number) => {
     const plan = linkPlan(site, kind, id, { access: accessChannel(kind, id, text.channels), invites: canManageMembers(server, text, kind, id) });
     if (!plan) return;
-    const url = "url" in plan ? Promise.resolve(plan.url) : inviteFor(plan.invite);
+    if (!navigator.clipboard) return flash("Could not copy the link");
+    const url =
+      "url" in plan ? Promise.resolve(plan.url) : connection.createInvite(plan.invite, INVITE_SECONDS, 1).then((token) => inviteLink(site, token));
     copyLater(url, navigator.clipboard, globalThis.ClipboardItem).then(
       () => flash("url" in plan ? "Link copied" : "Invite link copied: one use, valid 7 days"),
       () => flash("Could not copy the link"),
@@ -856,7 +844,6 @@
   let newInvite = $state<{ voice: number; token: string } | null>(null);
   $effect(() =>
     connection.onTextEvent((ev) => {
-      if (ev.type === "invite-created" && ev.voice !== copyingInvite) newInvite = { voice: ev.voice, token: ev.token };
       if (ev.type !== "invite-joined") return;
       const place = invitePlace(ev);
       if (place.kind === "text") show(place);
@@ -1320,7 +1307,7 @@
     onLink: (href: string) => {
       const link = parseMessageLink(href, site);
       // A voice link says itself when it goes nowhere (see askJoin).
-      if (link) return "voice" in link ? (askJoin(link.voice), "opened") : openMessage(link) ? "opened" : "unavailable";
+      if (link) return openMessage(link) || "voice" in link ? "opened" : "unavailable";
       if (inviteOf(href) && onInvite?.(href)) return "opened";
       return onServerLink?.(href) ? "opened" : null;
     },
@@ -1798,7 +1785,7 @@
         connection.manage({ invites: f.access });
       }}
       onSubmit={channels.submitMembers}
-      onCreateInvite={(seconds, uses) => connection.request({ createInvite: f.access, seconds, uses })}
+      onCreateInvite={(seconds, uses) => connection.createInvite(f.access, seconds, uses).then((token) => void (newInvite = { voice: f.access, token }))}
       onDeleteInvite={(id) => connection.request({ deleteInvite: id })}
       onClose={() => {
         newInvite = null;

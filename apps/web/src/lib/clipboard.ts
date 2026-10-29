@@ -8,7 +8,10 @@ export const copyLater = async (text: Promise<string>, clipboard: Clipboard | un
   if (!clipboard) throw new Error("no clipboard");
   if (item && clipboard.write) {
     const blob = text.then((t) => new Blob([t], { type: "text/plain" }));
-    return clipboard.write([new item({ "text/plain": blob })] as never[]);
+    blob.catch(() => {}); // the caller hears of it (a write that failed first leaves it alone)
+    await clipboard.write([new item({ "text/plain": blob })] as never[]);
+    await text;
+    return;
   }
   return clipboard.writeText(await text);
 };

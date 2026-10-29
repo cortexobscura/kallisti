@@ -381,6 +381,13 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
       ws.send(manageRequest(action));
       return Promise.resolve();
     },
+    // A private channel's invite link: its token (shown once), from the
+    // answer to this request only.
+    createInvite: (voice: number, seconds: number, uses: number) => {
+      let token = "";
+      const confirms = (ev: ServerEvent) => ev.type === "invite-created" && ev.voice === voice && ((token = ev.token), true);
+      return wait({ via: "text", confirms }, () => ws.send(manageRequest({ createInvite: voice, seconds, uses }))).then(() => token);
+    },
     // Other requests a control waits on: a text request (done on its
     // answer), Mumble messages (done once the state holds the change).
     ask: (body: string, confirms: (ev: ServerEvent) => boolean) => wait({ via: "text", confirms }, () => ws.send(body)),
