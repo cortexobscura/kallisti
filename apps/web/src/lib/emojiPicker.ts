@@ -89,7 +89,9 @@ export const parseRecent = (raw: string | null): string[] => {
 // little (so the most used stay, and old habits go). The biggest are
 // kept, biggest first.
 export type EmojiUses = Readonly<Record<string, number>>;
-const FADE = 0.9;
+const FADE = 0.98;
+// Used more than once lately: a habit, for the first row.
+const HABIT = 1.5;
 const MAX_USES = 50;
 
 export const addUse = (uses: EmojiUses, emoji: string): EmojiUses => {
@@ -108,14 +110,26 @@ export const parseUses = (raw: string | null): EmojiUses => {
   }
 };
 
-// The quick reactions in two rows: the most used (in a row that stays
-// put; ties and missing counts by recency), then recent ones; the
-// defaults fill gaps; none twice.
-export const quickRows = (uses: EmojiUses, recent: string[], defaults: string[], first: number, second: number) => {
-  const at = (e: string) => (recent.includes(e) ? recent.indexOf(e) : recent.length);
-  const used = Object.keys(uses).sort((a, b) => uses[b]! - uses[a]! || at(a) - at(b));
-  const top = [...new Set([...used, ...recent, ...defaults])].slice(0, first);
-  const rest = [...new Set([...recent, ...defaults])].filter((e) => !top.includes(e)).slice(0, second);
+// The quick reactions in two rows: habits (used more than once lately,
+// most first; ties by recency), filled from the defaults, so the row stays
+// put; then recent ones. Without counts yet (from before): recent ones
+// first. None twice; known: what still exists (custom emoji go).
+export const quickRows = (
+  uses: EmojiUses,
+  recent: string[],
+  defaults: string[],
+  first: number,
+  second: number,
+  known: (emoji: string) => boolean = () => true,
+) => {
+  const rec = recent.filter(known);
+  const at = (e: string) => (rec.includes(e) ? rec.indexOf(e) : rec.length);
+  const habits = Object.keys(uses)
+    .filter((e) => uses[e]! >= HABIT && known(e))
+    .sort((a, b) => uses[b]! - uses[a]! || at(a) - at(b));
+  const counted = Object.keys(uses).length > 0;
+  const top = [...new Set([...habits, ...(counted ? [] : rec), ...defaults])].slice(0, first);
+  const rest = [...new Set([...rec, ...defaults])].filter((e) => !top.includes(e)).slice(0, second);
   return { first: top, second: rest };
 };
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { usedEmoji } from "../lib/emojiPrefs.svelte";
+  import { pickedEmoji } from "../lib/emojiPrefs.svelte";
   import { CLEAR_AFTER, MAX_STATUS_TEXT, clearAfterUntil, type ClearAfter, type CustomStatus } from "../lib/presence";
   import Emoji from "./Emoji.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
@@ -32,7 +32,7 @@
     dialog?.close();
   };
   const pick = (e: string) => {
-    usedEmoji(e);
+    pickedEmoji(e);
     emoji = e;
     picker = null;
   };

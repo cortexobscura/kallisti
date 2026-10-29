@@ -119,8 +119,8 @@ describe("emoji counts", () => {
     uses = addUse(uses, "❤");
     expect(Object.keys(uses)).toEqual(["❤\uFE0F", "👍"]);
     expect(uses["❤\uFE0F"]).toBe(1);
-    expect(uses["👍"]).toBeCloseTo(0.9);
-    expect(addUse(uses, "👍")["👍"]).toBeCloseTo(1.81); // its own count goes on
+    expect(uses["👍"]).toBeCloseTo(0.98);
+    expect(addUse(uses, "👍")["👍"]).toBeCloseTo(1.9604); // its own count goes on
   });
   it("keep a limited number, the biggest", () => {
     let uses: Record<string, number> = {};
@@ -133,15 +133,36 @@ describe("emoji counts", () => {
     expect(parseUses(JSON.stringify({ "👍": 2, x: "y", z: -1 }))).toEqual({ "👍": 2 });
     expect(parseUses("nope")).toEqual({});
     expect(parseUses(null)).toEqual({});
+    expect(parseUses("[1,2]")).toEqual({});
+    expect(parseUses('{"a": 1e999}')).toEqual({});
   });
 });
 
 describe("quickRows", () => {
+  it("keeps habits in row 1: emoji used once go to row 2", () => {
+    let uses = {};
+    let recent: string[] = [];
+    const use = (e: string) => ((uses = addUse(uses, e)), (recent = addRecent(recent, e)));
+    for (let i = 0; i < 15; i++) for (const e of ["👍", "😂", "❤", "🎉"]) use(e);
+    const before = quickRows(uses, recent, [], 8, 10).first.slice(0, 4);
+    for (const e of ["🍕", "🌮", "🐱", "🚀", "🌴"]) use(e);
+    const rows = quickRows(uses, recent, [], 8, 10);
+    expect(rows.first.slice(0, 4)).toEqual(before);
+    expect(rows.second.slice(0, 5)).toEqual(["🌴", "🚀", "🐱", "🌮", "🍕"]);
+  });
+  it("breaks ties by recency, and takes counted ones not in the recent list", () => {
+    expect(quickRows({ "🅰️": 2, "🅱️": 2 }, ["🅱️", "🅰️"], [], 2, 0).first).toEqual(["🅱️", "🅰️"]);
+    expect(quickRows({ "🍕": 3 }, [], [], 1, 0).first).toEqual(["🍕"]);
+  });
+  it("leaves out what is gone (custom emoji)", () => {
+    expect(quickRows({ ":gone:": 5, "🍕": 3 }, [":gone:", "🌮"], [], 2, 2, (e) => e !== ":gone:")).toEqual({ first: ["🍕"], second: ["🌮"] });
+  });
   const defaults = ["👍", "❤️", "😂", "🎉"];
   it("most used first (it stays put), then recent ones, defaults in the gaps, none twice", () => {
     const uses = { "🍕": 5, "🔥": 3, "😀": 1 };
     expect(quickRows(uses, ["😀", "🐱", "🍕", "🌮"], defaults, 2, 3)).toEqual({ first: ["🍕", "🔥"], second: ["😀", "🐱", "🌮"] });
-    expect(quickRows(uses, [], defaults, 3, 3)).toEqual({ first: ["🍕", "🔥", "😀"], second: ["👍", "❤️", "😂"] });
+    // 😀 was used once: no habit yet, a default instead.
+    expect(quickRows(uses, [], defaults, 3, 3)).toEqual({ first: ["🍕", "🔥", "👍"], second: ["❤️", "😂", "🎉"] });
   });
   it("without counts yet (from before): recent ones, then defaults", () => {
     expect(quickRows({}, ["🐱", "🌮"], defaults, 2, 3)).toEqual({ first: ["🐱", "🌮"], second: ["👍", "❤️", "😂"] });

@@ -96,7 +96,7 @@
     display: grid;
     grid-template-columns: repeat(9, minmax(0, 44px));
     justify-content: space-between;
-    row-gap: 8px;
+    gap: 8px 4px;
     margin-bottom: 12px;
   }
   .quick button {
@@ -114,8 +114,8 @@
     background: rgb(88 101 242 / 0.3);
   }
   .quick :global(.emoji) {
-    width: 26px;
-    height: 26px;
+    width: 60%;
+    height: auto;
   }
   .danger {
     color: var(--danger);

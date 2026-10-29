@@ -686,14 +686,7 @@
   // The quick reactions in two rows (see quickRows): 8 most used, then
   // recent ones, 10 on wide screens, 9 on phones (under 8 and the "+");
   // "+" opens all emoji (allEmoji: for that message).
-  const quickFor = (second: number) =>
-    quickRows(
-      Object.fromEntries(Object.entries(emojiUses.value).filter(([e]) => knownEmoji(e, custom))),
-      recentEmoji.value.filter((e) => knownEmoji(e, custom)),
-      COMMON_EMOJI,
-      8,
-      second,
-    );
+  const quickFor = (second: number) => quickRows(emojiUses.value, recentEmoji.value, COMMON_EMOJI, 8, second, (e) => knownEmoji(e, custom));
   const quick = $derived(quickFor(10));
   const quickPhone = $derived(quickFor(9));
   let allEmoji = $state.raw<{ id: number; anchor: DOMRect } | null>(null);

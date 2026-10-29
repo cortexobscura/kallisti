@@ -10,7 +10,12 @@ export const skinTone = persisted("emojiTone", (raw) => {
   return Number.isInteger(n) && n >= 0 && n <= 5 ? n : 0;
 });
 
+// An emoji used in a message or a reaction: recent, and counted.
 export const usedEmoji = (emoji: string) => {
   recentEmoji.set(addRecent(recentEmoji.value, emoji));
   emojiUses.set(addUse(emojiUses.value, emoji));
 };
+
+// Elsewhere (a status): only recent (the quick reactions count reactions
+// and messages).
+export const pickedEmoji = (emoji: string) => recentEmoji.set(addRecent(recentEmoji.value, emoji));
