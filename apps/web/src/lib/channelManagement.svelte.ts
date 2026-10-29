@@ -8,6 +8,7 @@ import {
   canManageMembers,
   canManageText,
   canModerate,
+  canViewMembers,
   managesCategory,
   menuRights,
   moderatorsChannel,
@@ -40,6 +41,8 @@ export const createChannelManagement = (current: () => Connection) => {
   // (by the Mumble channel).
   let members = $state<{ kind: ChannelKind; id: number; access: number } | null>(null);
   let moderators = $state<{ kind: ChannelKind; id: number; access: number } | null>(null);
+  // Who has access, read-only (members of a private channel).
+  let viewing = $state<{ kind: ChannelKind; id: number; access: number } | null>(null);
   const connection = $derived(current());
   const server = $derived(connection.state);
   const text = $derived(connection.text);
@@ -60,6 +63,7 @@ export const createChannelManagement = (current: () => Connection) => {
           ...opened,
           ...rights,
           canMembers: canManageMembers(server, text, opened.kind, opened.id),
+          canViewMembers: canViewMembers(server, text, opened.kind, opened.id),
           canCreateSub: opened.kind === "voice" && canCreateSubchannel(server, text, opened.id),
           canModerators: moderatorsChannel(server, text, opened.kind, opened.id) !== null,
           name: nameOf(opened.kind, opened.id),
@@ -80,6 +84,13 @@ export const createChannelManagement = (current: () => Connection) => {
   const membersForm = $derived.by(() =>
     members && members.access in text.private
       ? { ...members, name: nameOf(members.kind, members.id), members: text.private[members.access] ?? [] }
+      : null,
+  );
+
+  // Closed when the channel stops being private or we are no member.
+  const viewForm = $derived.by(() =>
+    viewing && canViewMembers(server, text, viewing.kind, viewing.id)
+      ? { ...viewing, name: nameOf(viewing.kind, viewing.id), members: text.private[viewing.access] ?? [] }
       : null,
   );
 
@@ -108,6 +119,9 @@ export const createChannelManagement = (current: () => Connection) => {
     canCreateIn: (category: number) => canCreateText(server, text, category),
     get members() {
       return membersForm;
+    },
+    get viewing() {
+      return viewForm;
     },
     get moderators() {
       return moderatorsForm;
@@ -165,6 +179,11 @@ export const createChannelManagement = (current: () => Connection) => {
       if (access !== null) members = { kind, id, access };
     },
     closeMembers: () => (members = null),
+    startViewMembers: (kind: ChannelKind, id: number) => {
+      const access = accessChannel(kind, id, text.channels);
+      if (access !== null) viewing = { kind, id, access };
+    },
+    closeViewMembers: () => (viewing = null),
     startModerators: (kind: ChannelKind, id: number) => {
       const access = moderatorsChannel(server, text, kind, id);
       if (access !== null) moderators = { kind, id, access };

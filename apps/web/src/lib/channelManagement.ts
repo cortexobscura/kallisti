@@ -37,6 +37,14 @@ export const canManageMembers = (server: ServerState, text: TextState, kind: Cha
   return access !== null && access in text.private && canModerate(server, text, access);
 };
 
+// Who has access to a private channel, read-only: its members who do not
+// manage it (the server sends the list to members only).
+export const canViewMembers = (server: ServerState, text: TextState, kind: ChannelKind, id: number): boolean => {
+  const access = accessChannel(kind, id, text.channels);
+  const me = myUserId(server);
+  return access !== null && me !== null && !!text.private[access]?.some((m) => m.id === me) && !canManageMembers(server, text, kind, id);
+};
+
 // A channel's moderators (staff appoint them): the Mumble channel that
 // holds them, or null. Not root: its moderators are the server's.
 export const moderatorsChannel = (server: ServerState, text: TextState, kind: ChannelKind, id: number): number | null => {

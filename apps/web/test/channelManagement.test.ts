@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initialState, Perm, type Channel, type ServerState } from "@kallisti/protocol";
-import { canCreateSubchannel, canManageMembers, menuRights } from "../src/lib/channelManagement";
+import { canCreateSubchannel, canManageMembers, canViewMembers, menuRights } from "../src/lib/channelManagement";
 import { initialTextState, type TextState } from "../src/lib/textChannels";
 
 const ch = (id: number, parent: number | null, position = 0): Channel => ({
@@ -94,5 +94,25 @@ describe("canCreateSubchannel", () => {
     const t: TextState = { ...text, channels: [...text.channels, { id: 12, name: "x", mumble: 6 }] };
     expect(canCreateSubchannel(s, t, 5)).toBe(false);
     expect(canCreateSubchannel(s, t, 6)).toBe(false);
+  });
+});
+
+describe("canViewMembers", () => {
+  const priv: TextState = {
+    ...text,
+    channels: [{ id: 10, name: "general", mumble: 20 }, { id: 11, name: "secret", mumble: 21 }],
+    private: { 21: [{ id: 7, name: "ann" }], 2: [{ id: 8, name: "bob" }] },
+  };
+  const as = (userId: number, root = 0): ServerState => ({
+    ...server({}, root),
+    session: 1,
+    users: { 1: { session: 1, name: `u${userId}`, userId, channelId: 0 } as ServerState["users"][number] },
+  });
+  it("is for members of a private channel who do not manage it", () => {
+    expect(canViewMembers(as(7), priv, "text", 11)).toBe(true);
+    expect(canViewMembers(as(8), priv, "voice", 2)).toBe(true);
+    expect(canViewMembers(as(8), priv, "text", 11)).toBe(false); // not a member (the server sends no list)
+    expect(canViewMembers(as(7), priv, "text", 10)).toBe(false); // not private
+    expect(canViewMembers(as(7, Perm.MakeChannel), priv, "text", 11)).toBe(false); // staff: the Members dialog
   });
 });

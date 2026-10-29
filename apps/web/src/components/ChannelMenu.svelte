@@ -13,6 +13,7 @@
     canMoveUp = false,
     canMoveDown = false,
     canMembers = false,
+    canViewMembers = false,
     canModerators = false,
     canCreateSub = false,
     recording,
@@ -24,6 +25,7 @@
     onMove,
     onDelete,
     onMembers,
+    onViewMembers,
     onModerators,
     direct,
     thread,
@@ -40,6 +42,9 @@
     // A private channel's members (staff and its moderators); the
     // channel's moderators (staff).
     canMembers?: boolean;
+    // Who has access, read-only (a private channel's members).
+    canViewMembers?: boolean;
+    onViewMembers?: () => void;
     canModerators?: boolean;
     // Voice channels: a subchannel in it (MakeChannel there).
     canCreateSub?: boolean;
@@ -76,6 +81,8 @@
   const id = $props.id();
   const noun = $derived(direct ? "conversation" : thread ? "thread" : category ? "category" : "channel");
   const changes = $derived(canEdit || canCreateSub || canMoveUp || canMoveDown || canMembers || canModerators);
+  // The part below the notifications: changes, or the read-only members.
+  const listed = $derived(changes || (canViewMembers && !!onViewMembers));
 </script>
 
 <ContextMenu {x} {y} label="Actions for {name}" {onClose}>
@@ -117,7 +124,7 @@
       {#if thread?.onInherit}<button onclick={act(thread.onInherit)}>Same as the channel</button>{/if}
       {#if !notify.desktop}<p class="none">Desktop notifications are off (Settings).</p>{/if}
     </div>
-    {#if changes}<div class="sep"></div>{/if}
+    {#if listed}<div class="sep"></div>{/if}
   {/if}
   {#if recording !== undefined && onRecord}
     {#if recording}
@@ -125,9 +132,10 @@
     {:else}
       <button onclick={act(() => onRecord(true))}>Record channel</button>
     {/if}
-    {#if changes}<div class="sep"></div>{/if}
+    {#if listed}<div class="sep"></div>{/if}
   {/if}
-  {#if changes}
+  {#if listed}
+    {#if canViewMembers && onViewMembers}<button onclick={act(onViewMembers)}>Members…</button>{/if}
     {#if canEdit && onEdit}<button onclick={act(onEdit)}>Edit {noun}</button>{/if}
     {#if canCreateSub && onCreateSub}<button onclick={act(onCreateSub)}>Create subchannel</button>{/if}
     {#if canMembers && onMembers}<button onclick={act(onMembers)}>Members…</button>{/if}

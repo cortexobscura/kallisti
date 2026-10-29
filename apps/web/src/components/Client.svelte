@@ -133,6 +133,7 @@
   import SearchPanel from "./SearchPanel.svelte";
   import ModerationDialog from "./ModerationDialog.svelte";
   import MembersDialog from "./MembersDialog.svelte";
+  import AccessDialog from "./AccessDialog.svelte";
   import Icon from "./Icon.svelte";
   import ServerRail from "./ServerRail.svelte";
   import SettingsDialog from "./SettingsDialog.svelte";
@@ -1642,6 +1643,8 @@
     canMoveUp={m.canMoveUp}
     canMoveDown={m.canMoveDown}
     canMembers={m.canMembers}
+    canViewMembers={m.canViewMembers}
+    onViewMembers={() => channels.startViewMembers(m.kind, m.id)}
     canModerators={m.canModerators}
     category={m.kind === "category"}
     canCreateSub={m.canCreateSub}
@@ -1749,6 +1752,15 @@
       }}
     />
   {/key}
+{/if}
+
+{#if channels.viewing}
+  {@const f = channels.viewing}
+  <AccessDialog
+    name={f.kind === "text" ? `#${f.name}` : f.name}
+    groups={readerGroups(f.members, text.roles, text.members, text.online, users, me?.userId ?? null) ?? []}
+    onClose={channels.closeViewMembers}
+  />
 {/if}
 
 {#if channels.moderators}
