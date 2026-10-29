@@ -17,3 +17,7 @@ default list. Counts stay on the device, like the recent list.
   then recent; defaults fill; no emoji twice; custom emoji that are gone
   left out).
 - Browser check on desktop and phone widths.
+
+## Result (2026-10-29)
+
+Done. Row 1: the 8 most used (counts fade by 0.9 per later use, 50 kept), then "+" (and "×" on wide screens); row 2: recent ones not in row 1, 10 wide, 9 on phones. 20 defaults fill gaps before there is a history. Without counts yet (from before), row 1 takes the recent ones. Checked in a browser at desktop and phone widths.

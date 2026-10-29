@@ -26,7 +26,7 @@
 - [x] [Links that join a voice channel](issues/voice-channel-links.md)
 - [x] [See who has access to a private channel from its menu](issues/private-channel-members-menu.md)
 - [x] [Private categories: members for all channels in them](issues/private-categories.md)
-- [ ] [Quick reactions: two rows, most used and recent](issues/quick-emoji-rows.md)
+- [x] [Quick reactions: two rows, most used and recent](issues/quick-emoji-rows.md)
 - [ ] [Rethink the split of text and voice channels](issues/text-voice-split.md)
 - [ ] [Remove the fallback for plain-named session cookies (after 2026-11-28)](issues/remove-plain-cookie-fallback.md)
 - [x] [Fixes from the multi-server branch that main could use](issues/hardening-from-multi-server.md) (merged with the branch)
