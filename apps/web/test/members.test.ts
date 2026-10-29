@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bioRequest, hiddenMembers, offlineMembers, onlineRows, pictureNames, readerGroups, type ReaderRow } from "../src/lib/members";
+import { bioRequest, hiddenMembers, offlineMembers, onlineRows, pictureNames, readerGroups, readerRow, type ReaderRow } from "../src/lib/members";
 import { initialTextState, parseServerEvent, reduceText } from "../src/lib/textChannels";
 
 describe("offlineMembers", () => {
@@ -183,5 +183,22 @@ describe("bios", () => {
     const s = reduceText(initialTextState, parseServerEvent('{"type":"bio","user":7,"text":"<b>hi</b>"}')!);
     expect(s.bios).toEqual({ 7: "<b>hi</b>" });
     expect(parseServerEvent('{"type":"bio","user":7}')).toBeNull();
+  });
+});
+
+describe("readerRow", () => {
+  it("names a row, and keys it by session or id (names repeat: a guest, two sessions)", () => {
+    const rows: ReaderRow<{ name: string; session: number }>[] = [
+      { user: { name: "ann", session: 1 } },
+      { user: { name: "ann", session: 2 } },
+      { member: { id: 7, name: "ann", session: 3 } },
+      { offline: { id: 8, name: "bob" } },
+    ];
+    expect(rows.map(readerRow)).toEqual([
+      { key: "s1", name: "ann" },
+      { key: "s2", name: "ann" },
+      { key: "u7", name: "ann" },
+      { key: "o8", name: "bob" },
+    ]);
   });
 });

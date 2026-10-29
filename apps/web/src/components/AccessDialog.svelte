@@ -1,14 +1,13 @@
 <script lang="ts">
-  import type { ReaderGroup } from "../lib/members";
+  import { readerRow, type ReaderGroup } from "../lib/members";
 
   // Who has access to a private channel, for its members (read-only; staff
   // and the channel's moderators change it in the Members dialog): its
   // members and the staff, online first (see readerGroups).
-  let { name, groups, onClose }: { name: string; groups: readonly ReaderGroup<{ name: string }>[]; onClose: () => void } = $props();
+  let { name, groups, onClose }: { name: string; groups: readonly ReaderGroup<{ name: string; session: number }>[]; onClose: () => void } = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
   $effect(() => dialog?.showModal());
-  const rowName = (r: ReaderGroup<{ name: string }>["rows"][number]) => ("user" in r ? r.user.name : "member" in r ? r.member.name : r.offline.name);
 </script>
 
 <dialog bind:this={dialog} onclose={onClose} aria-labelledby="access-dialog-title">
@@ -20,8 +19,8 @@
   {#each groups as g (g.title)}
     <h3>{g.title} — {g.rows.length}</h3>
     <ul aria-label={g.title}>
-      {#each g.rows as r (rowName(r))}
-        <li class:offline={"offline" in r}><span class="ellipsis">{rowName(r)}</span></li>
+      {#each g.rows as r (readerRow(r).key)}
+        <li class:offline={"offline" in r}><span class="ellipsis">{readerRow(r).name}</span></li>
       {/each}
     </ul>
   {/each}

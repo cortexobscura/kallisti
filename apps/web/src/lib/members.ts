@@ -71,6 +71,11 @@ export const readerGroups = <U extends { name: string; userId: number | null }>(
   return groups.filter((g) => g.rows.length);
 };
 
+// A reader row's name and key (names repeat: a guest and an account, one
+// user in two sessions).
+export const readerRow = <U extends { name: string; session: number }>(r: ReaderRow<U>) =>
+  "user" in r ? { key: `s${r.user.session}`, name: r.user.name } : "member" in r ? { key: `u${r.member.id}`, name: r.member.name } : { key: `o${r.offline.id}`, name: r.offline.name };
+
 // The names of members with a saved picture (see TextState.pictures).
 export const pictureNames = (members: Members, pictures: ReadonlySet<number>) =>
   new Set([...pictures].flatMap((id) => (members[id] === undefined ? [] : [members[id]])));

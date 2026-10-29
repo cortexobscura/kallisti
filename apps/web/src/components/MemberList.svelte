@@ -4,7 +4,7 @@
   import type { UserStatus } from "../lib/presence";
   import type { User } from "@kallisti/protocol";
   import type { Peer } from "../lib/textChannels";
-  import { onlineRows, type OnlineMember, type ReaderGroup, type ReaderRow } from "../lib/members";
+  import { onlineRows, readerRow, type OnlineMember, type ReaderGroup, type ReaderRow } from "../lib/members";
   import Avatar from "./Avatar.svelte";
   import Badge from "./Badge.svelte";
   import Emoji from "./Emoji.svelte";
@@ -73,7 +73,7 @@
   {#if list.length}
     <h2>{title} — {list.length}</h2>
     <ul>
-      {#each list as r ("user" in r ? `s${r.user.session}` : "member" in r ? `u${r.member.id}` : `o${r.offline.id}`)}
+      {#each list as r (readerRow(r).key)}
         {#if "user" in r}
           {@const user = r.user}
           {@render row(user.name, roleOf(user), statusOf(user.session), speaking.has(user.session), (e) => onUserMenu(user.session, e))}

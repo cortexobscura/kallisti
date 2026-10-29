@@ -114,5 +114,8 @@ describe("canViewMembers", () => {
     expect(canViewMembers(as(8), priv, "text", 11)).toBe(false); // not a member (the server sends no list)
     expect(canViewMembers(as(7), priv, "text", 10)).toBe(false); // not private
     expect(canViewMembers(as(7, Perm.MakeChannel), priv, "text", 11)).toBe(false); // staff: the Members dialog
+    const mod = { ...priv, roles: { ...priv.roles, channelMods: { 2: [8] } } };
+    expect(canViewMembers(as(8), mod, "voice", 2)).toBe(false); // its moderator: the Members dialog
+    expect(canViewMembers(as(7), { ...priv, private: { 21: [] } }, "text", 11)).toBe(false); // no list sent
   });
 });
