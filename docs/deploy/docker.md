@@ -1,6 +1,6 @@
 # Docker and Podman deployment
 
-For installation commands, use [Installing with Docker or Podman](../install-docker.md). Run Compose from the repository root. The Compose files in `deploy/` support the built-in Mumble server with Caddy (`compose.yml`), the same server with Cloudflare DNS-01 and no published HTTP port 80 (`compose.yml` plus `compose.dns01.yml`), an external Murmur with Caddy (`compose.murmur.yml`), or an existing reverse proxy (`compose.behind-proxy.yml`). Only run one variant per installation.
+For installation commands, use [Installing with Docker or Podman](../install-docker.md). Run Compose from the repository root. The Compose files in `deploy/` support the built-in Mumble server with Caddy (`compose.yml`), the same server with Cloudflare DNS-01 and no published HTTP port 80 (`compose.yml` plus `compose.dns01.yml`), an external Murmur with Caddy (`compose.murmur.yml`), or an existing reverse proxy (`compose.behind-proxy.yml`). Only run one variant per installation. Each variant builds Kallisti from the source, or pulls the published image with `compose.published.yml` on top (see [published images](../install-docker.md#published-images-instead-of-a-build)).
 
 ## Traffic and data
 

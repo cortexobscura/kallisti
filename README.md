@@ -57,9 +57,13 @@ docker compose -f deploy/compose.yml up -d --remove-orphans
 Open TCP 80 and 443 (the web), TCP and UDP 64738 (Mumble clients and the
 desktop app) and UDP 8189 (streams from OBS). The image includes ffmpeg for
 previews of videos and streams; push notifications and channel recordings
-need no extra setup (see [configuration](docs/configuration.md)).
+need no extra setup (see [configuration](docs/configuration.md)). Instead
+of building it, Compose can pull the published image
+(`ghcr.io/kallisti-chat/kallisti`, amd64 and arm64): see
+[installing](docs/install-docker.md#published-images-instead-of-a-build).
 
-- [Installing with Docker or Podman](docs/install-docker.md) (both ways)
+- [Installing with Docker or Podman](docs/install-docker.md) (both ways,
+  built here or the published images)
 - [Installing without containers](docs/install-binary.md) (the program,
   systemd, Caddy)
 - [Configuration](docs/configuration.md): all settings
@@ -186,7 +190,12 @@ GitHub builds the app for macOS, Windows and Linux on pushes to `main`
 (`.github/workflows/desktop.yml`). The macOS build is signed and notarized
 (repository secrets); Windows and Linux are not signed yet. The Android APK
 (arm64) comes from `.github/workflows/android.yml` the same way, signed with
-the release key from repository secrets.
+the release key from repository secrets. The container images go to the
+GitHub Container Registry from `.github/workflows/image.yml` (amd64 and
+arm64): `edge` on pushes to `main`; for tags `v*` the version (`0.10.1`,
+`0.10`) and `latest`. New packages of the organisation are private: make
+each public once (Packages, the package, Package settings, Change
+visibility), or others cannot pull them.
 
 ## Development
 
