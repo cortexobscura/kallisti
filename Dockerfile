@@ -1,6 +1,9 @@
 # Kallisti: the Go server with the built web app. See deploy/compose.yml.
+# Published for amd64 and arm64 (.github/workflows/image.yml): the web app
+# and the server build on the build machine's platform (Go cross-compiles),
+# only the last stage runs on the target's.
 
-FROM docker.io/library/node:24-alpine AS web
+FROM --platform=$BUILDPLATFORM docker.io/library/node:24-alpine AS web
 RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
 WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
@@ -12,12 +15,13 @@ COPY packages/protocol packages/protocol
 COPY apps/web apps/web
 RUN pnpm --filter @kallisti/web build
 
-FROM docker.io/library/golang:1.26-alpine AS server
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26-alpine AS server
+ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 COPY server ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /kallisti ./cmd/server
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /kallisti ./cmd/server
 
 FROM docker.io/library/alpine:3.21
 # ffmpeg: video thumbnails and picture previews (MEDIA_PREVIEWS=0: off).
