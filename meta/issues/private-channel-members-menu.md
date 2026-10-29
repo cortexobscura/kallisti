@@ -16,3 +16,7 @@ already (sidecar privatechannels.go): web only.
 - Menu item for members who cannot edit; the editable dialog stays for
   staff and channel moderators.
 - Unit test for who gets which item; browser check as a plain member.
+
+## Result (2026-10-29)
+
+Done: "Members…" (read-only) in the menu of text and voice channels for members who do not manage them. Checked in a browser on a local server. Not on the phone channel sheet (it has no Members item at all yet).

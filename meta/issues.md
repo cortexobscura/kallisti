@@ -24,7 +24,7 @@
 - [ ] [Message HTML: forms](issues/message-forms.md)
 - [ ] [Mentions of names with emoji](issues/mention-emoji-names.md)
 - [ ] [Links that join a voice channel](issues/voice-channel-links.md)
-- [ ] [See who has access to a private channel from its menu](issues/private-channel-members-menu.md)
+- [x] [See who has access to a private channel from its menu](issues/private-channel-members-menu.md)
 - [ ] [Private categories: members for all channels in them](issues/private-categories.md)
 - [ ] [Rethink the split of text and voice channels](issues/text-voice-split.md)
 - [ ] [Remove the fallback for plain-named session cookies (after 2026-11-28)](issues/remove-plain-cookie-fallback.md)
