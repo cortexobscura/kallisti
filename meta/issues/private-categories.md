@@ -11,13 +11,12 @@ groups and ACLs inherit to them, so the members group goes on the
 category's Mumble channel (server SetPrivate takes it already; the UI does
 not offer it).
 
-To decide:
+Decided (2026-10-29):
 
-- A private channel inside a private category: its members plus the
-  category's (inherit the group), or its own only.
-- Categories hold text channels only; voice channels are in the Mumble
-  tree, where a private parent voice channel already passes access to its
-  subchannels. Is that enough for voice?
+- A private channel inside a private category: its own members and the
+  category's (the channel's group inherits the category's).
+- Voice: no change. Categories hold text channels; a private voice
+  channel already passes access to its subchannels.
 
 ## Acceptance Criteria
 
