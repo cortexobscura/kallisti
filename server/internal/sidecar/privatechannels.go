@@ -17,6 +17,8 @@ import (
 type PrivateChannel struct {
 	Channel uint32   `json:"channel"`
 	Members []Member `json:"members,omitempty"` // for staff and members only
+	// Members by its category (a private one), as Members.
+	Inherited []Member `json:"inherited,omitempty"`
 }
 
 // Member is a registered user in a private channel.
@@ -31,16 +33,17 @@ func (h *Hub) channelsFor(id mumble.Identity) []wireChannel {
 }
 
 // privateFor: the private channels the user sees, with members for staff,
-// the channel's moderators and its members (who reads it, see the member
-// list); not for others who see it (by an ACL from a Mumble client).
+// the channel's moderators and its members (also by its category: who
+// reads it, see the member list); not for others who see it (a private
+// category's channel itself, or by an ACL from a Mumble client).
 func (h *Hub) privateFor(id mumble.Identity) []PrivateChannel {
 	out := []PrivateChannel{}
 	for _, p := range h.voice.Private() {
 		if !h.voice.Sees(id.Session, p.Channel) {
 			continue
 		}
-		if !h.voice.ModeratesIn(id.Session, p.Channel) && !(id.Registered && slices.ContainsFunc(p.Members, func(m Member) bool { return m.ID == id.UserID })) {
-			p.Members = nil
+		if !h.voice.ModeratesIn(id.Session, p.Channel) && !h.voice.InPrivate(id.Session, p.Channel) {
+			p.Members, p.Inherited = nil, nil
 		}
 		out = append(out, p)
 	}

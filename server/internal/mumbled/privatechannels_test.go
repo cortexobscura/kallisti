@@ -280,7 +280,8 @@ func TestPrivateCategories(t *testing.T) {
 	if !s.InPrivate(alice.session, games) || !s.InPrivate(alice.session, secret) || !s.InPrivate(carol.session, secret) || s.InPrivate(carol.session, games) || s.InPrivate(bob.session, games) {
 		t.Error("InPrivate")
 	}
-	if got := s.Private(); len(got) != 2 || got[0].Channel != games || !slices.Equal(got[0].Members, []Member{{aliceID, "alice"}}) {
+	if got := s.Private(); len(got) != 2 || got[0].Channel != games || !slices.Equal(got[0].Members, []Member{{aliceID, "alice"}}) ||
+		!slices.Equal(got[1].Members, []Member{{carolID, "carol"}}) || !slices.Equal(got[1].Inherited, []Member{{aliceID, "alice"}}) {
 		t.Fatalf("private %+v", got)
 	}
 	// A new channel in the category: for its members only. One moved out:

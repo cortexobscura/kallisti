@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"log/slog"
+	"slices"
 	"time"
 
 	"kallisti.chat/server/internal/mumble"
@@ -141,7 +142,7 @@ func (c *Conn) redeemInvite(id mumble.Identity, token string) {
 		c.manageError(errInvite)
 		return
 	}
-	if !h.voice.Sees(id.Session, inv.Channel) {
+	if !h.voice.ModeratesIn(id.Session, inv.Channel) && !h.voice.InPrivate(id.Session, inv.Channel) {
 		// The use counts first, so no limit is overrun; a failed add
 		// loses it.
 		if err := h.store.UseInvite(inv.ID, now); err != nil {
@@ -157,6 +158,8 @@ func (c *Conn) redeemInvite(id mumble.Identity, token string) {
 	m := map[string]any{"type": "invite-joined", "voice": inv.Channel}
 	if t, ok := h.textOf(inv.Channel); ok {
 		m["channel"] = t.ID
+	} else if t, ok := h.firstInCategory(id, inv.Channel); ok {
+		m["channel"] = t.ID
 	}
 	c.send(m)
 }
@@ -171,4 +174,22 @@ func (h *Hub) pruneInvites() {
 	if err := h.store.PruneInvites(private, h.now()); err != nil {
 		slog.Error("prune invites", "err", err)
 	}
+}
+
+// firstInCategory: the first text channel the user reads in the category
+// of this Mumble channel (an invite to a private category opens it).
+func (h *Hub) firstInCategory(id mumble.Identity, channel uint32) (wireChannel, bool) {
+	h.mu.Lock()
+	i := slices.IndexFunc(h.categories, func(c wireCategory) bool { return c.Mumble != 0 && c.Mumble == channel })
+	var cat int64
+	if i >= 0 {
+		cat = h.categories[i].ID
+	}
+	h.mu.Unlock()
+	for _, c := range h.channelsFor(id) {
+		if i >= 0 && c.Category == cat {
+			return c, true
+		}
+	}
+	return wireChannel{}, false
 }

@@ -41,6 +41,8 @@ type fakeVoice struct {
 	users map[uint32]MumbleUser
 	web   map[uint32]bool
 	gone  map[uint32]bool
+	// Sessions an invite made members (see InPrivate).
+	added map[uint32]bool
 	// The last SetListenOnly.
 	listenOnly []ListenOnlyChannel
 	// Registered users' names, and those on a Mumble client (private

@@ -301,11 +301,14 @@ func (v voiceServer) ListenOnly() []sidecar.ListenOnlyChannel {
 func (v voiceServer) Private() []sidecar.PrivateChannel {
 	var out []sidecar.PrivateChannel
 	for _, c := range v.Server.Private() {
-		members := make([]sidecar.Member, len(c.Members))
-		for i, m := range c.Members {
-			members[i] = sidecar.Member{ID: m.ID, Name: m.Name}
+		conv := func(ms []mumbled.Member) []sidecar.Member {
+			out := make([]sidecar.Member, len(ms))
+			for i, m := range ms {
+				out[i] = sidecar.Member{ID: m.ID, Name: m.Name}
+			}
+			return out
 		}
-		out = append(out, sidecar.PrivateChannel{Channel: c.Channel, Members: members})
+		out = append(out, sidecar.PrivateChannel{Channel: c.Channel, Members: conv(c.Members), Inherited: conv(c.Inherited)})
 	}
 	return out
 }

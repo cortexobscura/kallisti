@@ -23,6 +23,10 @@ func (f *fakeVoice) AddMember(channel, user uint32) (bool, error) {
 		return false, nil
 	}
 	f.members[user/10] = true
+	if f.added == nil {
+		f.added = map[uint32]bool{}
+	}
+	f.added[user/10] = true
 	return true, nil
 }
 
@@ -174,5 +178,45 @@ func TestExpiredDeletedAndPublicInvitesStopWorking(t *testing.T) {
 	h.PrivateChanged()
 	if left, _ := h.store.Invites(101, now); len(left) != 0 {
 		t.Fatalf("left %v", left)
+	}
+}
+
+// Members: bob (in every private channel's list, see Private) and who
+// an invite added; others who see one see it by an ACL.
+func (f *fakeVoice) InPrivate(session, channel uint32) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.hidden[channel] && (session == 2 || f.added[session])
+}
+
+// An invite to a private category: a member of it, its first channel opens.
+func TestRedeemACategoryInvite(t *testing.T) {
+	h, v, secret, staff, carol := inviteHub(t)
+	manageOK(t, staff, `{"type":"create-category","name":"Games"}`)
+	h.mu.Lock()
+	cat := h.categories[0]
+	h.mu.Unlock()
+	manageOK(t, staff, `{"type":"set-category","channel":`+strconv.FormatInt(secret, 10)+`,"category":`+strconv.FormatInt(cat.ID, 10)+`}`)
+	v.mu.Lock()
+	v.hidden[cat.Mumble] = true
+	v.mu.Unlock()
+	staff.Handle([]byte(`{"type":"create-invite","voice":` + strconv.Itoa(int(cat.Mumble)) + `,"seconds":0,"uses":1}`))
+	m := next(t, staff)
+	token, _ := m["token"].(string)
+	if m["type"] != "invite-created" || token == "" {
+		t.Fatalf("staff got %v", m)
+	}
+	redeem(carol, token)
+	for {
+		m = next(t, carol)
+		if m["type"] == "invite-joined" || m["type"] == "error" {
+			break
+		}
+	}
+	if m["type"] != "invite-joined" || m["voice"] != float64(cat.Mumble) || m["channel"] != float64(secret) {
+		t.Fatalf("carol got %v", m)
+	}
+	if !v.InPrivate(3, cat.Mumble) {
+		t.Fatal("carol is not a member")
 	}
 }

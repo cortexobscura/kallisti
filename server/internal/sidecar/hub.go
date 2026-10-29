@@ -93,6 +93,9 @@ type Voice interface {
 	// UserBanned: a registered user is banned (it gets no pushes).
 	UserBanned(user uint32) bool
 	Private() []PrivateChannel
+	// InPrivate: the user is a member of a private channel (also by its
+	// category), not counting staff.
+	InPrivate(session, channel uint32) bool
 	SetPrivate(session, channel uint32, on bool, members []uint32) error
 	CreatePrivateChannel(session, parent uint32, name string) (uint32, error)
 	// AddMember adds a registered user to a private channel's members (by

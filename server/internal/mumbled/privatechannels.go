@@ -32,6 +32,9 @@ type Member = Speaker
 type PrivateChannel struct {
 	Channel uint32
 	Members []Member
+	// Inherited: members by its category (not its own: the members dialog
+	// edits those).
+	Inherited []Member
 }
 
 // privateACL: here and below; subs: below only (a category).
@@ -108,9 +111,17 @@ func (s *Server) Private() []PrivateChannel {
 			continue
 		}
 		p := PrivateChannel{Channel: id}
+		own := map[uint32]bool{}
 		if g := ch.Groups[membersGroup]; g != nil {
+			own = g.Add
 			for _, u := range slices.Sorted(maps.Keys(g.Add)) {
 				p.Members = append(p.Members, Member{ID: u})
+				ids[u] = true
+			}
+		}
+		for _, u := range slices.Sorted(maps.Keys(s.state.members(ch, membersGroup))) {
+			if !own[u] {
+				p.Inherited = append(p.Inherited, Member{ID: u})
 				ids[u] = true
 			}
 		}
@@ -118,13 +129,17 @@ func (s *Server) Private() []PrivateChannel {
 	}
 	s.mu.Unlock()
 	names, err := s.userNames(slices.Collect(maps.Keys(ids)))
-	for i := range out {
+	named := func(ms []Member) []Member {
 		if err == nil { // users who are gone; after an error all stay
-			out[i].Members = slices.DeleteFunc(out[i].Members, func(m Member) bool { return names[m.ID] == "" })
+			ms = slices.DeleteFunc(ms, func(m Member) bool { return names[m.ID] == "" })
 		}
-		for j := range out[i].Members {
-			out[i].Members[j].Name = cmp.Or(names[out[i].Members[j].ID], "?")
+		for j := range ms {
+			ms[j].Name = cmp.Or(names[ms[j].ID], "?")
 		}
+		return ms
+	}
+	for i := range out {
+		out[i].Members, out[i].Inherited = named(out[i].Members), named(out[i].Inherited)
 	}
 	return out
 }
