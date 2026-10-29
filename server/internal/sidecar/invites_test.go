@@ -213,10 +213,37 @@ func TestRedeemACategoryInvite(t *testing.T) {
 			break
 		}
 	}
-	if m["type"] != "invite-joined" || m["voice"] != float64(cat.Mumble) || m["channel"] != float64(secret) {
+	if m["type"] != "invite-joined" || m["voice"] != float64(cat.Mumble) || m["channel"] != float64(secret) || m["category"] != true {
 		t.Fatalf("carol got %v", m)
 	}
 	if !v.InPrivate(3, cat.Mumble) {
 		t.Fatal("carol is not a member")
 	}
+}
+
+// A public channel does not leave a private category (its history would
+// be everyone's), nor does a private category go while it holds channels.
+func TestPrivateCategoriesKeepTheirChannels(t *testing.T) {
+	h, v, secret, staff, _ := inviteHub(t)
+	general := h.channels[0].ID
+	manageOK(t, staff, `{"type":"create-category","name":"Games"}`)
+	h.mu.Lock()
+	cat := h.categories[0]
+	h.mu.Unlock()
+	set := func(ch, to int64) string {
+		return `{"type":"set-category","channel":` + strconv.FormatInt(ch, 10) + `,"category":` + strconv.FormatInt(to, 10) + `}`
+	}
+	manageOK(t, staff, set(general, cat.ID))
+	manageOK(t, staff, set(secret, cat.ID))
+	v.mu.Lock()
+	v.hidden[cat.Mumble] = true
+	v.mu.Unlock()
+	manageRefused(t, staff, set(general, 0))
+	manageRefused(t, staff, `{"type":"delete-category","category":`+strconv.FormatInt(cat.ID, 10)+`}`)
+	manageOK(t, staff, set(secret, 0)) // private itself: it may go
+	// A public category: all may go.
+	v.mu.Lock()
+	delete(v.hidden, cat.Mumble)
+	v.mu.Unlock()
+	manageOK(t, staff, set(general, 0))
 }

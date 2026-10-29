@@ -299,15 +299,15 @@ func (v voiceServer) ListenOnly() []sidecar.ListenOnlyChannel {
 }
 
 func (v voiceServer) Private() []sidecar.PrivateChannel {
+	conv := func(ms []mumbled.Member) []sidecar.Member {
+		out := make([]sidecar.Member, len(ms))
+		for i, m := range ms {
+			out[i] = sidecar.Member{ID: m.ID, Name: m.Name}
+		}
+		return out
+	}
 	var out []sidecar.PrivateChannel
 	for _, c := range v.Server.Private() {
-		conv := func(ms []mumbled.Member) []sidecar.Member {
-			out := make([]sidecar.Member, len(ms))
-			for i, m := range ms {
-				out[i] = sidecar.Member{ID: m.ID, Name: m.Name}
-			}
-			return out
-		}
 		out = append(out, sidecar.PrivateChannel{Channel: c.Channel, Members: conv(c.Members), Inherited: conv(c.Inherited)})
 	}
 	return out

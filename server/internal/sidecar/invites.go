@@ -158,8 +158,11 @@ func (c *Conn) redeemInvite(id mumble.Identity, token string) {
 	m := map[string]any{"type": "invite-joined", "voice": inv.Channel}
 	if t, ok := h.textOf(inv.Channel); ok {
 		m["channel"] = t.ID
-	} else if t, ok := h.firstInCategory(id, inv.Channel); ok {
-		m["channel"] = t.ID
+	} else if t, ok, isCat := h.firstInCategory(id, inv.Channel); isCat {
+		m["category"] = true // not a voice channel (no channel: none to open yet)
+		if ok {
+			m["channel"] = t.ID
+		}
 	}
 	c.send(m)
 }
@@ -177,8 +180,9 @@ func (h *Hub) pruneInvites() {
 }
 
 // firstInCategory: the first text channel the user reads in the category
-// of this Mumble channel (an invite to a private category opens it).
-func (h *Hub) firstInCategory(id mumble.Identity, channel uint32) (wireChannel, bool) {
+// of this Mumble channel (an invite to a private category opens it);
+// isCat: it is a category's.
+func (h *Hub) firstInCategory(id mumble.Identity, channel uint32) (c wireChannel, ok, isCat bool) {
 	h.mu.Lock()
 	i := slices.IndexFunc(h.categories, func(c wireCategory) bool { return c.Mumble != 0 && c.Mumble == channel })
 	var cat int64
@@ -186,10 +190,13 @@ func (h *Hub) firstInCategory(id mumble.Identity, channel uint32) (wireChannel, 
 		cat = h.categories[i].ID
 	}
 	h.mu.Unlock()
+	if i < 0 {
+		return wireChannel{}, false, false
+	}
 	for _, c := range h.channelsFor(id) {
-		if i >= 0 && c.Category == cat {
-			return c, true
+		if c.Category == cat {
+			return c, true, true
 		}
 	}
-	return wireChannel{}, false
+	return wireChannel{}, false, true
 }

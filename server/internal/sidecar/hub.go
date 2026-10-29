@@ -1459,11 +1459,19 @@ func (c *Conn) manage(id mumble.Identity, req request) {
 			err = h.store.RenameCategory(req.Category, name)
 		}
 	case "delete-category": // its channels stay, without a category
+		if h.exposes(req.Category, 0) {
+			c.manageError("make the category public or move its channels first: they would become visible to everyone")
+			return
+		}
 		access, err = true, h.store.DeleteCategory(req.Category)
 	case "order-categories":
 		_, cats := h.orderIDs()
 		err = h.store.SetCategoryPositions(fullOrder(req.Cats, cats))
 	case "set-category": // its moderators change
+		if h.exposesChannel(req.Channel, req.Category) {
+			c.manageError("this channel would become visible to everyone: make it private first")
+			return
+		}
 		access, err = true, h.store.SetChannelCategory(req.Channel, req.Category)
 	}
 	switch {

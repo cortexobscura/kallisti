@@ -103,3 +103,42 @@ func (h *Hub) channelsEvent(id mumble.Identity) map[string]any {
 	channels := h.channelsFor(id)
 	return map[string]any{"type": "channels", "channels": channels, "categories": h.categoriesFor(id, channels), "threads": h.threadsFor(id)}
 }
+
+// exposesChannel: moving the text channel to the category (0: none) would
+// show it to everyone: a public channel out of a private category to a
+// public place (its history would be everyone's).
+func (h *Hub) exposesChannel(channel, to int64) bool {
+	if h.voice == nil {
+		return false
+	}
+	h.mu.Lock()
+	i := slices.IndexFunc(h.channels, func(c wireChannel) bool { return c.ID == channel })
+	var ch wireChannel
+	if i >= 0 {
+		ch = h.channels[i]
+	}
+	from, dest := h.categoryMumble(ch.Category), h.categoryMumble(to)
+	h.mu.Unlock()
+	return i >= 0 && from != 0 && h.isPrivate(from) && !(ch.Mumble != 0 && h.isPrivate(ch.Mumble)) && !(dest != 0 && h.isPrivate(dest))
+}
+
+// exposes: deleting the category would move such a channel out of it.
+func (h *Hub) exposes(category, to int64) bool {
+	h.mu.Lock()
+	var ids []int64
+	for _, c := range h.channels {
+		if c.Category == category {
+			ids = append(ids, c.ID)
+		}
+	}
+	h.mu.Unlock()
+	return slices.ContainsFunc(ids, func(id int64) bool { return h.exposesChannel(id, to) })
+}
+
+// categoryMumble: a category's Mumble channel (0: none). Under mu.
+func (h *Hub) categoryMumble(id int64) uint32 {
+	if i := slices.IndexFunc(h.categories, func(c wireCategory) bool { return c.ID == id }); id != 0 && i >= 0 {
+		return h.categories[i].Mumble
+	}
+	return 0
+}
