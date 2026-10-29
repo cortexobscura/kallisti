@@ -16,6 +16,7 @@
     members,
     registered,
     invites = null,
+    inherited = [],
     link = null,
     moderators = false,
     onLoad,
@@ -30,6 +31,8 @@
     // for them).
     registered: readonly Registered[] | null;
     invites?: readonly Invite[] | null;
+    // Members by the channel's private category: shown, changed there.
+    inherited?: readonly Member[];
     // A link just made: shown only now.
     link?: string | null;
     moderators?: boolean;
@@ -90,6 +93,9 @@
       </ul>
     {:else}
       <p>No {noun}s yet.</p>
+    {/if}
+    {#if inherited.length}
+      <p class="note">Also by the category (change them there): {inherited.map((m) => m.name).join(", ")}.</p>
     {/if}
     {#if registered === null}
       <p class="note">Loading registered users…</p>

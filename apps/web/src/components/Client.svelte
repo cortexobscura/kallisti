@@ -1779,6 +1779,7 @@
       members={f.members}
       registered={registeredUsers}
       invites={text.invites[f.access] ?? null}
+      inherited={text.inherited[f.access] ?? []}
       link={newInvite?.voice === f.access ? inviteLink(site, newInvite.token) : null}
       onLoad={() => {
         if (canManageText(server, text)) connection.send(queryRegistered());
