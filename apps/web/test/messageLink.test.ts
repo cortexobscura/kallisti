@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { channelLink, linkPlan, messageLink, parseMessageLink, voiceLink } from "../src/lib/messageLink";
+import { channelLink, inviteTarget, messageLink, parseMessageLink, plainLink, voiceLink } from "../src/lib/messageLink";
 
 describe("message links", () => {
   it("make a link to a message on the server", () => {
@@ -31,16 +31,16 @@ describe("voice channel links", () => {
   });
 });
 
-describe("what Copy link makes", () => {
+describe("what Copy link and Copy invite link make", () => {
   const site = "https://chat.example";
-  it("an invite for who manages a private channel, else a plain link", () => {
-    expect(linkPlan(site, "voice", 5, { access: 5, invites: true })).toEqual({ invite: 5 });
-    expect(linkPlan(site, "text", 4, { access: 20, invites: true })).toEqual({ invite: 20 });
-    expect(linkPlan(site, "voice", 5, { access: 5, invites: false })).toEqual({ url: "https://chat.example/voice/5" });
-    expect(linkPlan(site, "text", 4, { access: null, invites: false })).toEqual({ url: "https://chat.example/channels/4" });
-    expect(linkPlan(site, "category", 1, { access: null, invites: false })).toBeNull();
-    // A private category: an invite for who manages it, nothing for others.
-    expect(linkPlan(site, "category", 1, { access: 20, invites: true })).toEqual({ invite: 20 });
-    expect(linkPlan(site, "category", 1, { access: 20, invites: false })).toBeNull();
+  it("a plain link to a text or voice channel (none for a category)", () => {
+    expect(plainLink(site, "voice", 5)).toBe("https://chat.example/voice/5");
+    expect(plainLink(site, "text", 4)).toBe("https://chat.example/channels/4");
+    expect(plainLink(site, "category", 1)).toBeNull();
+  });
+  it("an invite to the private channel or category, for who manages it", () => {
+    expect(inviteTarget({ access: 20, invites: true })).toBe(20);
+    expect(inviteTarget({ access: 20, invites: false })).toBeNull();
+    expect(inviteTarget({ access: null, invites: true })).toBeNull();
   });
 });

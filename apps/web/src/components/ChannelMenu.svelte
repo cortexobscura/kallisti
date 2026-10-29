@@ -15,6 +15,7 @@
     canMembers = false,
     canViewMembers = false,
     onCopyLink,
+    onCopyInvite,
     canModerators = false,
     canCreateSub = false,
     recording,
@@ -49,6 +50,9 @@
     // A link to the channel (a one-use invite to a private one, for who
     // manages it).
     onCopyLink?: () => void;
+    // A one-use invite link (a private channel or category, for who
+    // manages it).
+    onCopyInvite?: () => void;
     canModerators?: boolean;
     // Voice channels: a subchannel in it (MakeChannel there).
     canCreateSub?: boolean;
@@ -90,8 +94,12 @@
 </script>
 
 <ContextMenu {x} {y} label="Actions for {name}" {onClose}>
-  {#if onCopyLink && !direct && !thread}
-    <button onclick={act(onCopyLink)}>Copy link</button>
+  {#if (onCopyLink || onCopyInvite) && !direct && !thread}
+    {#if onCopyLink}<button onclick={act(onCopyLink)}>Copy link</button>{/if}
+    {#if onCopyInvite}
+      <button onclick={act(onCopyInvite)}>Copy invite link</button>
+      <p class="hint">One use, valid 7 days</p>
+    {/if}
     <div class="sep"></div>
   {/if}
   {#if thread}
@@ -201,5 +209,12 @@
     padding: 8px;
     font-size: 14px;
     color: var(--text-muted);
+  }
+  /* Under the item it is about. */
+  .hint {
+    margin: -6px 0 2px;
+    padding: 0 8px 4px;
+    font-size: 12px;
+    color: var(--text-faint);
   }
 </style>

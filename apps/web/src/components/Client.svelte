@@ -149,7 +149,7 @@
   import { IS_MAC, navAction, stepPlace } from "../lib/switcher";
   import { mirrorIds } from "../lib/mirrors";
   import { railBadge, tabTitle, type RailBadge } from "../lib/title";
-  import { linkPlan, messageLink, parseMessageLink, type ChannelLink } from "../lib/messageLink";
+  import { inviteTarget, messageLink, parseMessageLink, plainLink, type ChannelLink } from "../lib/messageLink";
   import { inviteLink, inviteOf, invitePlace, parseInviteLink } from "../lib/invites";
   import UserPanel from "./UserPanel.svelte";
   import VoiceBar from "./VoiceBar.svelte";
@@ -714,6 +714,7 @@
       notify: { pref: prefOf(channelPrefs.value, connection.httpBase, id), desktop: prefs.notifications, direct: textId === null },
       onNotify: (patch: ChannelPref) => channelPrefs.set(connection.httpBase, id, patch),
       onCopyLink: textId === null ? undefined : () => copyLink("text", textId!),
+      onCopyInvite: textId === null || inviteFor("text", textId) === null ? undefined : () => copyInvite(inviteFor("text", textId!)!),
     };
   });
   // An open thread (see below), and a message to jump to there.
@@ -756,18 +757,26 @@
     else joinAsk = id;
     return true;
   };
-  // "Copy link" (see linkPlan): a one-use invite (valid a week) for who
-  // manages a private channel, else a plain link. No clipboard: no invite.
+  // "Copy link": a plain link. "Copy invite link" (who manages a private
+  // channel or category): a one-use invite, valid a week (no clipboard: no
+  // invite made).
   const INVITE_SECONDS = 7 * 24 * 3600;
-  const copyLink = (kind: ChannelKind, id: number) => {
-    const plan = linkPlan(site, kind, id, { access: accessChannel(kind, id, text.channels, text.categories), invites: canManageMembers(server, text, kind, id) });
-    if (!plan) return;
-    if (!navigator.clipboard) return flash("Could not copy the link");
-    const url =
-      "url" in plan ? Promise.resolve(plan.url) : connection.createInvite(plan.invite, INVITE_SECONDS, 1).then((token) => inviteLink(site, token));
+  const copy = (url: Promise<string>, done: string) =>
     copyLater(url, navigator.clipboard, globalThis.ClipboardItem).then(
-      () => flash("url" in plan ? "Link copied" : "Invite link copied: one use, valid 7 days"),
+      () => flash(done),
       () => flash("Could not copy the link"),
+    );
+  const copyLink = (kind: ChannelKind, id: number) => {
+    const url = plainLink(site, kind, id);
+    if (url) void copy(Promise.resolve(url), "Link copied");
+  };
+  const inviteFor = (kind: ChannelKind, id: number) =>
+    inviteTarget({ access: accessChannel(kind, id, text.channels, text.categories), invites: canManageMembers(server, text, kind, id) });
+  const copyInvite = (access: number) => {
+    if (!navigator.clipboard) return flash("Could not copy the link");
+    void copy(
+      connection.createInvite(access, INVITE_SECONDS, 1).then((token) => inviteLink(site, token)),
+      "Invite link copied: one use, valid 7 days",
     );
   };
   // A short note (a toast).
@@ -1684,7 +1693,8 @@
     canMoveDown={m.canMoveDown}
     canMembers={m.canMembers}
     canViewMembers={m.canViewMembers}
-    onCopyLink={m.kind === "category" && !m.canMembers ? undefined : () => copyLink(m.kind, m.id)}
+    onCopyLink={m.kind === "category" ? undefined : () => copyLink(m.kind, m.id)}
+    onCopyInvite={inviteFor(m.kind, m.id) === null ? undefined : () => copyInvite(inviteFor(m.kind, m.id)!)}
     onViewMembers={() => channels.startViewMembers(m.kind, m.id)}
     canModerators={m.canModerators}
     category={m.kind === "category"}

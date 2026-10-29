@@ -14,6 +14,7 @@
     onPins,
     onThreads,
     onCopyLink,
+    onCopyInvite,
     notify,
     onNotify,
     onClose,
@@ -24,6 +25,8 @@
     onPins?: () => void;
     onThreads?: () => void;
     onCopyLink?: () => void;
+    // A one-use invite link, valid 7 days (who manages a private channel).
+    onCopyInvite?: () => void;
     // desktop: desktop notifications are on; direct: a direct chat.
     notify?: { pref: ChannelPref; desktop: boolean; direct?: boolean };
     onNotify?: (patch: ChannelPref) => void;
@@ -51,6 +54,7 @@
       onPins && { label: "Pinned messages", icon: "pin" as const, run: onPins },
       onThreads && { label: "Threads", icon: "thread" as const, run: onThreads },
       onCopyLink && { label: "Copy link", icon: "copy" as const, run: onCopyLink },
+      onCopyInvite && { label: "Copy invite link (one use, 7 days)", icon: "copy" as const, run: onCopyInvite },
     ].filter((a) => !!a),
   );
 </script>

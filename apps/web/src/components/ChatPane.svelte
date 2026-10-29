@@ -251,7 +251,7 @@
     // opens the channel sheet (ChannelSheet) with the topic, pins,
     // threads and these: notification settings and the chat's link.
     phone?: boolean;
-    details?: Pick<ComponentProps<typeof ChannelSheet>, "notify" | "onNotify" | "onCopyLink">;
+    details?: Pick<ComponentProps<typeof ChannelSheet>, "notify" | "onNotify" | "onCopyLink" | "onCopyInvite">;
     // Text channels: attach files (button, paste or drop), with a caption.
     // Settles once the server confirmed the message; fails with why (busy,
     // upload failed, refused, no answer, disconnected: the files stay).
@@ -1406,6 +1406,7 @@
     {onPins}
     {onThreads}
     onCopyLink={details?.onCopyLink}
+    onCopyInvite={details?.onCopyInvite}
     notify={details?.notify}
     onNotify={details?.onNotify}
     onClose={() => (detailsOpen = false)}
