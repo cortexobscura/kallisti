@@ -27,6 +27,8 @@
 - [x] [See who has access to a private channel from its menu](issues/private-channel-members-menu.md)
 - [x] [Private categories: members for all channels in them](issues/private-categories.md)
 - [x] [Quick reactions: two rows, most used and recent](issues/quick-emoji-rows.md)
+- [ ] [Pictures in a grid show tiny for some users](issues/tiny-picture-grid.md)
+- [ ] [Shorten long links in messages](issues/shorten-long-links.md)
 - [ ] [Rethink the split of text and voice channels](issues/text-voice-split.md)
 - [ ] [Remove the fallback for plain-named session cookies (after 2026-11-28)](issues/remove-plain-cookie-fallback.md)
 - [x] [Fixes from the multi-server branch that main could use](issues/hardening-from-multi-server.md) (merged with the branch)
