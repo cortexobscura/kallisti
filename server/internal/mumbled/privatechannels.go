@@ -37,10 +37,17 @@ type PrivateChannel struct {
 	Inherited []Member
 }
 
-// privateACL: here and below; subs: below only (a category).
+// privateACL: here and below; subs: below only (a category). A
+// category's entries count in each channel below it: its channels' own
+// moderators pass there (Mumble asks Traverse at the category's level
+// first, before their channel's entry).
 func privateACL(subs bool) []ACL {
 	acls := []ACL{{ApplyHere: !subs, ApplySubs: true, Group: "all", Deny: privateBits}}
-	for _, g := range []string{membersGroup, "moderator", "admin"} {
+	groups := []string{membersGroup, "moderator", "admin"}
+	if subs {
+		groups = append(groups, channelModGroup)
+	}
+	for _, g := range groups {
 		acls = append(acls, ACL{ApplyHere: !subs, ApplySubs: true, Group: g, Allow: privateBits})
 	}
 	return acls

@@ -257,9 +257,13 @@ func TestPrivateCategories(t *testing.T) {
 		t.Fatal(err)
 	}
 	sees := func(c *testClient, chans ...uint32) []bool {
+		t.Helper()
 		var out []bool
 		for _, ch := range chans {
-			out = append(out, s.Sees(c.session, ch) && s.MayWrite(c.session, ch))
+			if s.Sees(c.session, ch) != s.MayWrite(c.session, ch) {
+				t.Errorf("session %d, channel %d: sees %v, writes %v", c.session, ch, s.Sees(c.session, ch), s.MayWrite(c.session, ch))
+			}
+			out = append(out, s.Sees(c.session, ch))
 		}
 		return out
 	}
@@ -358,5 +362,22 @@ func TestSubchannelDenyIsNotPrivacy(t *testing.T) {
 	cat := &Channel{ACLs: privateACL(true)}
 	if isPrivate(hide) || !isPrivate(cat) {
 		t.Fatalf("hide %v, category %v", isPrivate(hide), isPrivate(cat))
+	}
+}
+
+// A channel's own moderator keeps it when its category becomes private.
+func TestChannelModeratorsKeepTheirChannelInAPrivateCategory(t *testing.T) {
+	s, addr := rolesServer(t)
+	su := superUser(t, addr)
+	dave, _, daveID := webUser(t, s, "dave")
+	cats, ids, _ := s.SyncTextTree([]TextCategory{{Name: "Games"}}, []TextMirror{{Name: "lobby", Category: 1}})
+	if err := s.SetChannelModerator(su.session, daveID, ids[0], true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPrivate(su.session, cats[0], true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Sees(dave.session, ids[0]) || !s.MayWrite(dave.session, ids[0]) {
+		t.Fatalf("dave: sees %v, writes %v", s.Sees(dave.session, ids[0]), s.MayWrite(dave.session, ids[0]))
 	}
 }
