@@ -15,8 +15,8 @@
   import { htmlToLines, htmlToText } from "../lib/htmlText";
   import { collapses, MAX_HEIGHT_PX } from "../lib/collapse";
   import { previewText, toggleSpoiler } from "../lib/markdown";
-  import { loadEmojiData, normalEmoji, quickReactions, searchEmoji, withTone, type EmojiData } from "../lib/emojiPicker";
-  import { recentEmoji, skinTone, usedEmoji } from "../lib/emojiPrefs.svelte";
+  import { loadEmojiData, normalEmoji, quickRows, searchEmoji, withTone, type EmojiData } from "../lib/emojiPicker";
+  import { emojiUses, recentEmoji, skinTone, usedEmoji } from "../lib/emojiPrefs.svelte";
   import { customEmojiFor, customEntries, jumboEmoji, knownEmoji, refsAsNames } from "../lib/customEmoji";
   import { composerEmoji, emojiActions, fromRefs, personalEntries, sameEmoji, toRefs } from "../lib/personalEmoji";
   import { blockedUsers, settings } from "../lib/settings.svelte";
@@ -683,14 +683,19 @@
     );
     messageInput?.focus();
   };
-  // The quick reactions; "+" opens all emoji (allEmoji: for that message).
-  const quick = $derived(
-    quickReactions(
+  // The quick reactions in two rows (see quickRows): 8 most used, then
+  // recent ones, 10 on wide screens, 9 on phones (under 8 and the "+");
+  // "+" opens all emoji (allEmoji: for that message).
+  const quickFor = (second: number) =>
+    quickRows(
+      Object.fromEntries(Object.entries(emojiUses.value).filter(([e]) => knownEmoji(e, custom))),
       recentEmoji.value.filter((e) => knownEmoji(e, custom)),
       COMMON_EMOJI,
       8,
-    ),
-  );
+      second,
+    );
+  const quick = $derived(quickFor(10));
+  const quickPhone = $derived(quickFor(9));
   let allEmoji = $state.raw<{ id: number; anchor: DOMRect } | null>(null);
   // The current message (its reactions change while the picker is open).
   const allEmojiFor = $derived(allEmoji && messages.find((m) => idOf(m) === allEmoji!.id));
@@ -1391,7 +1396,7 @@
   {@const m = sheetMessage}
   {@const id = idOf(m)}
   <MessageSheet
-    {quick}
+    quick={quickPhone}
     mine={(emoji) => mineOf(m, emoji)}
     onReact={canReact && id !== undefined ? (emoji) => (react(m, id, emoji), (sheetFor = null)) : undefined}
     items={sheetItems(m)}
@@ -1652,13 +1657,14 @@
       <div
         class="actions"
         class:confirming={confirming === id || picking === id}
+        class:picking={picking === id}
         onkeydown={(e) => {
           if (e.key === "Escape" && confirming === id) endConfirm();
           if (e.key === "Escape" && picking === id) void closePicker();
         }}
       >
         {#if picking === id}
-          {#each quick as emoji (emoji)}
+          {#each quick.first as emoji (emoji)}
             <button
               type="button"
               class="emoji"
@@ -1674,6 +1680,15 @@
             onclick={(e) => (allEmoji = { id, anchor: e.currentTarget.getBoundingClientRect() })}>+</button
           >
           <button type="button" aria-label="Close" onclick={closePicker}>×</button>
+          {#each quick.second as emoji (emoji)}
+            <button
+              type="button"
+              class="emoji"
+              class:mine={mineOf(m, emoji)}
+              aria-label="React with {refsAsNames(emoji)}"
+              onclick={() => react(m, id, emoji)}><Emoji text={emoji} /></button
+            >
+          {/each}
         {:else if confirming === id}
           <span>Delete this message?</span>
           <button type="button" class="danger" onclick={() => (onDelete?.(id), endConfirm())}>Delete</button>
@@ -2329,6 +2344,11 @@
     box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
     font-size: 12px;
     z-index: 2;
+  }
+  /* Two rows of quick reactions: 8, "+" and "×", then 10. */
+  .actions.picking {
+    display: grid;
+    grid-template-columns: repeat(10, auto);
   }
   .line:hover .actions,
   .line:focus-within .actions,

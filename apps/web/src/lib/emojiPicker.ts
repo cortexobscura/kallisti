@@ -85,9 +85,39 @@ export const parseRecent = (raw: string | null): string[] => {
   }
 };
 
-// Recent emoji first, then the defaults.
-export const quickReactions = (recent: string[], defaults: string[], count: number): string[] =>
-  [...new Set([...recent, ...defaults])].slice(0, count);
+// How often each emoji was used: each use adds 1, and all others fade a
+// little (so the most used stay, and old habits go). The biggest are
+// kept, biggest first.
+export type EmojiUses = Readonly<Record<string, number>>;
+const FADE = 0.9;
+const MAX_USES = 50;
+
+export const addUse = (uses: EmojiUses, emoji: string): EmojiUses => {
+  const e = normalEmoji(emoji);
+  const next = Object.entries({ [e]: 0, ...uses }).map(([k, n]) => [k, n * FADE + (k === e ? 1 : 0)] as const);
+  return Object.fromEntries(next.sort((a, b) => b[1] - a[1]).slice(0, MAX_USES));
+};
+
+export const parseUses = (raw: string | null): EmojiUses => {
+  try {
+    const v: unknown = JSON.parse(raw ?? "{}");
+    if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
+    return Object.fromEntries(Object.entries(v).filter(([, n]) => typeof n === "number" && Number.isFinite(n) && n > 0));
+  } catch {
+    return {};
+  }
+};
+
+// The quick reactions in two rows: the most used (in a row that stays
+// put; ties and missing counts by recency), then recent ones; the
+// defaults fill gaps; none twice.
+export const quickRows = (uses: EmojiUses, recent: string[], defaults: string[], first: number, second: number) => {
+  const at = (e: string) => (recent.includes(e) ? recent.indexOf(e) : recent.length);
+  const used = Object.keys(uses).sort((a, b) => uses[b]! - uses[a]! || at(a) - at(b));
+  const top = [...new Set([...used, ...recent, ...defaults])].slice(0, first);
+  const rest = [...new Set([...recent, ...defaults])].filter((e) => !top.includes(e)).slice(0, second);
+  return { first: top, second: rest };
+};
 
 type Point = { x: number; y: number };
 

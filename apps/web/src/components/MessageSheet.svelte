@@ -29,7 +29,8 @@
     items,
     onClose,
   }: {
-    quick: string[];
+    // Two rows: 8 and the "+", then 9 (see quickRows).
+    quick: { first: string[]; second: string[] };
     mine: (emoji: string) => boolean;
     onReact?: (emoji: string) => void;
     items: SheetItem[];
@@ -52,6 +53,10 @@
   };
 </script>
 
+{#snippet react(emoji: string)}
+  <button type="button" class:mine={mine(emoji)} aria-label="React with {emoji}" onclick={() => onReact?.(emoji)}><Emoji text={emoji} /></button>
+{/snippet}
+
 <BottomSheet label="Message actions" {onClose} bind:this={sheet}>
   {#if confirming}
     <p class="question">{confirming.confirm}</p>
@@ -60,17 +65,14 @@
   {:else}
     {#if onReact}
       <div class="quick" role="group" aria-label="Reactions">
-        {#each quick as emoji (emoji)}
-          <button type="button" class:mine={mine(emoji)} aria-label="React with {emoji}" onclick={() => onReact(emoji)}
-            ><Emoji text={emoji} /></button
-          >
-        {/each}
+        {#each quick.first as emoji (emoji)}{@render react(emoji)}{/each}
         <button
           type="button"
           class="more"
           aria-label="More emoji"
           onclick={(e) => (picker = e.currentTarget.getBoundingClientRect())}><IconView name="plus" size={22} /></button
         >
+        {#each quick.second as emoji (emoji)}{@render react(emoji)}{/each}
       </div>
     {/if}
     <ul class="sheet-list">
@@ -89,15 +91,18 @@
 {/if}
 
 <style>
+  /* 9 columns: as wide as the phone allows, at most 44 px. */
   .quick {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(9, minmax(0, 44px));
     justify-content: space-between;
+    row-gap: 8px;
     margin-bottom: 12px;
   }
   .quick button {
     display: grid;
-    width: 44px;
-    height: 44px;
+    width: 100%;
+    aspect-ratio: 1;
     padding: 0;
     place-items: center;
     border: none;

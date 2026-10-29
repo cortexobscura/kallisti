@@ -5,7 +5,9 @@ import {
   normalEmoji,
   parseEmojiData,
   parseRecent,
-  quickReactions,
+  parseUses,
+  quickRows,
+  addUse,
   searchEmoji,
   withTone,
   type EmojiEntry,
@@ -109,10 +111,40 @@ describe("recent emoji", () => {
     expect(parseRecent("{")).toEqual([]);
     expect(parseRecent(null)).toEqual([]);
   });
+});
 
-  it("fills the quick reactions with the defaults", () => {
-    expect(quickReactions(["🍕", "👍"], ["👍", "❤️", "😂"], 4)).toEqual(["🍕", "👍", "❤️", "😂"]);
-    expect(quickReactions([], ["👍", "❤️"], 1)).toEqual(["👍"]);
+describe("emoji counts", () => {
+  it("count each use, older ones fading", () => {
+    let uses = addUse({}, "👍");
+    uses = addUse(uses, "❤");
+    expect(Object.keys(uses)).toEqual(["❤\uFE0F", "👍"]);
+    expect(uses["❤\uFE0F"]).toBe(1);
+    expect(uses["👍"]).toBeCloseTo(0.9);
+    expect(addUse(uses, "👍")["👍"]).toBeCloseTo(1.81); // its own count goes on
+  });
+  it("keep a limited number, the biggest", () => {
+    let uses: Record<string, number> = {};
+    for (let i = 0; i < 80; i++) uses = addUse(uses, `:e${i}:`);
+    expect(Object.keys(uses)).toHaveLength(50);
+    expect(uses[":e79:"]).toBe(1);
+    expect(uses[":e0:"]).toBeUndefined();
+  });
+  it("read back only numbers", () => {
+    expect(parseUses(JSON.stringify({ "👍": 2, x: "y", z: -1 }))).toEqual({ "👍": 2 });
+    expect(parseUses("nope")).toEqual({});
+    expect(parseUses(null)).toEqual({});
+  });
+});
+
+describe("quickRows", () => {
+  const defaults = ["👍", "❤️", "😂", "🎉"];
+  it("most used first (it stays put), then recent ones, defaults in the gaps, none twice", () => {
+    const uses = { "🍕": 5, "🔥": 3, "😀": 1 };
+    expect(quickRows(uses, ["😀", "🐱", "🍕", "🌮"], defaults, 2, 3)).toEqual({ first: ["🍕", "🔥"], second: ["😀", "🐱", "🌮"] });
+    expect(quickRows(uses, [], defaults, 3, 3)).toEqual({ first: ["🍕", "🔥", "😀"], second: ["👍", "❤️", "😂"] });
+  });
+  it("without counts yet (from before): recent ones, then defaults", () => {
+    expect(quickRows({}, ["🐱", "🌮"], defaults, 2, 3)).toEqual({ first: ["🐱", "🌮"], second: ["👍", "❤️", "😂"] });
   });
 });
 
