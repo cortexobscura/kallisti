@@ -17,8 +17,8 @@ import (
 //
 // A private category closes the channels in it, not itself (its entries
 // apply to subchannels only): a private channel in it has its own members
-// and the category's (in the text tree members groups inherit), and its
-// own members reach it through the category.
+// and the category's (its members group inherits, see inheritsMembers),
+// and its own members reach it through the category.
 
 const membersGroup = "members"
 
@@ -46,10 +46,11 @@ func privateACL(subs bool) []ACL {
 	return acls
 }
 
-// isPrivateDeny: "all" may not traverse the channel or the ones below it
-// (also by an entry from a Mumble client).
+// isPrivateDeny: "all" may not traverse the channel (also by an entry
+// from a Mumble client), or a private category's entry for the channels
+// in it (only that one: an entry that hides subchannels is not privacy).
 func isPrivateDeny(a ACL) bool {
-	return !a.HasUser && a.Group == "all" && (a.ApplyHere || a.ApplySubs) && a.Deny&Traverse != 0
+	return !a.HasUser && a.Group == "all" && a.ApplyHere && a.Deny&Traverse != 0 || a == privateACL(true)[0]
 }
 
 func isPrivate(ch *Channel) bool { return slices.ContainsFunc(ch.ACLs, isPrivateDeny) }
@@ -82,13 +83,20 @@ func (s *Server) makePrivate(ch *Channel, members []uint32) {
 		ch.Groups = map[string]*Group{}
 	}
 	g := newGroup(membersGroup)
-	// Voice: members of a channel above are not members here. Text: a
-	// category's members are its channels' members too.
-	g.Inherit = s.inTextTree(ch.ID)
+	g.Inherit = s.inheritsMembers(ch)
 	for _, id := range members {
 		g.Add[id] = true
 	}
 	ch.Groups[membersGroup] = g
+}
+
+// inheritsMembers: a channel's members group takes the members above it
+// only in a channel directly in a category (the category's members); not
+// elsewhere (voice channels, the category itself: a group SuperUser made
+// higher up gives no access). Under mu.
+func (s *Server) inheritsMembers(ch *Channel) bool {
+	parent := s.state.Channels[ch.Parent]
+	return ch.ID != 0 && parent != nil && s.isCategory(parent)
 }
 
 // InPrivate: the session's user is a member of the private channel (also

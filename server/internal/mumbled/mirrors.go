@@ -186,11 +186,15 @@ func (s *Server) SyncTextTree(cats []TextCategory, want []TextMirror) (catIDs, i
 		edit(ch, name, html.EscapeString(w.Topic), position(ch.Parent))
 		ids[i] = ch.ID
 	}
-	// Members groups in the text tree inherit (a private category's
-	// members are its channels' members; older ones did not).
+	// Private mirrors and categories: members groups inherit only in a
+	// category (see inheritsMembers; also after a move, and for older ones).
 	for _, ch := range s.state.Channels {
-		if g := ch.Groups[membersGroup]; g != nil && !g.Inherit && s.inTextTree(ch.ID) {
-			g.Inherit = true
+		g := ch.Groups[membersGroup]
+		if g == nil || !isPrivate(ch) || ch.Parent != parent.ID && !s.isCategory(s.state.Channels[ch.Parent]) {
+			continue
+		}
+		if want := s.inheritsMembers(ch); g.Inherit != want {
+			g.Inherit = want
 			touched[ch.ID], inherited = true, true
 		}
 	}
@@ -226,7 +230,7 @@ func mirrorACL() []ACL {
 // isCategory: a category's channel (under the mirrors' parent, with its
 // entry). Under mu.
 func (s *Server) isCategory(ch *Channel) bool {
-	return s.textParent != 0 && ch.Parent == s.textParent && slices.Contains(ch.ACLs, categoryACL)
+	return ch != nil && s.textParent != 0 && ch.Parent == s.textParent && slices.Contains(ch.ACLs, categoryACL)
 }
 
 // categoryACL: no texts in a category itself (its other entries, such as

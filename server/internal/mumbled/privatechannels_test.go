@@ -316,3 +316,47 @@ func TestOldPrivateMirrorsInherit(t *testing.T) {
 		t.Fatal("still does not inherit")
 	}
 }
+
+// A "members" group above the categories (made by SuperUser in a Mumble
+// client) gives no access: only a category's members pass down, and only
+// to the channels in it.
+func TestMembersAboveTheCategoriesDoNotCount(t *testing.T) {
+	s, addr := rolesServer(t)
+	su := superUser(t, addr)
+	mod, _, modID := webUser(t, s, "mod")
+	s.SetModerator(su.session, modID, true)
+	eve, _, eveID := webUser(t, s, "eve")
+	cats, ids, _ := s.SyncTextTree([]TextCategory{{Name: "Games"}}, []TextMirror{{Name: "top", Private: true}, {Name: "lobby", Category: 1}, {Name: "secret", Category: 1, Private: true}})
+	s.mu.Lock()
+	for _, ch := range []uint32{0, s.textParent} {
+		g := newGroup(membersGroup)
+		g.Add[eveID] = true
+		if s.state.Channels[ch].Groups == nil {
+			s.state.Channels[ch].Groups = map[string]*Group{}
+		}
+		s.state.Channels[ch].Groups[membersGroup] = g
+	}
+	s.mu.Unlock()
+	if err := s.SetPrivate(mod.session, cats[0], true, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.SyncTextTree([]TextCategory{{Channel: cats[0], Name: "Games"}}, []TextMirror{{Channel: ids[0], Name: "top"}, {Channel: ids[1], Name: "lobby", Category: 1}, {Channel: ids[2], Name: "secret", Category: 1}})
+	for _, ch := range []uint32{ids[0], ids[1], ids[2]} {
+		if s.Sees(eve.session, ch) {
+			t.Errorf("eve sees %d", ch)
+		}
+	}
+	if s.InPrivate(eve.session, cats[0]) {
+		t.Error("eve is a member of the category")
+	}
+}
+
+// An entry from a Mumble client that hides a channel's subchannels does
+// not make it private; a private category's entry does.
+func TestSubchannelDenyIsNotPrivacy(t *testing.T) {
+	hide := &Channel{ACLs: []ACL{{ApplySubs: true, Group: "all", Deny: Traverse}}}
+	cat := &Channel{ACLs: privateACL(true)}
+	if isPrivate(hide) || !isPrivate(cat) {
+		t.Fatalf("hide %v, category %v", isPrivate(hide), isPrivate(cat))
+	}
+}
