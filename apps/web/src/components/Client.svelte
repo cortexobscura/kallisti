@@ -847,6 +847,7 @@
       if (ev.type !== "invite-joined") return;
       const place = invitePlace(ev);
       if (place.kind === "text") show(place);
+      else if (place.kind === "category") flash("You are a member of the category now. It has no channels for you yet.");
       else askJoin(place.id);
     }),
   );

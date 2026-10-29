@@ -20,18 +20,19 @@ export const accessChannel = (kind: ChannelKind, id: number, textChannels: reado
 type Access = { private: Readonly<Record<number, readonly Member[]>>; inherited: Readonly<Record<number, readonly Member[]>> };
 type Channels = { channels: readonly (Mirrored & { category?: number })[]; categories: readonly Mirrored[] };
 
-// Who reads a channel (undefined: not private, or no list for us): a
-// private one's members and those by its category; a channel in a
-// private category, the category's.
-export const readersOf = (text: Access & Channels, kind: "text" | "voice", id: number): Member[] | undefined => {
-  const access = kind === "voice" ? id : text.channels.find((c) => c.id === id)?.mumble;
-  if (access !== undefined && access in text.private) return [...text.private[access]!, ...(text.inherited[access] ?? [])];
-  const cat = kind === "text" ? categoryAccess(text, text.channels.find((c) => c.id === id)?.category) : null;
-  return cat !== null && cat in text.private ? [...text.private[cat]!] : undefined;
-};
+// A private channel's members: its own and those by its category
+// (undefined: not private).
+export const membersOf = (text: Access, access: number | null): Member[] | undefined =>
+  access !== null && access in text.private ? [...text.private[access]!, ...(text.inherited[access] ?? [])] : undefined;
 
 const categoryAccess = (text: Channels, category: number | undefined) =>
-  category === undefined ? null : (text.categories.find((c) => c.id === category)?.mumble ?? null);
+  category === undefined ? null : accessChannel("category", category, text.channels, text.categories);
+
+// Who reads a channel (undefined: not private, or no list for us): a
+// private one's members; a channel in a private category, the category's.
+export const readersOf = (text: Access & Channels, kind: "text" | "voice", id: number): Member[] | undefined =>
+  membersOf(text, accessChannel(kind, id, text.channels)) ??
+  (kind === "text" ? membersOf(text, categoryAccess(text, text.channels.find((c) => c.id === id)?.category)) : undefined);
 
 // A lock on a text channel: private, or in a private category.
 export const isLocked = (text: { private: Readonly<Record<number, unknown>> } & Channels, c: Mirrored & { category?: number }) =>

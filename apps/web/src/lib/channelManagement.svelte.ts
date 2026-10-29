@@ -16,7 +16,7 @@ import {
 } from "./channelManagement";
 import { channelModActions } from "./roles";
 import { listenOnlyAction, speakerCandidates, type ListenOnly } from "./listenOnly";
-import { accessChannel, membersAction, privateAction, type Member } from "./privateChannels";
+import { accessChannel, membersAction, membersOf, privateAction, type Member } from "./privateChannels";
 import { moveInList, moveVoiceChannel } from "./channelOrder";
 import type { Connection } from "./connection.svelte";
 import type { ManageAction } from "./textChannels";
@@ -90,7 +90,7 @@ export const createChannelManagement = (current: () => Connection) => {
   // Closed when the channel stops being private or we are no member.
   const viewForm = $derived.by(() =>
     viewing && canViewMembers(server, text, viewing.kind, viewing.id)
-      ? { ...viewing, name: nameOf(viewing.kind, viewing.id), members: [...(text.private[viewing.access] ?? []), ...(text.inherited[viewing.access] ?? [])] }
+      ? { ...viewing, name: nameOf(viewing.kind, viewing.id), members: membersOf(text, viewing.access) ?? [] }
       : null,
   );
 

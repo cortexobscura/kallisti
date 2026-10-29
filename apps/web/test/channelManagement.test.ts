@@ -121,3 +121,21 @@ describe("canViewMembers", () => {
     expect(canViewMembers(as(9), { ...priv, private: { 21: [] }, inherited: { 21: [{ id: 9, name: "cat" }] } }, "text", 11)).toBe(true);
   });
 });
+
+describe("menuRights for a private category", () => {
+  it("opens for its members and moderators too (Members…, Copy link), without changes", () => {
+    const priv: TextState = {
+      ...text,
+      categories: [{ id: 1, name: "Games", mumble: 20 }],
+      private: { 20: [{ id: 7, name: "ann" }] },
+    };
+    const ann: ServerState = {
+      ...server({}, 0),
+      session: 1,
+      users: { 1: { session: 1, name: "ann", userId: 7, channelId: 0 } as ServerState["users"][number] },
+    };
+    const none = { canEdit: false, canDelete: false, canMoveUp: false, canMoveDown: false };
+    expect(menuRights(ann, priv, "category", 1)).toEqual(none);
+    expect(menuRights(server({}, 0), priv, "category", 1)).toBeNull(); // not a member: no menu
+  });
+});

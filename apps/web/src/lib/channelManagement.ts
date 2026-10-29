@@ -2,7 +2,7 @@ import { channelSiblings, may, Perm, type ServerState } from "@kallisti/protocol
 import { textGroups } from "./categories";
 import type { ChannelKind } from "./channelForm";
 import { mirrorIds } from "./mirrors";
-import { accessChannel } from "./privateChannels";
+import { accessChannel, membersOf } from "./privateChannels";
 import { channelModIn, myUserId } from "./roles";
 import type { TextState } from "./textChannels";
 
@@ -43,8 +43,7 @@ export const canManageMembers = (server: ServerState, text: TextState, kind: Cha
 export const canViewMembers = (server: ServerState, text: TextState, kind: ChannelKind, id: number): boolean => {
   const access = accessChannel(kind, id, text.channels, text.categories);
   const me = myUserId(server);
-  const readers = access === null || !(access in text.private) ? [] : [...text.private[access]!, ...(text.inherited[access] ?? [])];
-  return me !== null && readers.some((m) => m.id === me) && !canManageMembers(server, text, kind, id);
+  return me !== null && !!membersOf(text, access)?.some((m) => m.id === me) && !canManageMembers(server, text, kind, id);
 };
 
 // A channel's moderators (staff appoint them): the Mumble channel that
@@ -86,8 +85,10 @@ export const menuRights = (server: ServerState, text: TextState, kind: ChannelKi
     return { canEdit, canDelete, canMoveUp: canMove && at > 0, canMoveDown: canMove && at >= 0 && at < order.length - 1 };
   };
   if (kind === "category") {
-    const manage = canManageText(server, text);
-    return manage && text.categories.some((c) => c.id === id) ? rights(true, true, text.categories.map((c) => c.id), true) : null;
+    if (!text.categories.some((c) => c.id === id)) return null;
+    if (canManageText(server, text)) return rights(true, true, text.categories.map((c) => c.id), true);
+    // A private category's members and moderators: Members… and Copy link.
+    return canManageMembers(server, text, kind, id) || canViewMembers(server, text, kind, id) ? rights(false, false, [], false) : null;
   }
   if (kind === "text") {
     const group = textGroups(text.channels, text.categories).find((g) => g.channels.some((c) => c.id === id));

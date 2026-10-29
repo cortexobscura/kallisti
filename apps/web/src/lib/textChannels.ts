@@ -201,7 +201,7 @@ export type ServerEvent =
   // (channel: a text channel; else the voice channel).
   | { type: "invites"; voice: number; invites: Invite[] }
   | { type: "invite-created"; voice: number; token: string }
-  | { type: "invite-joined"; voice: number; channel?: number }
+  | { type: "invite-joined"; voice: number; channel?: number; category?: boolean }
   // The running time-outs changed.
   | { type: "timeouts"; timeouts: Timeout[]; channelTimeouts: ChannelTimeout[] }
   // Admins changed whether guests may only read.
@@ -656,7 +656,7 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
       return isNum(v.voice) && isStr(v.token) ? { type: "invite-created", voice: v.voice, token: v.token } : null;
     case "invite-joined":
       if (!isNum(v.voice) || (v.channel !== undefined && !isNum(v.channel))) return null;
-      return { type: "invite-joined", voice: v.voice, ...(v.channel !== undefined && { channel: v.channel }) };
+      return { type: "invite-joined", voice: v.voice, ...(v.channel !== undefined && { channel: v.channel }), ...(v.category === true && { category: true }) };
     case "status": {
       const s = parseSessionStatus(v);
       return s && { type: "status", ...s };

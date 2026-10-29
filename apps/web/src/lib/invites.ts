@@ -70,5 +70,9 @@ export const inviteExpiry = (expires: number | undefined, now: number) => {
 };
 
 // Where a redeemed link leads: its text channel, else the voice channel.
-export const invitePlace = (joined: { voice: number; channel?: number }) =>
-  joined.channel !== undefined ? { kind: "text" as const, id: joined.channel } : { kind: "voice" as const, id: joined.voice };
+export const invitePlace = (joined: { voice: number; channel?: number; category?: boolean }) =>
+  joined.channel !== undefined
+    ? { kind: "text" as const, id: joined.channel }
+    : joined.category
+      ? { kind: "category" as const }
+      : { kind: "voice" as const, id: joined.voice };

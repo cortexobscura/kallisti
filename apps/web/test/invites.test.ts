@@ -47,6 +47,10 @@ describe("invitePlace", () => {
     expect(invitePlace({ voice: 11, channel: 2 })).toEqual({ kind: "text", id: 2 });
     expect(invitePlace({ voice: 4 })).toEqual({ kind: "voice", id: 4 });
   });
+  it("a category: its first channel, or nothing to open (never voice)", () => {
+    expect(invitePlace({ voice: 20, channel: 3, category: true })).toEqual({ kind: "text", id: 3 });
+    expect(invitePlace({ voice: 20, category: true })).toEqual({ kind: "category" });
+  });
 });
 
 describe("invite events", () => {
@@ -66,6 +70,7 @@ describe("invite events", () => {
     expect(parseServerEvent(JSON.stringify({ type: "invite-joined", voice: 11, channel: 2 }))).toEqual({ type: "invite-joined", voice: 11, channel: 2 });
     expect(parseServerEvent(JSON.stringify({ type: "invite-joined", voice: 4 }))).toEqual({ type: "invite-joined", voice: 4 });
     expect(parseServerEvent(JSON.stringify({ type: "invite-joined", voice: "x" }))).toBeNull();
+    expect(parseServerEvent(JSON.stringify({ type: "invite-joined", voice: 20, category: true }))).toEqual({ type: "invite-joined", voice: 20, category: true });
   });
   it("are asked for", () => {
     expect(JSON.parse(manageRequest({ invites: 11 }))).toEqual({ type: "invites", voice: 11 });
