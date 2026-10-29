@@ -178,13 +178,21 @@ func (s *Server) SyncTextTree(cats []TextCategory, want []TextMirror) (catIDs, i
 			}
 			touched[ch.ID] = true // new, even if it already matches
 			if w.Private {
-				makePrivate(ch, nil)
+				s.makePrivate(ch, nil)
 			}
 		} else if ch.Parent != at {
 			move(ch.ID, at)
 		}
 		edit(ch, name, html.EscapeString(w.Topic), position(ch.Parent))
 		ids[i] = ch.ID
+	}
+	// Members groups in the text tree inherit (a private category's
+	// members are its channels' members; older ones did not).
+	for _, ch := range s.state.Channels {
+		if g := ch.Groups[membersGroup]; g != nil && !g.Inherit && s.inTextTree(ch.ID) {
+			g.Inherit = true
+			touched[ch.ID], inherited = true, true
+		}
 	}
 	for _, ch := range s.state.Tree() { // parents first, for clients
 		if touched[ch.ID] {
@@ -213,6 +221,12 @@ func mirrorACL() []ACL {
 		{ApplyHere: true, ApplySubs: true, Group: "all", Deny: mirrorDeny},
 		{ApplyHere: true, ApplySubs: false, Group: "all", Deny: TextMessage},
 	}
+}
+
+// isCategory: a category's channel (under the mirrors' parent, with its
+// entry). Under mu.
+func (s *Server) isCategory(ch *Channel) bool {
+	return s.textParent != 0 && ch.Parent == s.textParent && slices.Contains(ch.ACLs, categoryACL)
 }
 
 // categoryACL: no texts in a category itself (its other entries, such as

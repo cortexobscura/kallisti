@@ -14,6 +14,11 @@ import (
 // Traverse and Enter; the "members" group, "moderator" and "admin" get
 // them back. Subchannels inherit it. A private text channel is its
 // mirror's ACL.
+//
+// A private category closes the channels in it, not itself (its entries
+// apply to subchannels only): a private channel in it has its own members
+// and the category's (in the text tree members groups inherit), and its
+// own members reach it through the category.
 
 const membersGroup = "members"
 
@@ -29,18 +34,19 @@ type PrivateChannel struct {
 	Members []Member
 }
 
-func privateACL() []ACL {
-	acls := []ACL{{ApplyHere: true, ApplySubs: true, Group: "all", Deny: privateBits}}
+// privateACL: here and below; subs: below only (a category).
+func privateACL(subs bool) []ACL {
+	acls := []ACL{{ApplyHere: !subs, ApplySubs: true, Group: "all", Deny: privateBits}}
 	for _, g := range []string{membersGroup, "moderator", "admin"} {
-		acls = append(acls, ACL{ApplyHere: true, ApplySubs: true, Group: g, Allow: privateBits})
+		acls = append(acls, ACL{ApplyHere: !subs, ApplySubs: true, Group: g, Allow: privateBits})
 	}
 	return acls
 }
 
-// isPrivateDeny: "all" may not traverse the channel (also by an entry
-// from a Mumble client).
+// isPrivateDeny: "all" may not traverse the channel or the ones below it
+// (also by an entry from a Mumble client).
 func isPrivateDeny(a ACL) bool {
-	return !a.HasUser && a.Group == "all" && a.ApplyHere && a.Deny&Traverse != 0
+	return !a.HasUser && a.Group == "all" && (a.ApplyHere || a.ApplySubs) && a.Deny&Traverse != 0
 }
 
 func isPrivate(ch *Channel) bool { return slices.ContainsFunc(ch.ACLs, isPrivateDeny) }
@@ -48,7 +54,7 @@ func isPrivate(ch *Channel) bool { return slices.ContainsFunc(ch.ACLs, isPrivate
 // withoutPrivate drops the private entries and takes Traverse and Enter
 // out of the denies for "all".
 func withoutPrivate(acls []ACL) []ACL {
-	allows := privateACL()[1:]
+	allows := append(privateACL(false)[1:], privateACL(true)[1:]...)
 	var out []ACL
 	for _, a := range acls {
 		if slices.Contains(allows, a) {
@@ -66,17 +72,29 @@ func withoutPrivate(acls []ACL) []ACL {
 }
 
 // makePrivate sets a channel's private entries and members (known ids).
-func makePrivate(ch *Channel, members []uint32) {
-	ch.ACLs = append(privateACL(), withoutPrivate(ch.ACLs)...)
+// Under mu.
+func (s *Server) makePrivate(ch *Channel, members []uint32) {
+	ch.ACLs = append(privateACL(s.isCategory(ch)), withoutPrivate(ch.ACLs)...)
 	if ch.Groups == nil {
 		ch.Groups = map[string]*Group{}
 	}
 	g := newGroup(membersGroup)
-	g.Inherit = false // members of a channel above are not members here
+	// Voice: members of a channel above are not members here. Text: a
+	// category's members are its channels' members too.
+	g.Inherit = s.inTextTree(ch.ID)
 	for _, id := range members {
 		g.Add[id] = true
 	}
 	ch.Groups[membersGroup] = g
+}
+
+// InPrivate: the session's user is a member of the private channel (also
+// by its category), not counting staff.
+func (s *Server) InPrivate(session, channel uint32) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ch := s.state.Users[session], s.state.Channels[channel]
+	return u != nil && ch != nil && u.Registered && isPrivate(ch) && s.state.members(ch, membersGroup)[u.UserID]
 }
 
 // Private lists the private channels with their members' names.
@@ -135,7 +153,7 @@ func (s *Server) SetPrivate(actor, channel uint32, on bool, members []uint32) er
 		return errors.New("this channel cannot be private")
 	}
 	if on {
-		makePrivate(ch, slices.Collect(maps.Keys(known)))
+		s.makePrivate(ch, slices.Collect(maps.Keys(known)))
 	} else {
 		ch.ACLs = withoutPrivate(ch.ACLs)
 		delete(ch.Groups, membersGroup)
@@ -216,10 +234,10 @@ func (s *Server) CreatePrivateChannel(actor, parent uint32, name string) (uint32
 		return 0, err
 	}
 	if s.state.isStaff(u) {
-		makePrivate(ch, nil)
+		s.makePrivate(ch, nil)
 		s.state.grantCreator(ch, u)
 	} else {
-		makePrivate(ch, []uint32{u.UserID})
+		s.makePrivate(ch, []uint32{u.UserID})
 	}
 	s.showChannelLocked(ch)
 	save, lastID := cloneChannel(ch), s.state.LastChannelID()

@@ -232,3 +232,86 @@ func TestAddMember(t *testing.T) {
 		t.Fatalf("after a restart %+v", got)
 	}
 }
+
+// A private category: its members see all its text channels (also new
+// ones); a private channel in it has its own members and the category's.
+// The category itself stays traversable: a channel's own members reach
+// their channel without being the category's members.
+func TestPrivateCategories(t *testing.T) {
+	s, addr := rolesServer(t)
+	su := superUser(t, addr)
+	mod, _, modID := webUser(t, s, "mod")
+	s.SetModerator(su.session, modID, true)
+	alice, _, aliceID := webUser(t, s, "alice")
+	carol, _, carolID := webUser(t, s, "carol")
+	bob, _, _ := webUser(t, s, "bob")
+	cats, ids, err := s.SyncTextTree([]TextCategory{{Name: "Games"}}, []TextMirror{{Name: "general"}, {Name: "lobby", Category: 1}, {Name: "secret", Category: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	games, general, lobby, secret := cats[0], ids[0], ids[1], ids[2]
+	if err := s.SetPrivate(mod.session, games, true, []uint32{aliceID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPrivate(mod.session, secret, true, []uint32{carolID}); err != nil {
+		t.Fatal(err)
+	}
+	sees := func(c *testClient, chans ...uint32) []bool {
+		var out []bool
+		for _, ch := range chans {
+			out = append(out, s.Sees(c.session, ch) && s.MayWrite(c.session, ch))
+		}
+		return out
+	}
+	for _, c := range []struct {
+		name string
+		who  *testClient
+		want []bool // general, lobby, secret
+	}{
+		{"alice (category)", alice, []bool{true, true, true}},
+		{"carol (secret only)", carol, []bool{true, false, true}},
+		{"bob", bob, []bool{true, false, false}},
+		{"mod", mod, []bool{true, true, true}},
+	} {
+		if got := sees(c.who, general, lobby, secret); !slices.Equal(got, c.want) {
+			t.Errorf("%s: %v, want %v", c.name, got, c.want)
+		}
+	}
+	if !s.InPrivate(alice.session, games) || !s.InPrivate(alice.session, secret) || !s.InPrivate(carol.session, secret) || s.InPrivate(carol.session, games) || s.InPrivate(bob.session, games) {
+		t.Error("InPrivate")
+	}
+	if got := s.Private(); len(got) != 2 || got[0].Channel != games || !slices.Equal(got[0].Members, []Member{{aliceID, "alice"}}) {
+		t.Fatalf("private %+v", got)
+	}
+	// A new channel in the category: for its members only. One moved out:
+	// for all.
+	cats, ids, _ = s.SyncTextTree([]TextCategory{{Channel: games, Name: "Games"}},
+		[]TextMirror{{Channel: general, Name: "general"}, {Channel: lobby, Name: "lobby"}, {Channel: secret, Name: "secret", Category: 1}, {Name: "new", Category: 1}})
+	fresh := ids[3]
+	if !slices.Equal(sees(alice, fresh), []bool{true}) || !slices.Equal(sees(bob, fresh, lobby), []bool{false, true}) {
+		t.Errorf("after the sync: alice %v, bob %v", sees(alice, fresh), sees(bob, fresh, lobby))
+	}
+	// The category public again: its channels for all; secret keeps carol.
+	if err := s.SetPrivate(mod.session, games, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(sees(bob, fresh, secret), []bool{true, false}) || !slices.Equal(sees(alice, secret), []bool{false}) || !slices.Equal(sees(carol, secret), []bool{true}) {
+		t.Errorf("public category: bob %v, alice %v, carol %v", sees(bob, fresh, secret), sees(alice, secret), sees(carol, secret))
+	}
+}
+
+// Private text channels from before take their category's members on the
+// next sync (their group did not inherit).
+func TestOldPrivateMirrorsInherit(t *testing.T) {
+	s, _ := rolesServer(t)
+	cats, ids, _ := s.SyncTextTree([]TextCategory{{Name: "Games"}}, []TextMirror{{Name: "secret", Category: 1, Private: true}})
+	s.mu.Lock()
+	s.state.Channels[ids[0]].Groups[membersGroup].Inherit = false
+	s.mu.Unlock()
+	s.SyncTextTree([]TextCategory{{Channel: cats[0], Name: "Games"}}, []TextMirror{{Channel: ids[0], Name: "secret", Category: 1}})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.state.Channels[ids[0]].Groups[membersGroup].Inherit {
+		t.Fatal("still does not inherit")
+	}
+}
