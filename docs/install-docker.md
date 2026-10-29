@@ -85,6 +85,25 @@ logs if issuance or native TLS fails. Before switching back to
 `deploy/compose.yml`, open port 80 for its usual HTTP-based certificate
 issuance; keep the `deploy_` data volumes and your `.env`.
 
+## Published images instead of a build
+
+Every release is also an image on the GitHub Container Registry, for
+amd64 and arm64: `ghcr.io/kallisti-chat/kallisti` (and
+`ghcr.io/kallisti-chat/kallisti-cert-sync`). With
+`deploy/compose.published.yml` on top, Compose pulls them instead of
+building from the source; updates are then `pull` and `up -d`, without a
+new checkout (only the `deploy/` files and `deploy/.env` are needed):
+
+```sh
+docker compose -f deploy/compose.yml -f deploy/compose.published.yml up -d --remove-orphans
+```
+
+- `KALLISTI_TAG` in `deploy/.env` picks the version: `latest` (the newest
+  release, the default), a version such as `0.10.1`, or `edge` (the main
+  branch, untested between releases).
+- The same file goes on top of `compose.dns01.yml` or
+  `compose.behind-proxy.yml`.
+
 ## In front of an existing Murmur
 
 `deploy/compose.murmur.yml` runs Kallisti and Caddy, without a Mumble port:

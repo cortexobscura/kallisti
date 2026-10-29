@@ -42,6 +42,14 @@ docker compose -f deploy/compose.yml logs -f kallisti
 compose file no longer has (see the upgrade notes). The data stays in the
 volume.
 
+With the published images (see
+[installing](install-docker.md#published-images-instead-of-a-build)):
+
+```sh
+docker compose -f deploy/compose.yml -f deploy/compose.published.yml pull
+docker compose -f deploy/compose.yml -f deploy/compose.published.yml up -d --remove-orphans
+```
+
 ## Without containers
 
 Build as in [installing](install-binary.md#build), then on the server, from

@@ -1,0 +1,11 @@
+# The published Kallisti image instead of a build from source (cert-sync
+# is published too, see compose.yml), on top of
+# compose.yml, compose.dns01.yml, compose.behind-proxy.yml or
+# compose.murmur.yml:
+#   docker compose -f compose.yml -f compose.published.yml up -d
+# KALLISTI_TAG: a version (0.10.1), latest (the newest release) or edge
+# (the main branch). Update with "docker compose ... pull" and "up -d".
+services:
+  kallisti:
+    image: ghcr.io/kallisti-chat/kallisti:${KALLISTI_TAG:-latest}
+    build: !reset null

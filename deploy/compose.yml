@@ -69,6 +69,8 @@ services:
         condition: service_healthy
 
   cert-sync:
+    # Published (docker compose pull), or built here when not pulled.
+    image: ghcr.io/kallisti-chat/kallisti-cert-sync:${KALLISTI_TAG:-latest}
     build:
       context: ..
       dockerfile: deploy/docker/Dockerfile.cert-sync
