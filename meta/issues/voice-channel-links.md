@@ -32,3 +32,7 @@ desktop too: today only the phone sheet has it, for text).
 ## Result (2026-10-29)
 
 Done: /voice/<id> links; a question before every join from a link or invite (with the server, and a warning for a call here or voice on another device); "Copy link" in the channel menu and on the phone sheet, a one-use invite (7 days) for who manages a private channel; links of other servers in the rail open there. Checked in a browser on a local server (voice link, text and voice invites, second use refused, unknown channel). Private categories: with private-categories.md.
+
+Changed (2026-10-29): "Copy link" is always the plain link; staff and a
+channel's moderators get "Copy invite link" (one use, 7 days) beside it on
+private channels and categories, so the menu says what it makes.
