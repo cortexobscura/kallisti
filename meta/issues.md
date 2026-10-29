@@ -27,6 +27,7 @@
 - [x] [See who has access to a private channel from its menu](issues/private-channel-members-menu.md)
 - [x] [Private categories: members for all channels in them](issues/private-categories.md)
 - [x] [Quick reactions: two rows, most used and recent](issues/quick-emoji-rows.md)
+- [ ] [Published container images](issues/published-images.md)
 - [ ] [Pictures in a grid show tiny for some users](issues/tiny-picture-grid.md)
 - [ ] [Shorten long links in messages](issues/shorten-long-links.md)
 - [ ] [Rethink the split of text and voice channels](issues/text-voice-split.md)
