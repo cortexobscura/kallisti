@@ -74,7 +74,7 @@
       description,
       temporary,
       ...(startListenOnly ? { listenOnly: { on: listenOnly, speakers } } : {}),
-      ...(canPrivate && (kind !== "category" || start.mode === "edit") ? { private: isPrivate } : {}),
+      ...(canPrivate ? { private: isPrivate } : {}),
       ...(startSlowMode !== undefined ? { slowMode } : {}),
       ...(startCategory !== undefined && kind === "text" ? { category } : {}),
     };
@@ -134,7 +134,7 @@
           <span class="note hint">How often each member may post here. Admins and moderators (also this channel's) are exempt.</span>
         </label>
       {/if}
-      {#if canPrivate && (kind !== "category" || start.mode === "edit")}
+      {#if canPrivate}
         <label class="check">
           <input type="checkbox" bind:checked={isPrivate} />
           <span>

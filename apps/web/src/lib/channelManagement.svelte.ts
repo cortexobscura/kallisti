@@ -217,7 +217,7 @@ export const createChannelManagement = (current: () => Connection) => {
       const waits: Promise<void>[] = [];
       const ask = (a: ManageAction) => waits.push(connection.request(a));
       if (f.mode === "create") {
-        if (v.kind === "category") ask({ createCategory: v.name });
+        if (v.kind === "category") ask({ createCategory: v.name, private: v.private });
         else if (v.kind === "text") ask({ create: v.name, private: v.private, ...(v.category ? { category: v.category } : {}) });
         else if (v.private) ask({ createPrivateVoice: v.name, parent: f.parent });
         else connection.send(createChannel(f.parent ?? 0, v.name, { temporary: v.temporary }));

@@ -108,6 +108,7 @@ describe("private channel events", () => {
     expect(JSON.parse(manageRequest({ setPrivate: 11, on: true, users: [7] }))).toEqual({ type: "set-private", voice: 11, on: true, users: [7] });
     expect(JSON.parse(manageRequest({ create: "club", private: true }))).toEqual({ type: "create-channel", name: "club", private: true });
     expect(JSON.parse(manageRequest({ createPrivateVoice: "Lounge" }))).toEqual({ type: "create-private-voice", name: "Lounge" });
+    expect(JSON.parse(manageRequest({ createCategory: "Staff", private: true }))).toEqual({ type: "create-category", name: "Staff", private: true });
     expect(JSON.parse(manageRequest({ createPrivateVoice: "Den", parent: 4 }))).toEqual({ type: "create-private-voice", name: "Den", voice: 4 });
   });
 });

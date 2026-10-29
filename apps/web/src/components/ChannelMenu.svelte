@@ -97,8 +97,7 @@
   {#if (onCopyLink || onCopyInvite) && !direct && !thread}
     {#if onCopyLink}<button onclick={act(onCopyLink)}>Copy link</button>{/if}
     {#if onCopyInvite}
-      <button onclick={act(onCopyInvite)}>Copy invite link</button>
-      <p class="hint">One use, valid 7 days</p>
+      <button onclick={act(onCopyInvite)}>Copy invite link<span class="sub">One use, valid 7 days</span></button>
     {/if}
     <div class="sep"></div>
   {/if}
@@ -210,11 +209,10 @@
     font-size: 14px;
     color: var(--text-muted);
   }
-  /* Under the item it is about. */
-  .hint {
-    margin: -6px 0 2px;
-    padding: 0 8px 4px;
+  /* A second line in an item (part of it: the hover covers both). */
+  .sub {
+    display: block;
     font-size: 12px;
-    color: var(--text-faint);
+    opacity: 0.7;
   }
 </style>

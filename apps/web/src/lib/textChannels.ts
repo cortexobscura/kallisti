@@ -1146,7 +1146,7 @@ export const voiceChatRequest = (voice: number) => JSON.stringify({ type: "voice
 export type ManageAction =
   | { create: string; private?: boolean; category?: number }
   // Categories (staff); a text channel into a category (0: none).
-  | { createCategory: string }
+  | { createCategory: string; private?: boolean }
   | { renameCategory: number; name: string }
   | { removeCategory: number }
   | { orderCategories: number[] }
@@ -1202,7 +1202,7 @@ export type UserTarget = { session: number } | { user: number };
 
 const manageBody = (a: ManageAction) => {
   if ("create" in a) return { type: "create-channel", name: a.create, ...(a.private ? { private: true } : {}), ...(a.category ? { category: a.category } : {}) };
-  if ("createCategory" in a) return { type: "create-category", name: a.createCategory };
+  if ("createCategory" in a) return { type: "create-category", name: a.createCategory, ...(a.private && { private: true }) };
   if ("renameCategory" in a) return { type: "rename-category", category: a.renameCategory, name: a.name };
   if ("removeCategory" in a) return { type: "delete-category", category: a.removeCategory };
   if ("orderCategories" in a) return { type: "order-categories", categories: a.orderCategories };
