@@ -26,3 +26,7 @@ Decided (2026-10-29):
   changes its access.
 - Web: Private switch and Members dialog for categories; lock icons on
   the category and its channels; the readers list.
+
+## Result (2026-10-29)
+
+Done. A private category closes the channels in it, not itself (so a private channel's own members still reach it; Mumble apps see the empty category channel). Only channels directly in a category inherit its members (a members group SuperUser made higher up gives no access). A public channel may not leave a private category, and a private category with channels may not be deleted (the history would become public). Channel moderators of a channel in it keep it. Category invites: a member, its first channel opens. Reviews: Claude and Astra. Checked in a browser on a local server (category member, channel-only member, outsider, invite).
