@@ -23,7 +23,7 @@
 - [ ] [Firefox: no stream controls on hover](issues/firefox-stream-controls.md)
 - [ ] [Message HTML: forms](issues/message-forms.md)
 - [ ] [Mentions of names with emoji](issues/mention-emoji-names.md)
-- [ ] [Links that join a voice channel](issues/voice-channel-links.md)
+- [x] [Links that join a voice channel](issues/voice-channel-links.md)
 - [x] [See who has access to a private channel from its menu](issues/private-channel-members-menu.md)
 - [ ] [Private categories: members for all channels in them](issues/private-categories.md)
 - [ ] [Rethink the split of text and voice channels](issues/text-voice-split.md)

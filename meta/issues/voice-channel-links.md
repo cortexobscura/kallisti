@@ -28,3 +28,7 @@ desktop too: today only the phone sheet has it, for text).
 - The dialog before every join from a link (also invites).
 - Browser check: link opened logged in, logged out (after the login),
   from another server, while in a call.
+
+## Result (2026-10-29)
+
+Done: /voice/<id> links; a question before every join from a link or invite (with the server, and a warning for a call here or voice on another device); "Copy link" in the channel menu and on the phone sheet, a one-use invite (7 days) for who manages a private channel; links of other servers in the rail open there. Checked in a browser on a local server (voice link, text and voice invites, second use refused, unknown channel). Private categories: with private-categories.md.
