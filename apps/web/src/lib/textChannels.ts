@@ -90,7 +90,8 @@ export type DisplayMessage = ChatMessage & {
 
 export type ListenOnlyChannel = { channel: number; speakers: Speaker[] };
 // A private channel (by Mumble channel) and, for staff, its members.
-export type PrivateChannel = { channel: number; members?: Speaker[] };
+// inherited: members by its private category (not its own).
+export type PrivateChannel = { channel: number; members?: Speaker[]; inherited?: Speaker[] };
 // The other user of a direct chat.
 export type Peer = { id: number; name: string };
 export type DirectChat = { channel: number; peer: Peer };
@@ -296,6 +297,8 @@ export type TextState = {
   // text channel's mirror): their members (for admins and moderators;
   // others get none).
   private: Readonly<Record<number, Speaker[]>>;
+  // A private channel's members by its private category (see readersOf).
+  inherited: Readonly<Record<number, Speaker[]>>;
   // Invite links of private channels (staff), once asked for.
   invites: Readonly<Record<number, Invite[]>>;
   timeouts: readonly Timeout[];
@@ -378,6 +381,7 @@ export const initialTextState: TextState = {
   roles: { admins: [], moderators: [] },
   listenOnly: {},
   private: {},
+  inherited: {},
   invites: {},
   timeouts: [],
   channelTimeouts: [],
@@ -454,8 +458,9 @@ const isSpeaker = (v: unknown): v is Speaker => isObj(v) && isNum(v.id) && isStr
 const isListenOnly = (v: unknown): v is ListenOnlyChannel[] =>
   Array.isArray(v) && v.every((c) => isObj(c) && isNum(c.channel) && Array.isArray(c.speakers) && c.speakers.every(isSpeaker));
 const listenOnlyMap = (cs: ListenOnlyChannel[]) => Object.fromEntries(cs.map((c) => [c.channel, c.speakers]));
+const isSpeakers = (v: unknown) => v === undefined || (Array.isArray(v) && v.every(isSpeaker));
 const isPrivateList = (v: unknown): v is PrivateChannel[] =>
-  Array.isArray(v) && v.every((c) => isObj(c) && isNum(c.channel) && (c.members === undefined || (Array.isArray(c.members) && c.members.every(isSpeaker))));
+  Array.isArray(v) && v.every((c) => isObj(c) && isNum(c.channel) && isSpeakers(c.members) && isSpeakers(c.inherited));
 const isInvite = (v: unknown): v is Invite =>
   isObj(v) &&
   isNum(v.id) &&
@@ -465,6 +470,7 @@ const isInvite = (v: unknown): v is Invite =>
   (v.expires === undefined || isNum(v.expires)) &&
   (v.maxUses === undefined || isNum(v.maxUses));
 const privateMap = (cs: PrivateChannel[]) => Object.fromEntries(cs.map((c) => [c.channel, c.members ?? []]));
+const inheritedMap = (cs: PrivateChannel[]) => Object.fromEntries(cs.flatMap((c) => (c.inherited?.length ? [[c.channel, c.inherited]] : [])));
 const isTimeouts = (v: unknown): v is Timeout[] =>
   Array.isArray(v) && v.every((t) => isObj(t) && isNum(t.until) && (isNum(t.user) !== isNum(t.session)));
 const isChannelTimeouts = (v: unknown): v is ChannelTimeout[] => isTimeouts(v) && v.every((t) => isNum((t as ChannelTimeout).channel));
@@ -829,6 +835,7 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
         bios: {},
         listenOnly: listenOnlyMap(event.listenOnly ?? []),
         private: privateMap(event.private ?? []),
+        inherited: inheritedMap(event.private ?? []),
         timeouts: event.timeouts ?? [],
         channelTimeouts: event.channelTimeouts ?? [],
         guestsReadOnly: event.guestsReadOnly === true,
@@ -878,7 +885,7 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
     case "listen-only":
       return { ...state, listenOnly: listenOnlyMap(event.channels) };
     case "private":
-      return { ...state, private: privateMap(event.channels) };
+      return { ...state, private: privateMap(event.channels), inherited: inheritedMap(event.channels) };
     case "invites":
       return { ...state, invites: { ...state.invites, [event.voice]: event.invites } };
     case "invite-created": // the client shows it once (lib/invites)

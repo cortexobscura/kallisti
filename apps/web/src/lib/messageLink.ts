@@ -27,13 +27,18 @@ export const parseMessageLink = (url: string, origin: string): ChannelLink | nul
 };
 
 // What "Copy link" on a channel makes: a one-use invite link to its
-// private channel (access: the Mumble channel that holds its members) for
-// who may make invites, else a plain link (a private channel's works for
-// its members only); null: none (a category).
+// private channel or category (access: the Mumble channel that holds its
+// members) for who may make invites, else a plain link (a private
+// channel's works for its members only); null: none (a category, for
+// others).
 export const linkPlan = (
   site: string,
   kind: ChannelKind,
   id: number,
   { access, invites }: { access: number | null; invites: boolean },
 ): { invite: number } | { url: string } | null =>
-  kind === "category" ? null : invites && access !== null ? { invite: access } : { url: kind === "voice" ? voiceLink(site, id) : channelLink(site, id) };
+  invites && access !== null
+    ? { invite: access }
+    : kind === "category"
+      ? null
+      : { url: kind === "voice" ? voiceLink(site, id) : channelLink(site, id) };

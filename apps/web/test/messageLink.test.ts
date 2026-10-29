@@ -39,5 +39,8 @@ describe("what Copy link makes", () => {
     expect(linkPlan(site, "voice", 5, { access: 5, invites: false })).toEqual({ url: "https://chat.example/voice/5" });
     expect(linkPlan(site, "text", 4, { access: null, invites: false })).toEqual({ url: "https://chat.example/channels/4" });
     expect(linkPlan(site, "category", 1, { access: null, invites: false })).toBeNull();
+    // A private category: an invite for who manages it, nothing for others.
+    expect(linkPlan(site, "category", 1, { access: 20, invites: true })).toEqual({ invite: 20 });
+    expect(linkPlan(site, "category", 1, { access: 20, invites: false })).toBeNull();
   });
 });

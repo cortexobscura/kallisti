@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessChannel, memberCandidates, membersAction, privateAction } from "../src/lib/privateChannels";
+import { accessChannel, isLocked, memberCandidates, membersAction, privateAction, readersOf } from "../src/lib/privateChannels";
 import { initialTextState, manageRequest, parseServerEvent, reduceText } from "../src/lib/textChannels";
 
 const text = [
@@ -14,6 +14,35 @@ describe("accessChannel", () => {
     expect(accessChannel("text", 2, text)).toBe(11);
     expect(accessChannel("text", 3, text)).toBeNull();
     expect(accessChannel("text", 9, text)).toBeNull();
+  });
+  it("is a category's own channel", () => {
+    expect(accessChannel("category", 1, text, [{ id: 1, mumble: 20 }])).toBe(20);
+    expect(accessChannel("category", 2, text, [{ id: 1, mumble: 20 }])).toBeNull();
+  });
+});
+
+describe("private categories", () => {
+  const ann = { id: 7, name: "ann" };
+  const cat = { id: 7, name: "carol" };
+  const state = {
+    ...initialTextState,
+    categories: [{ id: 1, name: "Games", mumble: 20 }],
+    channels: [
+      { id: 1, name: "general", mumble: 10 },
+      { id: 2, name: "lobby", mumble: 11, category: 1 },
+      { id: 3, name: "secret", mumble: 12, category: 1 },
+    ],
+    private: { 20: [ann], 12: [cat] },
+    inherited: { 12: [ann] },
+  };
+  it("who reads a channel: its own members and the category's", () => {
+    expect(readersOf(state, "text", 1)).toBeUndefined();
+    expect(readersOf(state, "text", 2)).toEqual([ann]); // by the category
+    expect(readersOf(state, "text", 3)).toEqual([cat, ann]);
+    expect(readersOf(state, "voice", 12)).toEqual([cat, ann]);
+  });
+  it("locks the category and every channel in it", () => {
+    expect(state.channels.map((c) => isLocked(state, c))).toEqual([false, true, true]);
   });
 });
 
@@ -63,10 +92,15 @@ describe("private channel events", () => {
     expect(state.private).toEqual({ 11: [{ id: 7, name: "bob" }], 4: [] });
     const ev = parseServerEvent(JSON.stringify({ type: "private", channels: [] }));
     expect(reduceText(state, ev!).private).toEqual({});
+    // Members by a private category, apart from the channel's own.
+    const inCat = parseServerEvent(JSON.stringify({ type: "private", channels: [{ channel: 12, members: [], inherited: [{ id: 7, name: "bob" }] }] }));
+    const after = reduceText(state, inCat!);
+    expect([after.private, after.inherited]).toEqual([{ 12: [] }, { 12: [{ id: 7, name: "bob" }] }]);
   });
   it("drop bad entries", () => {
     expect(parseServerEvent(JSON.stringify({ type: "private", channels: [{ channel: "x" }] }))).toBeNull();
     expect(parseServerEvent(JSON.stringify({ type: "private", channels: [{ channel: 2, members: [{ id: 1 }] }] }))).toBeNull();
+    expect(parseServerEvent(JSON.stringify({ type: "private", channels: [{ channel: 2, inherited: "x" }] }))).toBeNull();
     const ready = parseServerEvent(JSON.stringify({ type: "ready", channels: [], private: "x" }));
     expect(reduceText(initialTextState, ready!).private).toEqual({});
   });

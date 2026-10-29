@@ -9,10 +9,33 @@ import type { Speaker } from "./listenOnly";
 
 export type Member = Speaker;
 
+type Mirrored = { id: number; mumble?: number };
+
 // The Mumble channel that holds a channel's access (null: none, a text
-// channel without a mirror).
-export const accessChannel = (kind: ChannelKind, id: number, textChannels: readonly { id: number; mumble?: number }[]) =>
-  kind === "voice" ? id : kind === "text" ? (textChannels.find((c) => c.id === id)?.mumble ?? null) : null;
+// channel without a mirror): a voice channel itself, a text channel's
+// mirror, a category's channel.
+export const accessChannel = (kind: ChannelKind, id: number, textChannels: readonly Mirrored[], categories: readonly Mirrored[] = []) =>
+  (kind === "voice" ? id : (kind === "text" ? textChannels : categories).find((c) => c.id === id)?.mumble) ?? null;
+
+type Access = { private: Readonly<Record<number, readonly Member[]>>; inherited: Readonly<Record<number, readonly Member[]>> };
+type Channels = { channels: readonly (Mirrored & { category?: number })[]; categories: readonly Mirrored[] };
+
+// Who reads a channel (undefined: not private, or no list for us): a
+// private one's members and those by its category; a channel in a
+// private category, the category's.
+export const readersOf = (text: Access & Channels, kind: "text" | "voice", id: number): Member[] | undefined => {
+  const access = kind === "voice" ? id : text.channels.find((c) => c.id === id)?.mumble;
+  if (access !== undefined && access in text.private) return [...text.private[access]!, ...(text.inherited[access] ?? [])];
+  const cat = kind === "text" ? categoryAccess(text, text.channels.find((c) => c.id === id)?.category) : null;
+  return cat !== null && cat in text.private ? [...text.private[cat]!] : undefined;
+};
+
+const categoryAccess = (text: Channels, category: number | undefined) =>
+  category === undefined ? null : (text.categories.find((c) => c.id === category)?.mumble ?? null);
+
+// A lock on a text channel: private, or in a private category.
+export const isLocked = (text: { private: Readonly<Record<number, unknown>> } & Channels, c: Mirrored & { category?: number }) =>
+  (c.mumble !== undefined && c.mumble in text.private) || (categoryAccess(text, c.category) ?? -1) in text.private;
 
 const byName = (a: Member, b: Member) => a.name.localeCompare(b.name);
 const ids = (ms: readonly Member[]) => ms.map((m) => m.id).sort((a, b) => a - b);

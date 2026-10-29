@@ -4,6 +4,7 @@
   import { longPress } from "../lib/longPress";
   import { mirrorIds, withoutMirrors } from "../lib/mirrors";
   import { shownCollapsed, textGroups, type TextCategory } from "../lib/categories";
+  import { isLocked } from "../lib/privateChannels";
   import { htmlToText } from "../lib/htmlText";
   import type { ChannelKind } from "../lib/channelForm";
   import type { Peer, TextChannel } from "../lib/textChannels";
@@ -224,7 +225,7 @@
   <span class="lock" title="Private channel"><Icon name="lock" size={14} /><span class="sr-only">(private)</span></span>
 {/snippet}
 
-{#snippet category(label: string, isCollapsed: boolean, toggle: () => void, create?: { label: string; run: () => void }, menu?: (e: MouseEvent) => void)}
+{#snippet category(label: string, isCollapsed: boolean, toggle: () => void, create?: { label: string; run: () => void }, menu?: (e: MouseEvent) => void, locked = false)}
   <div class="category-row">
     <button
       use:longPress
@@ -241,6 +242,7 @@
         <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="3" />
       </svg>
       {label}
+      {#if locked}{@render lock()}{/if}
     </button>
     {#if create}
       <button class="add" title="Create channel" aria-label={create.label} onclick={create.run}>
@@ -270,7 +272,7 @@
         >
           <Icon name="hash" size={20} />
           <span class="name ellipsis">{ch.name}</span>
-          {#if ch.mumble !== undefined && ch.mumble in privateChannels}{@render lock()}{/if}
+          {#if isLocked({ private: privateChannels, channels: textChannels, categories }, ch)}{@render lock()}{/if}
           {#if unreadText.has(ch.id) && ch.id !== currentText}
             <span class="sr-only">unread</span>
           {/if}
@@ -323,6 +325,7 @@
       () => onToggleCategory?.(id),
       canCreateIn(id) ? createIn("text", id, g.category!.name) : undefined,
       onChannelMenu && ((e) => onChannelMenu("category", id, e)),
+      g.category!.mumble !== undefined && g.category!.mumble in privateChannels,
     )}
     {@render textList(shut ? shownCollapsed(g.channels, currentText, loud) : g.channels)}
   {/each}

@@ -90,14 +90,14 @@ export const createChannelManagement = (current: () => Connection) => {
   // Closed when the channel stops being private or we are no member.
   const viewForm = $derived.by(() =>
     viewing && canViewMembers(server, text, viewing.kind, viewing.id)
-      ? { ...viewing, name: nameOf(viewing.kind, viewing.id), members: text.private[viewing.access] ?? [] }
+      ? { ...viewing, name: nameOf(viewing.kind, viewing.id), members: [...(text.private[viewing.access] ?? []), ...(text.inherited[viewing.access] ?? [])] }
       : null,
   );
 
   // The private switch on edit: admins and moderators, not root, and text
   // channels only with a mirror.
   const privateField = (kind: ChannelKind, id: number) => {
-    const access = accessChannel(kind, id, text.channels);
+    const access = accessChannel(kind, id, text.channels, text.categories);
     if (!canManageText(server, text) || access === null || access === 0) return {};
     return { private: { on: access in text.private, members: text.private[access] ?? [] } };
   };
@@ -155,7 +155,7 @@ export const createChannelManagement = (current: () => Connection) => {
       }),
     startEdit: (kind: ChannelKind, id: number) =>
       (form = {
-        form: kind === "category" ? { mode: "edit", kind, name: nameOf(kind, id), description: "" } : {
+        form: kind === "category" ? { mode: "edit", kind, name: nameOf(kind, id), description: "", ...privateField(kind, id) } : {
           mode: "edit",
           kind,
           name: nameOf(kind, id),
@@ -165,7 +165,7 @@ export const createChannelManagement = (current: () => Connection) => {
             ? { listenOnly: { on: id in text.listenOnly, speakers: text.listenOnly[id] ?? [], users: speakerCandidates(server) } }
             : {}),
           ...privateField(kind, id),
-          ...(kind === "text" && canModerate(server, text, accessChannel(kind, id, text.channels))
+          ...(kind === "text" && canModerate(server, text, accessChannel(kind, id, text.channels, text.categories))
             ? { slowMode: text.channels.find((c) => c.id === id)?.slowMode ?? 0 }
             : {}),
           ...(kind === "text" && canManageText(server, text) ? { category: textChannel(id)?.category ?? 0, ...categoryChoice() } : {}),
@@ -175,12 +175,12 @@ export const createChannelManagement = (current: () => Connection) => {
         id,
       }),
     startMembers: (kind: ChannelKind, id: number) => {
-      const access = accessChannel(kind, id, text.channels);
+      const access = accessChannel(kind, id, text.channels, text.categories);
       if (access !== null) members = { kind, id, access };
     },
     closeMembers: () => (members = null),
     startViewMembers: (kind: ChannelKind, id: number) => {
-      const access = accessChannel(kind, id, text.channels);
+      const access = accessChannel(kind, id, text.channels, text.categories);
       if (access !== null) viewing = { kind, id, access };
     },
     closeViewMembers: () => (viewing = null),
@@ -222,7 +222,7 @@ export const createChannelManagement = (current: () => Connection) => {
         else if (v.private) ask({ createPrivateVoice: v.name, parent: f.parent });
         else connection.send(createChannel(f.parent ?? 0, v.name, { temporary: v.temporary }));
       } else if (f.mode === "edit") {
-        const access = accessChannel(v.kind, id, text.channels);
+        const access = accessChannel(v.kind, id, text.channels, text.categories);
         const priv = f.private && access !== null && privateAction(access, f.private.on, v.private ?? false, f.private.members);
         if (priv) ask(priv);
         if (v.kind === "category") {

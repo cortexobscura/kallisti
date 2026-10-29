@@ -33,22 +33,24 @@ export const canCreateText = (server: ServerState, text: TextState, category?: n
 
 // The members of a private channel: admins, moderators and its moderators.
 export const canManageMembers = (server: ServerState, text: TextState, kind: ChannelKind, id: number): boolean => {
-  const access = accessChannel(kind, id, text.channels);
+  const access = accessChannel(kind, id, text.channels, text.categories);
   return access !== null && access in text.private && canModerate(server, text, access);
 };
 
-// Who has access to a private channel, read-only: its members who do not
-// manage it (the server sends the list to members only).
+// Who has access to a private channel, read-only: its members (also by
+// its category) who do not manage it (the server sends the list to
+// members only).
 export const canViewMembers = (server: ServerState, text: TextState, kind: ChannelKind, id: number): boolean => {
-  const access = accessChannel(kind, id, text.channels);
+  const access = accessChannel(kind, id, text.channels, text.categories);
   const me = myUserId(server);
-  return access !== null && me !== null && !!text.private[access]?.some((m) => m.id === me) && !canManageMembers(server, text, kind, id);
+  const readers = access === null || !(access in text.private) ? [] : [...text.private[access]!, ...(text.inherited[access] ?? [])];
+  return me !== null && readers.some((m) => m.id === me) && !canManageMembers(server, text, kind, id);
 };
 
 // A channel's moderators (staff appoint them): the Mumble channel that
 // holds them, or null. Not root: its moderators are the server's.
 export const moderatorsChannel = (server: ServerState, text: TextState, kind: ChannelKind, id: number): number | null => {
-  const access = kind === "category" ? categoryMumble(text, id) : accessChannel(kind, id, text.channels);
+  const access = accessChannel(kind, id, text.channels, text.categories);
   return canManageText(server, text) && access !== null && access !== 0 && server.channels[access] ? access : null;
 };
 
@@ -91,7 +93,7 @@ export const menuRights = (server: ServerState, text: TextState, kind: ChannelKi
     const group = textGroups(text.channels, text.categories).find((g) => g.channels.some((c) => c.id === id));
     if (!group) return null;
     const manage = canManageText(server, text) || managesCategory(server, text, group.category?.id);
-    const own = canModerate(server, text, accessChannel(kind, id, text.channels));
+    const own = canModerate(server, text, accessChannel(kind, id, text.channels, text.categories));
     return rights(own, manage && own, group.channels.map((c) => c.id), manage);
   }
   if (!server.channels[id]) return null;

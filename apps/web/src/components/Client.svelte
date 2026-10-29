@@ -57,7 +57,7 @@
   import type { AccountActions } from "../lib/accounts";
   import { createChannelManagement } from "../lib/channelManagement.svelte";
   import { canManageMembers, canManageText, canModerate } from "../lib/channelManagement";
-  import { accessChannel } from "../lib/privateChannels";
+  import { accessChannel, isLocked, readersOf } from "../lib/privateChannels";
   import type { ChannelKind } from "../lib/channelForm";
   import { copyLater } from "../lib/clipboard";
   import type { Connection } from "../lib/connection.svelte";
@@ -760,7 +760,7 @@
   // manages a private channel, else a plain link. No clipboard: no invite.
   const INVITE_SECONDS = 7 * 24 * 3600;
   const copyLink = (kind: ChannelKind, id: number) => {
-    const plan = linkPlan(site, kind, id, { access: accessChannel(kind, id, text.channels), invites: canManageMembers(server, text, kind, id) });
+    const plan = linkPlan(site, kind, id, { access: accessChannel(kind, id, text.channels, text.categories), invites: canManageMembers(server, text, kind, id) });
     if (!plan) return;
     if (!navigator.clipboard) return flash("Could not copy the link");
     const url =
@@ -1129,10 +1129,9 @@
   const offline = $derived(text.voiceChats ? offlineMembers(text.members, text.online, users) : []);
   const hidden = $derived(text.voiceChats ? hiddenMembers(text.members, text.online, users) : []);
   // In a private text or voice channel: who reads it (null: not private).
-  const privateMembers = $derived.by(() => {
-    const access = textId !== null ? textChannel?.mumble : view.kind === "voice" ? channelId : undefined;
-    return access === undefined ? undefined : text.private[access];
-  });
+  const privateMembers = $derived(
+    textId !== null ? readersOf(text, "text", textId) : view.kind === "voice" && channelId !== null ? readersOf(text, "voice", channelId) : undefined,
+  );
   const readers = $derived(
     privateMembers && readerGroups(privateMembers, text.roles, text.members, text.online, users, me?.userId ?? null),
   );
@@ -1616,7 +1615,7 @@
           kind: "text" as const,
           category: categoryName(c.category),
           unread: unreadText.has(c.id),
-          locked: c.mumble !== undefined && c.mumble in text.private,
+          locked: isLocked(text, c),
           run: () => show({ kind: "text", id: c.id }),
         },
         ...activeThreads(text.threads, c.id).map((t) => ({
@@ -1684,7 +1683,7 @@
     canMoveDown={m.canMoveDown}
     canMembers={m.canMembers}
     canViewMembers={m.canViewMembers}
-    onCopyLink={m.kind === "category" ? undefined : () => copyLink(m.kind, m.id)}
+    onCopyLink={m.kind === "category" && !m.canMembers ? undefined : () => copyLink(m.kind, m.id)}
     onViewMembers={() => channels.startViewMembers(m.kind, m.id)}
     canModerators={m.canModerators}
     category={m.kind === "category"}

@@ -117,5 +117,7 @@ describe("canViewMembers", () => {
     const mod = { ...priv, roles: { ...priv.roles, channelMods: { 2: [8] } } };
     expect(canViewMembers(as(8), mod, "voice", 2)).toBe(false); // its moderator: the Members dialog
     expect(canViewMembers(as(7), { ...priv, private: { 21: [] } }, "text", 11)).toBe(false); // no list sent
+    // A member by the category: the channel's list too.
+    expect(canViewMembers(as(9), { ...priv, private: { 21: [] }, inherited: { 21: [{ id: 9, name: "cat" }] } }, "text", 11)).toBe(true);
   });
 });

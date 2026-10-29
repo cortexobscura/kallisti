@@ -74,7 +74,7 @@
       description,
       temporary,
       ...(startListenOnly ? { listenOnly: { on: listenOnly, speakers } } : {}),
-      ...(canPrivate && kind !== "category" ? { private: isPrivate } : {}),
+      ...(canPrivate && (kind !== "category" || start.mode === "edit") ? { private: isPrivate } : {}),
       ...(startSlowMode !== undefined ? { slowMode } : {}),
       ...(startCategory !== undefined && kind === "text" ? { category } : {}),
     };
@@ -134,12 +134,16 @@
           <span class="note hint">How often each member may post here. Admins and moderators (also this channel's) are exempt.</span>
         </label>
       {/if}
-      {#if canPrivate && kind !== "category"}
+      {#if canPrivate && (kind !== "category" || start.mode === "edit")}
         <label class="check">
           <input type="checkbox" bind:checked={isPrivate} />
           <span>
-            Private channel
-            <span class="note">Only its members, admins and moderators see it. Add members in the channel menu (Members…).</span>
+            {kind === "category" ? "Private category" : "Private channel"}
+            <span class="note">
+              {kind === "category"
+                ? "Only its members, admins and moderators see the channels in it (a private channel in it also lets in its own members). Add members in the category menu (Members…)."
+                : "Only its members, admins and moderators see it. Add members in the channel menu (Members…)."}
+            </span>
           </span>
         </label>
       {/if}
