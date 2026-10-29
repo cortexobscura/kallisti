@@ -1,7 +1,14 @@
 <script lang="ts">
-  // Before a link (or an invite) joins a voice channel: asked first, and
-  // told when it ends a call.
-  let { name, inCall, onJoin, onClose }: { name: string; inCall: boolean; onJoin: () => void; onClose: () => void } = $props();
+  // Before a link (or an invite) joins a voice channel: asked first, with
+  // the server it goes to (a link on one server may lead to another), and
+  // told when it ends a call here or takes voice from another device.
+  let {
+    name,
+    server,
+    call,
+    onJoin,
+    onClose,
+  }: { name: string; server: string; call: "none" | "here" | "device"; onJoin: () => void; onClose: () => void } = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
   $effect(() => dialog?.showModal());
@@ -13,8 +20,9 @@
 
 <dialog bind:this={dialog} onclose={onClose} aria-labelledby="join-dialog-title">
   <h2 id="join-dialog-title">Join {name}?</h2>
-  <p>A link leads to this voice channel. Others there hear you once you join.</p>
-  {#if inCall}<p class="note">This ends your current call.</p>{/if}
+  <p>A link leads to this voice channel on <strong>{server}</strong>. Others there hear you once you join.</p>
+  {#if call === "here"}<p class="note">This ends your current call.</p>{/if}
+  {#if call === "device"}<p class="note">You are in voice on another device: joining here moves your voice to this one.</p>{/if}
   <footer>
     <button type="button" class="secondary" onclick={() => dialog?.close()}>Cancel</button>
     <!-- svelte-ignore a11y_autofocus -->

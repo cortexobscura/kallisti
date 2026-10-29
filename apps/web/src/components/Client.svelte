@@ -746,7 +746,7 @@
   // A link to a voice channel (or an invite to one): joined after a
   // question (already there: shown). false: no such channel for us.
   let joinAsk = $state<number | null>(null);
-  const inCall = $derived((voiceOn && !(lobby && channelId === 0)) || !!remoteVoice);
+  const callNow = $derived((voiceOn && !(lobby && channelId === 0)) || remoteVoice ? "here" : elsewhere ? "device" : "none");
   const askJoin = (id: number) => {
     if (!server.channels[id]) {
       flash("This channel does not exist or is private.");
@@ -1797,7 +1797,7 @@
 
 {#if joinAsk !== null && server.channels[joinAsk]}
   {@const id = joinAsk}
-  <JoinDialog name={server.channels[id]!.name} {inCall} onJoin={() => join(id)} onClose={() => (joinAsk = null)} />
+  <JoinDialog name={server.channels[id]!.name} server={`${serverName} (${new URL(site).host})`} call={callNow} onJoin={() => join(id)} onClose={() => (joinAsk = null)} />
 {/if}
 
 {#if channels.viewing}
