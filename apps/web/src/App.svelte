@@ -644,7 +644,7 @@
         {/if}
         <!-- While lost, the old view stays readable but takes no input (it would be lost); the rail does. -->
         {#key s.connection}
-          <Client connection={s.connection} link={links.linkFor(id)} onLinkUsed={() => links.used(id)} onInvite={openInvite} onBadge={(b) => setBadge(id, b)} active={shown} pttHere={pttOn(id)} remoteVoice={remoteVoiceFor(id)} onShow={() => selectServer(id)} lost={s.lost} {rail} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} {...own} />
+          <Client connection={s.connection} link={links.linkFor(id)} onLinkUsed={() => links.used(id)} onInvite={openInvite} onServerLink={openMessageLink} onBadge={(b) => setBadge(id, b)} active={shown} pttHere={pttOn(id)} remoteVoice={remoteVoiceFor(id)} onShow={() => selectServer(id)} lost={s.lost} {rail} resume={s.place} onPlace={(p) => s.keepPlace(p)} {audioState} onRestartAudio={restartAudio} drafts={s.drafts} pendingFiles={s.pendingFiles} streams={s.streams} {...own} />
         {/key}
       </div>
     {/if}

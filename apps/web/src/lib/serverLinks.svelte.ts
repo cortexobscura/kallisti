@@ -41,18 +41,20 @@ export const createServerLinks = (deps: {
       if (route === "add") deps.add({ address: inv.origin });
       return true;
     },
-    // A message link of a server here (with a session); others do nothing.
-    openMessageLink: (url: string) => {
+    // A message, chat or voice channel link of a server here (with a
+    // session): shown there; false: others (they open as a page).
+    openMessageLink: (url: string): boolean => {
       let origin: string;
       try {
         origin = new URL(url).origin;
       } catch {
-        return;
+        return false;
       }
       const id = origin === homeOrigin() ? "" : deps.servers().find((s) => s.origin === origin && s.session)?.origin;
-      if (id === undefined || !parseMessageLink(url, origin)) return;
+      if (id === undefined || !parseMessageLink(url, origin)) return false;
       pending[id] = url;
       deps.select(id);
+      return true;
     },
     // The link for a server's client ("": home), until it is used.
     linkFor: (id: string): string | null => pending[id] ?? null,

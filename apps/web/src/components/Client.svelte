@@ -56,7 +56,10 @@
   import { tick, untrack, type ComponentProps, type Snippet } from "svelte";
   import type { AccountActions } from "../lib/accounts";
   import { createChannelManagement } from "../lib/channelManagement.svelte";
-  import { canManageText, canModerate } from "../lib/channelManagement";
+  import { canManageMembers, canManageText, canModerate } from "../lib/channelManagement";
+  import { accessChannel } from "../lib/privateChannels";
+  import type { ChannelKind } from "../lib/channelForm";
+  import { copyLater } from "../lib/clipboard";
   import type { Connection } from "../lib/connection.svelte";
   import { onlinePicture, pictureLookup, setAvatarPictures } from "../lib/avatar";
   import { customEmojiSet, setCustomEmoji } from "../lib/customEmoji";
@@ -133,6 +136,7 @@
   import SearchPanel from "./SearchPanel.svelte";
   import ModerationDialog from "./ModerationDialog.svelte";
   import MembersDialog from "./MembersDialog.svelte";
+  import JoinDialog from "./JoinDialog.svelte";
   import AccessDialog from "./AccessDialog.svelte";
   import Icon from "./Icon.svelte";
   import ServerRail from "./ServerRail.svelte";
@@ -145,7 +149,7 @@
   import { IS_MAC, navAction, stepPlace } from "../lib/switcher";
   import { mirrorIds } from "../lib/mirrors";
   import { railBadge, tabTitle, type RailBadge } from "../lib/title";
-  import { channelLink, messageLink, parseMessageLink } from "../lib/messageLink";
+  import { linkPlan, messageLink, parseMessageLink, type ChannelLink } from "../lib/messageLink";
   import { inviteLink, inviteOf, invitePlace, parseInviteLink } from "../lib/invites";
   import UserPanel from "./UserPanel.svelte";
   import VoiceBar from "./VoiceBar.svelte";
@@ -177,6 +181,7 @@
     link = null,
     onLinkUsed,
     onInvite,
+    onServerLink,
     pushSync,
   }: {
     connection: Connection;
@@ -227,6 +232,9 @@
     onLinkUsed?: () => void;
     // An invite link clicked here (any server's): true, the caller takes it.
     onInvite?: (url: string) => boolean;
+    // A message, chat or voice link of another server in the rail: shown
+    // there (false: not one of them).
+    onServerLink?: (url: string) => boolean;
     // An added server's push (see lib/push syncServerPush), with its quiet
     // chats and blocks; none: the home server's own push (its settings).
     pushSync?: (prefs: PushPrefs) => void;
@@ -705,7 +713,7 @@
     return {
       notify: { pref: prefOf(channelPrefs.value, connection.httpBase, id), desktop: prefs.notifications, direct: textId === null },
       onNotify: (patch: ChannelPref) => channelPrefs.set(connection.httpBase, id, patch),
-      link: textId === null ? undefined : channelLink(site, textId),
+      onCopyLink: textId === null ? undefined : () => copyLink("text", textId!),
     };
   });
   // An open thread (see below), and a message to jump to there.
@@ -734,7 +742,49 @@
     }
     return true;
   };
-  const openMessage = (link: { chat: number; message?: number } | null) => !!link && openChat(link.chat, link.message);
+  const openMessage = (link: ChannelLink | null) => !!link && ("voice" in link ? askJoin(link.voice) : openChat(link.chat, link.message));
+  // A link to a voice channel (or an invite to one): joined after a
+  // question (already there: shown). false: no such channel for us.
+  let joinAsk = $state<number | null>(null);
+  const inCall = $derived((voiceOn && !(lobby && channelId === 0)) || !!remoteVoice);
+  const askJoin = (id: number) => {
+    if (!server.channels[id]) {
+      flash("This channel does not exist or is private.");
+      return false;
+    }
+    if (voiceOn && id === channelId) show({ kind: "voice" });
+    else joinAsk = id;
+    return true;
+  };
+  // "Copy link" (see linkPlan): a one-use invite (valid a week) for who
+  // manages a private channel, else a plain link. The invite comes from
+  // the server first (not shown in the members dialog: copyingInvite).
+  const INVITE_SECONDS = 7 * 24 * 3600;
+  let copyingInvite: number | null = null;
+  const inviteFor = (access: number) =>
+    new Promise<string>((resolve, reject) => {
+      copyingInvite = access;
+      const done = () => (off(), queueMicrotask(() => (copyingInvite = null)));
+      const off = connection.onTextEvent((ev) => {
+        if (ev.type === "invite-created" && ev.voice === access) {
+          done();
+          resolve(inviteLink(site, ev.token));
+        }
+      });
+      connection.request({ createInvite: access, seconds: INVITE_SECONDS, uses: 1 }).catch((err: unknown) => (done(), reject(err)));
+    });
+  const copyLink = (kind: ChannelKind, id: number) => {
+    const plan = linkPlan(site, kind, id, { access: accessChannel(kind, id, text.channels), invites: canManageMembers(server, text, kind, id) });
+    if (!plan) return;
+    const url = "url" in plan ? Promise.resolve(plan.url) : inviteFor(plan.invite);
+    copyLater(url, navigator.clipboard, globalThis.ClipboardItem).then(
+      () => flash("url" in plan ? "Link copied" : "Invite link copied: one use, valid 7 days"),
+      () => flash("Could not copy the link"),
+    );
+  };
+  // A short note (a toast).
+  let flashed = $state({ text: "", n: 0 });
+  const flash = (text: string) => (flashed = { text, n: flashed.n + 1 });
   // After a reconnect or a refresh: the thread open before, again (once the channels
   // are known; an archived one is asked for).
   let reopen = untrack(() => (linkOpens ? null : (back?.thread ?? null)));
@@ -802,17 +852,15 @@
     });
   });
   // A link made in the members dialog: shown there once. A redeemed link
-  // to a voice channel joins it, unless that would leave a call.
+  // to a voice channel asks to join it (see askJoin).
   let newInvite = $state<{ voice: number; token: string } | null>(null);
   $effect(() =>
     connection.onTextEvent((ev) => {
-      if (ev.type === "invite-created") newInvite = { voice: ev.voice, token: ev.token };
+      if (ev.type === "invite-created" && ev.voice !== copyingInvite) newInvite = { voice: ev.voice, token: ev.token };
       if (ev.type !== "invite-joined") return;
       const place = invitePlace(ev);
       if (place.kind === "text") show(place);
-      // In a call (here, or on another server): shown, not joined.
-      else if ((voiceOn && !(lobby && channelId === 0)) || remoteVoice) show({ kind: "voice" });
-      else join(place.id);
+      else askJoin(place.id);
     }),
   );
   $effect(() => {
@@ -1271,8 +1319,10 @@
     channelNames: text.channels.map((c) => c.name),
     onLink: (href: string) => {
       const link = parseMessageLink(href, site);
-      if (link) return openMessage(link) ? "opened" : "unavailable";
-      return inviteOf(href) && onInvite?.(href) ? "opened" : null;
+      // A voice link says itself when it goes nowhere (see askJoin).
+      if (link) return "voice" in link ? (askJoin(link.voice), "opened") : openMessage(link) ? "opened" : "unavailable";
+      if (inviteOf(href) && onInvite?.(href)) return "opened";
+      return onServerLink?.(href) ? "opened" : null;
     },
     onReact: readOnly ? undefined : connection.react,
     onVote: readOnly ? undefined : connection.vote,
@@ -1626,6 +1676,9 @@
 {#if cannotStream}
   {#key cannotStream}<Toast text={CANNOT_STREAM} />{/key}
 {/if}
+{#if flashed.n}
+  {#key flashed.n}<Toast text={flashed.text} />{/key}
+{/if}
 
 <svelte:window onkeydown={onKey} onkeyup={onKey} onblur={() => capture?.setPttDown(false)} />
 <svelte:document ontouchstart={touchStart} ontouchend={touchEnd} onvisibilitychange={() => (pageVisible = document.visibilityState === "visible")} />
@@ -1644,6 +1697,7 @@
     canMoveDown={m.canMoveDown}
     canMembers={m.canMembers}
     canViewMembers={m.canViewMembers}
+    onCopyLink={m.kind === "category" ? undefined : () => copyLink(m.kind, m.id)}
     onViewMembers={() => channels.startViewMembers(m.kind, m.id)}
     canModerators={m.canModerators}
     category={m.kind === "category"}
@@ -1752,6 +1806,11 @@
       }}
     />
   {/key}
+{/if}
+
+{#if joinAsk !== null && server.channels[joinAsk]}
+  {@const id = joinAsk}
+  <JoinDialog name={server.channels[id]!.name} {inCall} onJoin={() => join(id)} onClose={() => (joinAsk = null)} />
 {/if}
 
 {#if channels.viewing}

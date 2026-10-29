@@ -50,11 +50,14 @@ describe("links from elsewhere", () => {
 
   it("a message link (a push notice) opens on a server here, nothing else", () => {
     const { links, shown } = setup();
-    links.openMessageLink(`${B}/channels/1/2`);
-    links.openMessageLink(`${B}/invite/${TOKEN}`);
-    links.openMessageLink(`${C}/channels/1/2`); // no session here
+    expect(links.openMessageLink(`${B}/channels/1/2`)).toBe(true);
+    expect(links.openMessageLink(`${B}/invite/${TOKEN}`)).toBe(false);
+    expect(links.openMessageLink(`${C}/channels/1/2`)).toBe(false); // no session here
     expect(shown).toEqual([B]);
     expect(links.linkFor(B)).toBe(`${B}/channels/1/2`);
+    // A voice channel link too (it asks there before joining).
+    expect(links.openMessageLink(`${B}/voice/3`)).toBe(true);
+    expect(links.linkFor(B)).toBe(`${B}/voice/3`);
     links.dispose();
   });
 

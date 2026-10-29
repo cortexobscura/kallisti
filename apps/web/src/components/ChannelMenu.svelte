@@ -14,6 +14,7 @@
     canMoveDown = false,
     canMembers = false,
     canViewMembers = false,
+    onCopyLink,
     canModerators = false,
     canCreateSub = false,
     recording,
@@ -45,6 +46,9 @@
     // Who has access, read-only (a private channel's members).
     canViewMembers?: boolean;
     onViewMembers?: () => void;
+    // A link to the channel (a one-use invite to a private one, for who
+    // manages it).
+    onCopyLink?: () => void;
     canModerators?: boolean;
     // Voice channels: a subchannel in it (MakeChannel there).
     canCreateSub?: boolean;
@@ -86,6 +90,10 @@
 </script>
 
 <ContextMenu {x} {y} label="Actions for {name}" {onClose}>
+  {#if onCopyLink && !direct && !thread}
+    <button onclick={act(onCopyLink)}>Copy link</button>
+    <div class="sep"></div>
+  {/if}
   {#if thread}
     <button onclick={act(thread.onFollow)}>{thread.following ? "Unfollow thread" : "Follow thread"}</button>
     {#if thread.onArchive}<button onclick={act(thread.onArchive)}>{thread.archived ? "Open thread again" : "Archive thread"}</button>{/if}

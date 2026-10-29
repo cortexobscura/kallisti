@@ -251,7 +251,7 @@
     // opens the channel sheet (ChannelSheet) with the topic, pins,
     // threads and these: notification settings and the chat's link.
     phone?: boolean;
-    details?: Pick<ComponentProps<typeof ChannelSheet>, "notify" | "onNotify"> & { link?: string };
+    details?: Pick<ComponentProps<typeof ChannelSheet>, "notify" | "onNotify" | "onCopyLink">;
     // Text channels: attach files (button, paste or drop), with a caption.
     // Settles once the server confirmed the message; fails with why (busy,
     // upload failed, refused, no answer, disconnected: the files stay).
@@ -869,7 +869,7 @@
   };
 
   // Phones: the channel sheet, and the search field over the header.
-  const hasDetails = $derived(phone && !!(topic || onPins || onThreads || (details?.notify && details.onNotify) || details?.link));
+  const hasDetails = $derived(phone && !!(topic || onPins || onThreads || (details?.notify && details.onNotify) || details?.onCopyLink));
   const parts = $derived(
     headerParts(phone, { topic: !!topic, search: !!onSearch, threads: !!onThreads, pins: !!onPins, details: hasDetails }),
   );
@@ -1399,14 +1399,13 @@
   />
 {/if}
 {#if detailsOpen && hasDetails}
-  {@const link = details?.link}
   <ChannelSheet
     {title}
     {kind}
     {topic}
     {onPins}
     {onThreads}
-    onCopyLink={link ? () => copy(link, "Link copied") : undefined}
+    onCopyLink={details?.onCopyLink}
     notify={details?.notify}
     onNotify={details?.onNotify}
     onClose={() => (detailsOpen = false)}
