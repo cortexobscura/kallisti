@@ -615,7 +615,7 @@ type request struct {
 	Until       int64            `json:"until"`       // set-status: end of the custom status (Unix ms)
 	Session     uint32           `json:"session"`     // ban, time-out, delete-messages: the user's voice server session
 	Seconds     int64            `json:"seconds"`     // ban (0: forever), time-out (0: end it), delete-messages (the last seconds), set-slow-mode (0: off)
-	Private     bool             `json:"private"`     // create-channel: a private one
+	Private     bool             `json:"private"`     // create-channel, create-category: a private one
 	Uses        int              `json:"uses"`        // create-invite (0: unlimited; seconds 0: for ever)
 	Invite      int64            `json:"invite"`      // delete-invite
 	Token       string           `json:"token"`       // redeem-invite
@@ -1403,7 +1403,8 @@ func (c *Conn) manage(id mumble.Identity, req request) {
 	}
 	var err error
 	taken := "a channel with this name exists"
-	var private int64 // a new private text channel
+	var private int64    // a new private text channel
+	var privateCat int64 // a new private category
 	// Private channels change too: a new one, or a private one deleted.
 	access := false
 	switch req.Type {
@@ -1454,7 +1455,10 @@ func (c *Conn) manage(id mumble.Identity, req request) {
 		}
 		taken = "a category with this name exists"
 		if req.Type == "create-category" {
-			_, err = h.store.CreateCategory(name)
+			var cat store.Category
+			if cat, err = h.store.CreateCategory(name); err == nil && req.Private {
+				privateCat, access = cat.ID, true
+			}
 		} else {
 			err = h.store.RenameCategory(req.Category, name)
 		}
@@ -1495,6 +1499,15 @@ func (c *Conn) manage(id mumble.Identity, req request) {
 	if err := h.reloadChannels(); err != nil {
 		slog.Error("load text channels", "err", err)
 		return
+	}
+	if privateCat != 0 {
+		// Still empty: nothing is seen before it is private.
+		h.mu.Lock()
+		mumble := h.categoryMumble(privateCat)
+		h.mu.Unlock()
+		if mumble == 0 || h.voice.SetPrivate(id.Session, mumble, true, nil) != nil {
+			c.manageError("the category was made, but not private: make it private in its settings")
+		}
 	}
 	h.eachReady(func(c *Conn, id mumble.Identity) {
 		if access {

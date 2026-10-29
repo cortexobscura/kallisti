@@ -247,3 +247,19 @@ func TestPrivateCategoriesKeepTheirChannels(t *testing.T) {
 	v.mu.Unlock()
 	manageOK(t, staff, set(general, 0))
 }
+
+// A category can be private from the start.
+func TestCreateAPrivateCategory(t *testing.T) {
+	h, v, _, staff, _ := inviteHub(t)
+	staff.limit = rate.NewLimiter(rate.Inf, 0)
+	staff.Handle([]byte(`{"type":"create-category","name":"Staff","private":true}`))
+	drain(staff)
+	h.mu.Lock()
+	cats := append([]wireCategory{}, h.categories...)
+	h.mu.Unlock()
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if len(cats) != 1 || cats[0].Mumble == 0 || !v.hidden[cats[0].Mumble] {
+		t.Fatalf("categories %+v, hidden %v", cats, v.hidden)
+	}
+}
