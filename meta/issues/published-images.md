@@ -20,3 +20,7 @@ organisation): the owner makes them public once in the package settings.
 
 - The Dockerfile still builds locally; the workflow is valid (actionlint).
 - Compose with the override pulls the image; the chart test passes.
+
+## Result (2026-10-29)
+
+Built: workflow image.yml (docker/metadata-action: semver tags and latest on v*, edge on main), the Dockerfile cross-builds, compose.published.yml swaps Kallisti for the image, cert-sync has image and build in compose.yml (pull or build). The Helm chart keeps its rule: a fixed version, no latest; its README names the images. Checked: podman build arm64 and the amd64 server stage (an x86-64 binary), compose config with each compose file, actionlint. Open: the first run on GitHub, then the packages made public.
