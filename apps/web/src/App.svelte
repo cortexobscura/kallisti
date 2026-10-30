@@ -13,6 +13,8 @@
   import {
     bridgeUrl,
     getBridge,
+    hasBridge,
+    notKallisti,
     isDesktop,
     isKallisti,
     kallistiOrigin,
@@ -269,6 +271,10 @@
   const desktop = isDesktop();
   let desktopServer = $state(safeGet(localStore(), "server") ?? "");
   let desktopKind = $state<"kallisti" | "mumble" | null>(null);
+  // Plain Mumble servers through the bridge (not in the iOS app; null:
+  // not known yet).
+  let bridge = $state<boolean | null>(null);
+  if (desktop) void hasBridge().then((b) => (bridge = b));
   let kallisti = $state<string | null>(null); // the Kallisti server's origin
   const sessionStore = (origin: string) => {
     const key = `session:${origin}`;
@@ -288,6 +294,14 @@
       return;
     }
     const found = kind === "kallisti";
+    // The iOS app: Kallisti servers only (no bridge).
+    if (!found && !(await hasBridge())) {
+      if (mine !== choices) return;
+      loginNote = notKallisti(address);
+      checking = false;
+      return;
+    }
+    if (mine !== choices) return;
     desktopServer = address;
     safeSet(localStore(), "server", address);
     kallisti = found ? origin : null;
@@ -682,7 +696,7 @@
         onCancelTrust={() => leave(null, false)}
         {api}
         {account}
-        desktop={desktop ? { server: desktopServer, kind: desktopKind, onServer: chooseServer, onChangeServer: changeServer } : null}
+        desktop={desktop ? { server: desktopServer, kind: desktopKind, bridge, onServer: chooseServer, onChangeServer: changeServer } : null}
         onAccountChange={(acc) => {
           // A logout from the login screen (after a kick or refusal) ends the
           // home login too.

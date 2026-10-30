@@ -5,7 +5,7 @@
   import { serverOrigin } from "../lib/serverList";
   import { modeForError, type Account, type AccountsApi } from "../lib/accounts";
   import { solveInWorker } from "../lib/captcha";
-  import { formatFingerprint, isDesktop, type CertificateProblem } from "../lib/desktop";
+  import { formatFingerprint, isDesktop, serverHint, type CertificateProblem } from "../lib/desktop";
   import type { Credentials } from "../lib/connection.svelte";
   import { iconHref, showIcons } from "../lib/serverLogo";
   import { localStore, safeGet, safeSet, tabStorage } from "../lib/storage";
@@ -32,7 +32,8 @@
     // The desktop app: first the server address (onServer finds out what it
     // is); a Kallisti server then works as on the web, a Mumble server with
     // a name and a password (see lib/desktop).
-    desktop?: { server: string; kind: "kallisti" | "mumble" | null; onServer: (address: string) => Promise<void>; onChangeServer: () => void } | null;
+    // bridge: plain Mumble servers too (not in the iOS app; null: not known yet).
+    desktop?: { server: string; kind: "kallisti" | "mumble" | null; bridge: boolean | null; onServer: (address: string) => Promise<void>; onChangeServer: () => void } | null;
     error: string | null;
     api: AccountsApi;
     // The logged-in account (null: none, or a server without accounts).
@@ -328,7 +329,7 @@
         Server address
         <input bind:value={server} required placeholder="chat.example.org" autocomplete="url" />
       </label>
-      <p class="hint">A Kallisti server, or any Mumble server (voice.example.org:64738).</p>
+      {#if desktop.bridge !== null}<p class="hint">{serverHint(desktop.bridge)}</p>{/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <button class="primary" type="submit" disabled={busy}>{busy ? "Looking…" : "Continue"}</button>
     </form>

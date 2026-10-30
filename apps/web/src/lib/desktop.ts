@@ -79,6 +79,23 @@ export const getBridge = async (): Promise<BridgeInfo> => {
   return invoke<BridgeInfo>("bridge_info");
 };
 
+// The iOS app has no bridge (only Kallisti servers there): asked once.
+export const bridgeCheck = (get: () => Promise<BridgeInfo>) => {
+  let answer: Promise<boolean> | undefined;
+  return () => (answer ??= get().then(
+    () => true,
+    () => false,
+  ));
+};
+export const hasBridge = bridgeCheck(getBridge);
+
+// The start screen's hint for the server address, and the note for an
+// address that is not a Kallisti server in an app without the bridge.
+export const serverHint = (bridge: boolean) =>
+  bridge ? "A Kallisti server, or any Mumble server (voice.example.org:64738)." : "The address of a Kallisti server (chat.example.org).";
+export const notKallisti = (address: string) =>
+  `${address} is not a Kallisti server, or it cannot be reached. This app connects to Kallisti servers only.`;
+
 type ShortcutApi = {
   register: (key: string, handler: (e: { state: "Pressed" | "Released" }) => void) => Promise<void>;
   unregister: (key: string) => Promise<void>;

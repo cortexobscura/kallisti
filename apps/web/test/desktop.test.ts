@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { androidAgent, bridgeUrl, createVoiceService, certificateProblem, formatFingerprint, isKallisti, kallistiOrigin, kallistiSocket, linuxAgent, parseAddress, registerGlobalPtt } from "../src/lib/desktop";
+import { androidAgent, bridgeCheck, bridgeUrl, createVoiceService, certificateProblem, formatFingerprint, isKallisti, kallistiOrigin, kallistiSocket, linuxAgent, notKallisti, parseAddress, registerGlobalPtt, serverHint } from "../src/lib/desktop";
 
 describe("parseAddress", () => {
   it("reads host and optional port", () => {
@@ -169,3 +169,22 @@ describe("createVoiceService", () => {
   });
 });
 
+
+describe("the app without a Mumble bridge (iOS)", () => {
+  it("asks the app once whether it has the bridge", async () => {
+    const get = vi.fn().mockRejectedValue(new Error("no Mumble bridge in this app"));
+    const has = bridgeCheck(get);
+    expect(await has()).toBe(false);
+    expect(await has()).toBe(false);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(await bridgeCheck(() => Promise.resolve({ port: 1, secret: "s" }))()).toBe(true);
+  });
+
+  it("offers Mumble servers only with the bridge", () => {
+    expect(serverHint(true)).toContain("Mumble");
+    expect(serverHint(false)).not.toContain("Mumble");
+    expect(notKallisti("voice.example.org:64738")).toBe(
+      "voice.example.org:64738 is not a Kallisti server, or it cannot be reached. This app connects to Kallisti servers only.",
+    );
+  });
+});
