@@ -2480,3 +2480,11 @@ Private categories are Mumble ACLs: the category's channel gets the private entr
 ## TestFlight 0.10.0 (0.10.0.2)
 
 The main branch of 2026-10-29 (multi-server, channel links, private categories, quick reaction rows). `tauri ios build --export-method app-store-connect --build-number 2`; its own export fails without a local distribution certificate, so the upload is `xcodebuild -exportArchive` with destination upload and automatic (cloud) signing. "Failed to Use Accounts" means the Xcode sign-in expired (also outside the sandbox): sign in again in Xcode, Settings, Accounts. The build changes the generated Xcode project (team, build number): not committed.
+
+## Android 7: Jackson and old WebViews
+
+A user's Android 7 phone closed the app at once. Reproduced in the emulator (API 24, arm64): Tauri's Android library pins Jackson 2.15.3, and Jackson from 2.14 on needs Android 8: 2.15+ checks `instanceof BootstrapMethodError` at start (that class came with API 26), 2.14 calls `Constructor.getParameterCount()` (also API 26). The app's Gradle file forces Jackson 2.13.5, the last line for older Android; checked on Android 16 too (voice service, notifications through the plugins). Jackson only parses the app's own IPC there.
+
+With that the app starts, but Android 7's original WebView (Chrome 52) cannot run the app's code (Vite's target is about Chrome 110); updated from the Play Store it is 119, enough. `public/old-browser.js`, a plain ES5 script before the module, says so instead of an empty page: without `Array.prototype.toSorted`, a message (in the app: update Android System WebView).
+
+Emulator: `sdkmanager emulator "system-images;android-24;default;arm64-v8a"` with Homebrew's openjdk as JAVA_HOME, `emulator -avd <name> -no-window`; the release APK from `tauri android build` is unsigned locally, signed with the debug key via zipalign and apksigner.
