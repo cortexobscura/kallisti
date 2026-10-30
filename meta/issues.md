@@ -28,7 +28,7 @@
 - [x] [Private categories: members for all channels in them](issues/private-categories.md)
 - [x] [Quick reactions: two rows, most used and recent](issues/quick-emoji-rows.md)
 - [x] [Published container images](issues/published-images.md)
-- [ ] [Direct chats: a new profile picture does not show in the list](issues/direct-chat-picture-update.md)
+- [x] [Direct chats: a new profile picture does not show in the list](issues/direct-chat-picture-update.md)
 - [ ] [Pictures in a grid show tiny for some users](issues/tiny-picture-grid.md)
 - [ ] [Shorten long links in messages](issues/shorten-long-links.md)
 - [ ] [Rethink the split of text and voice channels](issues/text-voice-split.md)
