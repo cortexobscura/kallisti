@@ -361,7 +361,7 @@
                 onDirectMenu(d.channel, e);
               }}
             >
-              <Avatar name={d.peer.name} size={20} />
+              <Avatar name={d.peer.name} registered size={20} />
               <span class="name ellipsis"><UserName name={d.peer.name} /></span>
               {#if d.pinned}<span class="pinned" title="Pinned"><Icon name="pin" size={14} /><span class="sr-only">(pinned)</span></span>{/if}
               {#if d.channel !== currentDirect}<Badge count={mentionText[d.channel]} label="unread messages" />{/if}
