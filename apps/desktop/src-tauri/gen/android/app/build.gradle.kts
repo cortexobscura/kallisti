@@ -101,4 +101,14 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")
 }
 
+// Tauri pins Jackson 2.15.3; from 2.15 on, its start checks for
+// java.lang.BootstrapMethodError, missing before Android 8: the app closed
+// at once on Android 7. 2.14 also needs Android 8 (Java 8 APIs): 2.13.5
+// is the last release that runs on Android 7.
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group.startsWith("com.fasterxml.jackson")) useVersion("2.13.5")
+    }
+}
+
 apply(from = file("tauri.build.gradle.kts"))
