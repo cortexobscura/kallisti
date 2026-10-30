@@ -2494,3 +2494,7 @@ Emulator: `sdkmanager emulator "system-images;android-24;default;arm64-v8a"` wit
 Two iOS videos showed the live page (no reload), then the reconnect banner, then an empty channel for a moment. Three causes: the socket closed in the background and the time hidden counted as lost (the banner at once); or it was dead without a close (noticed late); and the new connection replaced the old view before its text channels and messages came. Now `wake` starts the loss time again and tries at once (the first attempt of any loss goes at once), a connection that looks alive gets a ping (`checkAlive`: no answer in 2 s, it ends there, without waiting for a late close), and the session swaps in a new connection only when `readyToShow` (the session asks for the open channel's history itself), at the latest after 5 s.
 
 Reproduced in Chromium: headless Chromium does not freeze a page through CDP (`Page.setWebLifecycleState` did not stop timers), so the test page holds due timeouts itself until a "thaw"; 300 ms latency through CDP network emulation.
+
+## TestFlight 0.10.0 (0.10.0.3)
+
+Main of 2026-10-30 (seamless return to the app, old-browser message). Same steps as 0.10.0.2; pnpm is no longer in the global mise config, so the build runs as `mise exec xcodegen@latest pnpm@10.33.4 -- npx tauri ios build --export-method app-store-connect --build-number 3`. This time the tauri export itself succeeded; the upload is still `xcodebuild -exportArchive` with destination upload.
