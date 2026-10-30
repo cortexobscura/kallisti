@@ -1,15 +1,23 @@
 pub mod android;
 pub mod background;
+// The Mumble bridge: not in the iOS app (see Cargo.toml).
+#[cfg(not(target_os = "ios"))]
 pub mod bridge;
+#[cfg(not(target_os = "ios"))]
 pub mod crypt;
+#[cfg(not(target_os = "ios"))]
 pub mod frames;
 pub mod ios;
 pub mod media;
 pub mod notify;
+#[cfg(not(target_os = "ios"))]
 pub mod ocb2;
+#[cfg(not(target_os = "ios"))]
 pub mod pins;
+#[cfg(not(target_os = "ios"))]
 pub mod udp;
 
+#[cfg(not(target_os = "ios"))]
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -24,16 +32,25 @@ struct BridgeInfo {
     secret: String,
 }
 
+/// None in the iOS app: the web client then takes Kallisti servers only.
 #[tauri::command]
-fn bridge_info(state: tauri::State<'_, BridgeInfo>) -> BridgeInfo {
-    state.inner().clone()
+fn bridge_info(app: tauri::AppHandle) -> Result<BridgeInfo, String> {
+    app.try_state::<BridgeInfo>().map(|s| s.inner().clone()).ok_or_else(|| NO_BRIDGE.to_string())
 }
+
+const NO_BRIDGE: &str = "no Mumble bridge in this app";
 
 /// The user accepted the server certificate the bridge offered. Only that
 /// fingerprint can be confirmed, so page scripts cannot pin their own.
+#[cfg(not(target_os = "ios"))]
 #[tauri::command]
 fn trust_server(host: String, port: u16, fingerprint: String, pins: tauri::State<'_, Arc<pins::PinStore>>) -> Result<(), String> {
     pins.confirm(&format!("{host}:{port}"), &fingerprint)
+}
+#[cfg(target_os = "ios")]
+#[tauri::command]
+fn trust_server(_host: String, _port: u16, _fingerprint: String) -> Result<(), String> {
+    Err(NO_BRIDGE.to_string())
 }
 
 /// Shows a system notification. A click reports "notification-action" to
@@ -64,6 +81,7 @@ fn tapped(app: &tauri::AppHandle, id: i32) {
 
 // The app window's origins (macOS/Linux, Windows); debug builds also the
 // Vite dev server.
+#[cfg(not(target_os = "ios"))]
 fn origins() -> Vec<String> {
     let mut origins = vec!["tauri://localhost".to_string(), "http://tauri.localhost".to_string()];
     if cfg!(debug_assertions) {
@@ -88,10 +106,13 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             background::no_app_nap();
-            let pins = Arc::new(pins::PinStore::load(app.path().app_data_dir()?.join("pins.json")));
-            let b = tauri::async_runtime::block_on(bridge::start(origins(), pins.clone()))?;
-            app.manage(BridgeInfo { port: b.port, secret: b.secret });
-            app.manage(pins);
+            #[cfg(not(target_os = "ios"))]
+            {
+                let pins = Arc::new(pins::PinStore::load(app.path().app_data_dir()?.join("pins.json")));
+                let b = tauri::async_runtime::block_on(bridge::start(origins(), pins.clone()))?;
+                app.manage(BridgeInfo { port: b.port, secret: b.secret });
+                app.manage(pins);
+            }
             let handle = app.handle().clone();
             #[cfg(not(target_os = "linux"))]
             app.notification().on_action(move |action| {

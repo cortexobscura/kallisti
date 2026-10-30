@@ -33,14 +33,30 @@ mod tests {
         assert!(plist.contains("<key>NSMicrophoneUsageDescription</key>"));
     }
 
-    // Export compliance is answered per build in App Store Connect: the app
-    // has standard algorithms of its own (the Mumble bridge: TLS with
-    // rustls, AES-OCB2), and a "true" here makes uploads need the code of
-    // encryption documentation, which there is none of yet.
+    // The iOS app has no Mumble bridge (see lib.rs): only Apple's
+    // networking in WebKit, exempt encryption. Said in the plist, App Store
+    // Connect does not ask per build.
     #[test]
-    fn ios_leaves_export_compliance_to_app_store_connect() {
+    fn ios_declares_no_non_exempt_encryption() {
         let plist = include_str!("../Info.ios.plist");
-        assert!(!plist.contains("ITSAppUsesNonExemptEncryption"));
+        let value = plist.split("<key>ITSAppUsesNonExemptEncryption</key>").nth(1).expect("the key");
+        assert!(value.trim_start().starts_with("<false/>"));
+    }
+
+    // The bridge's crates (TLS, AES-OCB2) are not in the iOS build.
+    #[test]
+    fn ios_build_has_no_bridge_crypto() {
+        let cargo = include_str!("../Cargo.toml");
+        let section = |header: &str| {
+            let rest = cargo.split(header).nth(1).expect(header);
+            rest[..rest.find("\n[").unwrap_or(rest.len())].to_string()
+        };
+        let everywhere = section("[dependencies]");
+        let not_ios = section("[target.'cfg(not(target_os = \"ios\"))'.dependencies]");
+        for c in ["rustls", "tokio-rustls", "aes", "tokio-tungstenite", "webpki-roots"] {
+            assert!(!everywhere.contains(&format!("\n{c} ")), "{c} in every build");
+            assert!(not_ios.contains(&format!("\n{c} ")), "{c} not outside iOS");
+        }
     }
 
     #[test]

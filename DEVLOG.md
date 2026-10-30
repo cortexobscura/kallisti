@@ -2498,3 +2498,7 @@ Reproduced in Chromium: headless Chromium does not freeze a page through CDP (`P
 ## TestFlight 0.10.0 (0.10.0.3)
 
 Main of 2026-10-30 (seamless return to the app, old-browser message). Same steps as 0.10.0.2; pnpm is no longer in the global mise config, so the build runs as `mise exec xcodegen@latest pnpm@10.33.4 -- npx tauri ios build --export-method app-store-connect --build-number 3`. This time the tauri export itself succeeded; the upload is still `xcodebuild -exportArchive` with destination upload.
+
+## iOS without the Mumble bridge
+
+App Store Connect asked about encryption for each build, because the bridge brings its own (rustls, AES-OCB2). The iOS build now leaves out the bridge, its modules and its crates (`cfg(not(target_os = "ios"))`; `cargo tree --target aarch64-apple-ios` has no rustls, ring or aes), so its networking is WebKit's alone and `ITSAppUsesNonExemptEncryption` is false in Info.ios.plist and the generated plist. `bridge_info` answers an error there; the web client asks once (`hasBridge`), names only Kallisti servers on the start screen, and refuses other addresses with a note. Plain Mumble servers stay on desktop and Android.

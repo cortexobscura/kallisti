@@ -173,7 +173,9 @@ CSS and a little JavaScript (no build step), published to GitHub Pages by
 `apps/desktop` is a Tauri app around the same web client. With a Kallisti
 server it works like the web app (accounts, text channels, everything). Any
 other address goes through a small bridge in the app (Rust), straight to a
-Mumble server, with voice and Mumble's chat. Needs Rust.
+Mumble server, with voice and Mumble's chat. Needs Rust. The iOS app has
+no bridge (Kallisti servers only): its encryption is then Apple's alone,
+and its plist says so (no export compliance question per upload).
 
 ```sh
 pnpm --filter @kallisti/desktop dev                  # window with the Vite dev server
