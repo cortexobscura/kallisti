@@ -1,6 +1,6 @@
 import { proto, type ServerState } from "@kallisti/protocol";
 import { certificateProblem } from "./desktop";
-import type { Place } from "./place";
+import type { Place, View } from "./place";
 
 // The server closed the connection because its session ended (a logout,
 // also on another device, or a password change there). Same reason text as
@@ -44,6 +44,12 @@ export const lossNotice = (lostForMs: number): "none" | "sign" | "banner" =>
   lostForMs < SIGN_MS ? "none" : lostForMs < QUIET_MS ? "sign" : "banner";
 // loudAttempt: the attempts since the quiet time ended.
 export const nextDelay = (lostForMs: number, loudAttempt: number) => (lostForMs < QUIET_MS ? QUIET_RETRY_MS : reconnectDelay(loudAttempt));
+
+// After a loss, the new connection replaces the old view only once it can
+// show the same (else an empty channel flashes): synced, the text side
+// known, and the open text channel's messages loaded.
+export const readyToShow = (c: { status: ServerState["status"]; textSettled: boolean; loaded: Readonly<Record<number, boolean>> }, view: View | null) =>
+  c.status === "synced" && c.textSettled && (view?.kind !== "text" || !!c.loaded[view.id]);
 
 // Refused because the name is in use: right after a drop, that is often our
 // own old session, which the server has not let go yet. Worth a few tries.

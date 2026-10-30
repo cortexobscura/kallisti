@@ -5,7 +5,7 @@ import type { Drafts } from "./composer";
 import { certificateProblem, type CertificateProblem } from "./desktop";
 import { createPendingFiles, indexedDbStore } from "./pendingFiles";
 import { loadPlace, placeKey, savePlace, type Place } from "./place";
-import { busyName, loggedOut, lossNotice, nextDelay, QUIET_MS, refusedForGood, shouldReconnect } from "./reconnect";
+import { busyName, loggedOut, lossNotice, nextDelay, QUIET_MS, readyToShow, refusedForGood, shouldReconnect } from "./reconnect";
 import { connectionError } from "./status";
 import { leaving, loadLost, saveLost, type StreamMemory } from "./stream/rewatch";
 
@@ -15,6 +15,12 @@ export type SessionConnection = {
   readonly closed: boolean;
   readonly closeReason: string;
   readonly wasSynced: boolean;
+  // The text side is known (text channels, or none: a plain Mumble server).
+  readonly textSettled: boolean;
+  readonly text: { readonly loaded: Readonly<Record<number, boolean>> };
+  requestHistory: (channel: number) => void;
+  // Closes it at once when the server does not answer in time.
+  checkAlive: (timeoutMs: number) => void;
   close: () => void;
   setAudio: (ctx: AudioContext, keepMic?: boolean) => void;
 };
@@ -36,6 +42,12 @@ export type SessionDeps<C> = {
 };
 
 const ATTEMPT_TIMEOUT_MS = 15_000;
+// A new connection that is in but not ready to show (see readyToShow) by
+// then replaces the old one anyway.
+const READY_WAIT_MS = 5_000;
+// Shown again: a connection that looks alive answers by then, or is lost
+// (a suspended app's socket can be dead without a close).
+const ALIVE_MS = 2_000;
 const BUSY_NAME_TRIES = 5;
 
 // One server's connection and what goes with it: it comes back by itself
@@ -102,6 +114,11 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
   let generation = 0;
   let disposed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // Attempts in but not ready to show: asked for the open channel's
+  // messages, waited for long enough.
+  const askedHistory = new WeakSet<C>();
+  const waiting = new WeakSet<C>();
+  let overdue = $state.raw<C | null>(null);
   const stopReconnecting = () => {
     generation++;
     clearTimeout(timer);
@@ -132,18 +149,24 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
       if (mine === generation) starting = false;
     }
   };
-  // Each second while quiet; the growing waits count only after it.
+  // The first at once (the server is usually there), then each second
+  // while quiet; the growing waits count only after it.
+  let tried = false;
   const schedule = () => {
     if (timer !== undefined) return;
     const lostFor = Date.now() - (lostAt ?? Date.now());
-    timer = setTimeout(tryNow, nextDelay(lostFor, attempts));
+    timer = setTimeout(tryNow, tried ? nextDelay(lostFor, attempts) : 0);
+    tried = true;
     if (lostFor >= QUIET_MS) attempts++;
   };
 
   const disposeEffects = $effect.root(() => {
     $effect(() => {
       if (!lost) return void (lostAt = null);
-      untrack(() => (lostAt = now = Date.now()));
+      untrack(() => {
+        lostAt = now = Date.now();
+        tried = false;
+      });
       const tick = setInterval(() => (now = Date.now()), 500);
       return () => clearInterval(tick);
     });
@@ -157,7 +180,17 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     $effect(() => {
       const next = attempt;
       if (!next) return;
-      if (next.state.status === "synced") {
+      if (next.state.status === "synced" && !next.closed) {
+        const view = untrack(() => place)?.view ?? null;
+        if (view?.kind === "text" && next.textSettled && !next.text.loaded[view.id] && !askedHistory.has(next)) {
+          askedHistory.add(next);
+          untrack(() => next.requestHistory(view.id));
+        }
+        if (!waiting.has(next)) {
+          waiting.add(next);
+          setTimeout(() => attempt === next && (overdue = next), READY_WAIT_MS);
+        }
+        if (!readyToShow({ status: "synced", textSettled: next.textSettled, loaded: next.text.loaded }, view) && overdue !== next) return;
         untrack(() => {
           connection = next; // the client comes back where it was (place)
           attempt = null;
@@ -275,8 +308,17 @@ export const createServerSession = <C extends SessionConnection>(deps: SessionDe
     },
     tryNow,
     // The tab shows again, or the network is back.
+    // Time hidden does not count as lost (a suspended app's connection
+    // closes in the background): quiet again, an attempt at once.
     wake: () => {
-      if (lost && document.visibilityState === "visible") void tryNow();
+      if (document.visibilityState !== "visible") return;
+      if (lost) {
+        // An attempt from before a freeze may hang: start over (one that
+        // is in waits to be ready, see readyToShow).
+        if (attempt?.state.status !== "synced") stopReconnecting();
+        lostAt = now = Date.now();
+        void tryNow();
+      } else if (connection?.wasSynced && !connection.closed) connection.checkAlive(ALIVE_MS);
     },
     keepPlace,
     keepStreams,

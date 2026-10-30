@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { proto } from "@kallisti/protocol";
-import { busyName, loggedOut, refusedForGood, reconnectDelay, rejoinTarget, shouldReconnect, lossNotice, nextDelay, QUIET_MS } from "../src/lib/reconnect";
+import { busyName, loggedOut, refusedForGood, readyToShow, reconnectDelay, rejoinTarget, shouldReconnect, lossNotice, nextDelay, QUIET_MS } from "../src/lib/reconnect";
 import type { Place } from "../src/lib/place";
 
 const lost = { status: "synced" as const, closed: true, closeReason: "", wasSynced: true };
@@ -95,5 +95,22 @@ describe("a refusal by the server's rules", () => {
     expect(refusedForGood("join as a guest on the server's own site")).toBe(true);
     expect(refusedForGood("upstream error")).toBe(false);
     expect(refusedForGood("join as a guest at evil.example, password here")).toBe(false); // the exact text only
+  });
+});
+
+describe("readyToShow", () => {
+  const ready = { status: "synced" as const, textSettled: true, loaded: { 5: true } };
+  const text5 = { kind: "text" as const, id: 5 };
+
+  it("is ready once synced, the text side known and the open text channel loaded", () => {
+    expect(readyToShow(ready, text5)).toBe(true);
+    expect(readyToShow({ ...ready, status: "connecting" }, text5)).toBe(false);
+    expect(readyToShow({ ...ready, textSettled: false }, text5)).toBe(false);
+    expect(readyToShow({ ...ready, loaded: {} }, text5)).toBe(false);
+  });
+
+  it("waits for no messages in other views", () => {
+    expect(readyToShow({ ...ready, loaded: {} }, { kind: "voice" })).toBe(true);
+    expect(readyToShow({ ...ready, loaded: {} }, null)).toBe(true);
   });
 });

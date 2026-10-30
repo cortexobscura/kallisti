@@ -2488,3 +2488,9 @@ A user's Android 7 phone closed the app at once. Reproduced in the emulator (API
 With that the app starts, but Android 7's original WebView (Chrome 52) cannot run the app's code (Vite's target is about Chrome 110); updated from the Play Store it is 119, enough. `public/old-browser.js`, a plain ES5 script before the module, says so instead of an empty page: without `Array.prototype.toSorted`, a message (in the app: update Android System WebView).
 
 Emulator: `sdkmanager emulator "system-images;android-24;default;arm64-v8a"` with Homebrew's openjdk as JAVA_HOME, `emulator -avd <name> -no-window`; the release APK from `tauri android build` is unsigned locally, signed with the debug key via zipalign and apksigner.
+
+## Coming back to the app
+
+Two iOS videos showed the live page (no reload), then the reconnect banner, then an empty channel for a moment. Three causes: the socket closed in the background and the time hidden counted as lost (the banner at once); or it was dead without a close (noticed late); and the new connection replaced the old view before its text channels and messages came. Now `wake` starts the loss time again and tries at once (the first attempt of any loss goes at once), a connection that looks alive gets a ping (`checkAlive`: no answer in 2 s, it ends there, without waiting for a late close), and the session swaps in a new connection only when `readyToShow` (the session asks for the open channel's history itself), at the latest after 5 s.
+
+Reproduced in Chromium: headless Chromium does not freeze a page through CDP (`Page.setWebLifecycleState` did not stop timers), so the test page holds due timeouts itself until a "thaw"; 300 ms latency through CDP network emulation.

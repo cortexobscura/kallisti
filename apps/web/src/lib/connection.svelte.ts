@@ -189,7 +189,7 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
   // Avatars too (see texturesToFetch), once ready tells whether they come
   // over HTTP, or a while after the sync without ready (no Kallisti server).
   let askedTextures: ReadonlySet<string> = new Set();
-  let noReady = false;
+  let noReady = $state(false);
   const fetchTextures = () => {
     if (state.status !== "synced" || !(text.available || noReady)) return;
     const next = texturesToFetch(state, askedTextures, text.avatars);
@@ -251,11 +251,14 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
   void navigator.locks
     ?.request(`kallisti-connection-${crypto.randomUUID()}`, () => new Promise<void>((resolve) => (releaseLock = resolve)))
     .catch(() => {});
+  // When something last came from the server (see checkAlive).
+  let heardAt = 0;
   ws.onopen = () => {
     ws.send(handshake(credentials));
     timer = setInterval(sendPing, PING_INTERVAL_MS);
   };
   ws.onmessage = (event) => {
+    heardAt = performance.now();
     // Text frames: the Kallisti server's JSON API. Binary: the Mumble stream.
     if (typeof event.data === "string") {
       const ev = parseServerEvent(event.data);
@@ -293,9 +296,10 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
       ws.close();
     }
   };
-  ws.onclose = (event) => {
+  const ended = (reason: string) => {
+    if (closed) return;
     releaseLock?.();
-    closeReason = event.reason;
+    closeReason = reason;
     clearInterval(timer);
     tokenWaiter?.reject(new Error("connection closed"));
     awaiting.forEach((w) => w.done("Not connected"));
@@ -304,6 +308,7 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     streams?.close();
     closed = true;
   };
+  ws.onclose = (event) => ended(event.reason);
 
   // Uploads: tokens over the WebSocket (one request), then the files over HTTP.
   const uploadTokens = (tokenRequest: string, emoji: boolean) => {
@@ -355,6 +360,24 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     },
     get wasSynced() {
       return wasSynced;
+    },
+    get textSettled() {
+      return text.available || noReady;
+    },
+    // A suspended app's socket can be dead without a close (which then
+    // comes late): a ping, and without any answer in time it ends here.
+    // Not for a page that kept running (heard from lately: the pings'
+    // answers), as in voice on Android: a slow answer must not end a call.
+    // Hidden again meanwhile: no verdict (the answer may wait in a buffer).
+    checkAlive: (timeoutMs: number) => {
+      if (closed || ws.readyState !== WebSocket.OPEN || performance.now() - heardAt < PING_INTERVAL_MS + 1000) return;
+      const asked = performance.now();
+      sendPing();
+      setTimeout(() => {
+        if (closed || heardAt >= asked || document.visibilityState !== "visible") return;
+        ended("");
+        ws.close();
+      }, timeoutMs);
     },
     // Ping, late audio and transport (see connectionInfo).
     get info() {

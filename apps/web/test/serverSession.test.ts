@@ -188,7 +188,7 @@ describe("a server session", () => {
     made[0]!.sync();
     made[0]!.drop();
     flushSync();
-    await vi.advanceTimersByTimeAsync(1000);
+    await settle(); // the first attempt goes at once
     expect(made).toHaveLength(2);
     await vi.advanceTimersByTimeAsync(14_999);
     expect(made[1]!.closeRequests).toBe(0);
@@ -213,6 +213,134 @@ describe("a server session", () => {
     flushSync();
     expect(session.connection).toBe(made[1]);
     expect(session.lost).toBe(false);
+    session.dispose();
+  });
+
+  it("tries once at once when the connection is lost, then each second", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.sync();
+    made[0]!.drop();
+    flushSync();
+    await settle();
+    expect(made).toHaveLength(2);
+    made[1]!.drop();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(900);
+    expect(made).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(made).toHaveLength(3);
+    session.dispose();
+  });
+
+  it("keeps the old view until the new connection has the open channel's messages", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.sync();
+    session.keepPlace({ session: 1, view: { kind: "text", id: 5 }, voice: null, thread: null, selfMute: false, selfDeaf: false });
+    made[0]!.drop();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(1000);
+    made[1]!.sync(false);
+    flushSync();
+    expect(session.connection).toBe(made[0]); // no text channels yet
+    made[1]!.settleText();
+    flushSync();
+    expect(made[1]!.historyRequests).toEqual([5]);
+    expect(session.connection).toBe(made[0]); // no messages yet
+    made[1]!.load(5);
+    flushSync();
+    expect(session.connection).toBe(made[1]);
+    expect(session.lost).toBe(false);
+    session.dispose();
+  });
+
+  it("takes a new connection that is not ready after 5 s anyway", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.sync();
+    session.keepPlace({ session: 1, view: { kind: "text", id: 5 }, voice: null, thread: null, selfMute: false, selfDeaf: false });
+    made[0]!.drop();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(1000);
+    made[1]!.sync();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(4900);
+    flushSync();
+    expect(session.connection).toBe(made[0]);
+    await vi.advanceTimersByTimeAsync(200);
+    flushSync();
+    expect(session.connection).toBe(made[1]);
+    session.dispose();
+  });
+
+  it("drops a new connection that closes while it waits to be ready", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.sync();
+    session.keepPlace({ session: 1, view: { kind: "text", id: 5 }, voice: null, thread: null, selfMute: false, selfDeaf: false });
+    made[0]!.drop();
+    flushSync();
+    await settle();
+    made[1]!.sync();
+    flushSync();
+    made[1]!.drop();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(made).toHaveLength(3); // the next attempt, not after 5 s
+    expect(session.connection).toBe(made[0]);
+    session.dispose();
+  });
+
+  it("shown again, starts over: an attempt from before the freeze is dropped", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.sync();
+    made[0]!.drop();
+    flushSync();
+    await settle();
+    expect(made).toHaveLength(2); // hangs: frozen
+    session.wake();
+    await settle();
+    expect(made[1]!.closeRequests).toBe(1);
+    expect(made).toHaveLength(3);
+    session.dispose();
+  });
+
+  it("does not count time in the background: shown again, the loss is quiet again", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.sync();
+    made[0]!.drop();
+    flushSync();
+    await vi.advanceTimersByTimeAsync(15_000); // hidden: attempts fail meanwhile
+    for (const c of made.slice(1)) c.drop();
+    flushSync();
+    expect(session.notice).toBe("banner");
+    session.wake();
+    flushSync();
+    expect(session.notice).toBe("none");
+    session.dispose();
+  });
+
+  it("shown again, checks a connection that looks alive", async () => {
+    const { session, made } = setup();
+    await session.start(credentials);
+    await settle();
+    made[0]!.sync();
+    flushSync();
+    session.wake();
+    expect(made[0]!.aliveChecks).toBe(1);
+    made[0]!.drop();
+    flushSync();
+    session.wake(); // lost: an attempt instead
+    expect(made[0]!.aliveChecks).toBe(1);
     session.dispose();
   });
 

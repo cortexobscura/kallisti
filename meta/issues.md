@@ -34,5 +34,6 @@
 - [ ] [Rethink the split of text and voice channels](issues/text-voice-split.md)
 - [x] [The Android app closes at once on Android 7](issues/android-7-crash.md)
 - [x] [A message for browsers too old for the app](issues/old-browser-message.md)
+- [x] [Coming back to the app: no "Reconnecting" and no empty frame](issues/seamless-resume.md)
 - [ ] [Remove the fallback for plain-named session cookies (after 2026-11-28)](issues/remove-plain-cookie-fallback.md)
 - [x] [Fixes from the multi-server branch that main could use](issues/hardening-from-multi-server.md) (merged with the branch)

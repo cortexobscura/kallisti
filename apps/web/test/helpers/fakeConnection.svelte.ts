@@ -8,6 +8,10 @@ export const fakeConnection = (url: string) => {
   let closed = $state(false);
   let wasSynced = $state(false);
   let closeReason = $state("");
+  let textSettled = $state(false);
+  let loaded = $state.raw<Record<number, boolean>>({});
+  const historyRequests: number[] = [];
+  let aliveChecks = 0;
   return {
     url,
     get state() {
@@ -22,9 +26,33 @@ export const fakeConnection = (url: string) => {
     get wasSynced() {
       return wasSynced;
     },
-    sync() {
+    // text: the text side is known with the sync (else see settleText).
+    sync(text = true) {
       state = { ...state, status: "synced" };
       wasSynced = true;
+      textSettled = text;
+    },
+    get textSettled() {
+      return textSettled;
+    },
+    settleText() {
+      textSettled = true;
+    },
+    get text() {
+      return { loaded };
+    },
+    load(channel: number) {
+      loaded = { ...loaded, [channel]: true };
+    },
+    historyRequests,
+    requestHistory(channel: number) {
+      historyRequests.push(channel);
+    },
+    get aliveChecks() {
+      return aliveChecks;
+    },
+    checkAlive() {
+      aliveChecks++;
     },
     drop(reason = "") {
       closeReason = reason;
