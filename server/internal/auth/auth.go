@@ -790,11 +790,17 @@ func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot log in"})
 		return "", false
 	}
+	return a.handOutSession(w, r, token), true
+}
+
+// handOutSession sets a new session's cookie; its token for clients that
+// asked for it, else "".
+func (a *Service) handOutSession(w http.ResponseWriter, r *http.Request, token string) string {
 	a.setSessionCookie(w, r, token)
 	if r.Header.Get("X-Kallisti-Session") != "token" {
-		token = ""
+		return ""
 	}
-	return token, true
+	return token
 }
 
 // newSession is a new session's token.

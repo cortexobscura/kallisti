@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -39,6 +40,7 @@ type qrGrant struct {
 	device  string        // the showing device's name
 	scanner string        // the scanning device's name
 	state   string        // waiting, scanned, approved, refused, done (an offer's, for its owner)
+	voucher string        // the approving session's key: the new one only while it is valid
 	expires time.Time
 }
 
@@ -146,7 +148,8 @@ func (a *Service) qrStart(w http.ResponseWriter, r *http.Request) {
 		kind = "offer"
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, map[string]any{"kind": kind, "token": g.token, "owner": g.owner, "expires": g.expires.UnixMilli()})
+	// "code", not "token": clients keep a "token" as their session.
+	writeJSON(w, http.StatusOK, map[string]any{"kind": kind, "code": g.token, "owner": g.owner, "expires": g.expires.UnixMilli()})
 }
 
 // qrScan: a device scanned a code (once).
@@ -210,7 +213,7 @@ func (a *Service) qrAnswer(w http.ResponseWriter, r *http.Request) {
 		case !logged || acc.ID != g.account.ID:
 			status = http.StatusUnauthorized
 		case req.Yes:
-			g.state, status = "approved", http.StatusNoContent
+			g.state, g.voucher, status = "approved", a.SessionKey(r), http.StatusNoContent
 		default:
 			g.state, status = "refused", http.StatusNoContent
 		}
@@ -226,7 +229,9 @@ func (a *Service) qrAnswer(w http.ResponseWriter, r *http.Request) {
 }
 
 // qrWait: a code's state for one of its devices; the one that logs in
-// takes its session here, once.
+// takes its session here, once, only without a session of its own, and
+// only while the approving session is valid (a logout everywhere or a new
+// password meanwhile ends it).
 func (a *Service) qrWait(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Secret string `json:"secret"`
@@ -235,8 +240,9 @@ func (a *Service) qrWait(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	answer := map[string]any{"state": "expired"}
-	var take *store.Account
+	_, logged := a.AccountFor(r)
+	status, answer := http.StatusOK, map[string]any{"state": "expired"}
+	var take *qrGrant
 	a.qr.with(req.Secret, a.Now(), func(g *qrGrant) {
 		owner, claim := req.Secret == g.owner, g.claim != "" && req.Secret == g.claim
 		if !owner && !claim {
@@ -251,25 +257,35 @@ func (a *Service) qrWait(w http.ResponseWriter, r *http.Request) {
 		}
 		// Whose session: the scanner's of an offer (its owner then sees it
 		// done), the owner's of a request.
-		if g.state == "approved" && (claim || owner && !g.offer) {
-			acc := g.account
-			take = &acc
-			if claim {
-				g.state = "done"
-				delete(a.qr.by, g.claim)
-				delete(a.qr.by, g.token)
-			} else {
-				a.qr.forget(g)
-			}
+		if g.state != "approved" || !claim && g.offer {
+			return
+		}
+		if logged {
+			status, answer = http.StatusConflict, map[string]any{"error": "log out on this device first"}
+			return
+		}
+		taken := *g
+		take = &taken
+		if claim {
+			g.state = "done"
+			delete(a.qr.by, g.claim)
+			delete(a.qr.by, g.token)
+		} else {
+			a.qr.forget(g)
 		}
 	})
 	if take == nil {
-		writeJSON(w, http.StatusOK, answer)
+		writeJSON(w, status, answer)
 		return
 	}
-	token, ok := a.startSession(w, r, *take)
-	if !ok {
+	token := randomHex(32)
+	err := a.Store.CreateSessionVouched(tokenHash(token), take.account.ID, a.Now().Add(sessionLifetime), take.voucher, a.Now())
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusOK, map[string]any{"state": "refused"})
+		return
+	} else if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot log in"})
 		return
 	}
-	writeJSON(w, http.StatusOK, withToken(map[string]any{"state": "done", "name": take.Name}, token))
+	writeJSON(w, http.StatusOK, withToken(map[string]any{"state": "done", "name": take.account.Name}, a.handOutSession(w, r, token)))
 }

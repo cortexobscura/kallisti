@@ -48,6 +48,8 @@
         } else if (st.state === "refused" || st.state === "expired") phase = st.state;
         return phase !== "done" && phase !== "refused" && phase !== "expired";
       },
+      undefined,
+      c.expires + 5000,
     );
   const failed = (err: unknown) => {
     error = err instanceof Error ? err.message : String(err);
@@ -81,7 +83,7 @@
   {#if phase === "loading"}
     <p class="note">Making a code…</p>
   {:else if phase === "showing" && code}
-    <div class="code"><QrCode text={qrLink(origin, code.token)} label="Login code" /></div>
+    <div class="code"><QrCode text={qrLink(origin, code.code)} label="Login code" /></div>
     <p class="note">
       {#if code.kind === "offer"}
         Scan this code with the Kallisti app (or the camera) on the device you want to log in. You confirm here.

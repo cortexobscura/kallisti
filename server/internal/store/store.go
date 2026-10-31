@@ -1454,6 +1454,15 @@ func (s *Store) CreateSession(tokenHash string, accountID int64, expires time.Ti
 	return err
 }
 
+// CreateSessionVouched creates a session only while the voucher (another
+// session of the account, which approved it: a QR login) is valid, in one
+// statement (a logout everywhere meanwhile ends it); else ErrNotFound.
+func (s *Store) CreateSessionVouched(tokenHash string, accountID int64, expires time.Time, voucher string, now time.Time) error {
+	return rowChanged(s.db.Exec(`INSERT INTO sessions (token_hash, account_id, expires_at)
+		SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM sessions WHERE token_hash = ? AND account_id = ? AND expires_at > ?)`,
+		tokenHash, accountID, expires.UnixMilli(), voucher, accountID, now.UnixMilli()))
+}
+
 func (s *Store) AccountBySession(tokenHash string, now time.Time) (Account, error) {
 	return scanAccount(s.db.QueryRow(`SELECT `+accountColumns+` FROM sessions x JOIN accounts a ON a.id = x.account_id
 		WHERE x.token_hash = ? AND x.expires_at > ?`, tokenHash, now.UnixMilli()))

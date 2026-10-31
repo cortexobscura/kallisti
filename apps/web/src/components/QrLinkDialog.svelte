@@ -64,6 +64,8 @@
           return phase === "waiting";
         },
       );
+      // (A 409 while waiting: logged in meanwhile, see the server; the
+      // wait is asked again and ends at the deadline.)
     },
     (err) => failed(err, true),
   );

@@ -66,12 +66,14 @@ export const qrPath = (text: string): { size: number; path: string } => {
 export const thisDevice = () => deviceLabel(navigator.userAgent, isDesktop(), navigator.maxTouchPoints);
 
 // Asks a code's state every ms until onState says to stop (false); a
-// failed ask is asked again (a lost request). Returns the way out.
-export const pollState = (wait: () => Promise<QrState>, onState: (s: QrState) => boolean, ms = 1500): (() => void) => {
+// failed ask is asked again (a lost request), until the deadline (Unix ms):
+// then it is expired. Returns the way out.
+export const pollState = (wait: () => Promise<QrState>, onState: (s: QrState) => boolean, ms = 1500, until = Date.now() + 150_000): (() => void) => {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const tick = () => {
     timer = setTimeout(async () => {
+      if (Date.now() > until) return void (stopped || onState({ state: "expired" }));
       let st: QrState;
       try {
         st = await wait();

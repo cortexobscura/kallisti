@@ -1056,3 +1056,28 @@ func TestSessionExpires(t *testing.T) {
 		t.Fatalf("unknown: %v", err)
 	}
 }
+
+// A session vouched for by another (a QR login): only while that one is
+// valid, in one statement.
+func TestCreateSessionVouched(t *testing.T) {
+	s := open(t)
+	now := time.Now()
+	acc, err := s.CreateAccount(Account{Name: "alice", PasswordHash: "x", CertPEM: []byte("c"), KeyPEM: []byte("k")}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.CreateSession("voucher", acc.ID, now.Add(time.Hour))
+	if err := s.CreateSessionVouched("new", acc.ID, now.Add(time.Hour), "voucher", now); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.AccountBySession("new", now); err != nil || got.ID != acc.ID {
+		t.Fatalf("vouched: %+v %v", got, err)
+	}
+	s.DeleteSession("voucher")
+	if err := s.CreateSessionVouched("late", acc.ID, now.Add(time.Hour), "voucher", now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("voucher gone: %v", err)
+	}
+	if _, err := s.AccountBySession("late", now); err == nil {
+		t.Fatal("made without a voucher")
+	}
+}

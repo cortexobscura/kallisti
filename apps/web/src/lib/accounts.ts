@@ -28,7 +28,8 @@ class ApiError extends Error {
 // QR login answers: a new code (offer: this logged-in device shows it;
 // request: this logged-out one), a scan (offer: wait with the claim;
 // request: confirm), a state.
-export type QrStart = { kind: "offer" | "request"; token: string; owner: string; expires: number };
+// (code: not "token", which the API keeps as the session.)
+export type QrStart = { kind: "offer" | "request"; code: string; owner: string; expires: number };
 export type QrScan = { kind: "offer"; claim: string; device: string } | { kind: "request"; device: string };
 export type QrState = { state: "waiting" | "scanned" | "approved" | "refused" | "expired" | "done"; device?: string; name?: string };
 

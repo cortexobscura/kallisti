@@ -70,6 +70,12 @@ describe("pollState", () => {
     stop();
     await vi.advanceTimersByTimeAsync(1000);
     expect(again).toHaveBeenCalledTimes(2);
+
+    // No answers (no network): expired at the deadline.
+    const states: string[] = [];
+    pollState(() => Promise.reject(new Error("offline")), (s) => (states.push(s.state), true), 100, Date.now() + 350);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(states).toEqual(["expired"]);
     vi.useRealTimers();
   });
 });
