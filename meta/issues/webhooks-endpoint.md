@@ -8,7 +8,8 @@
   turned into Markdown text), Slack's text. Unknown fields ignored.
 - 204, or the message with `?wait=true`; errors as Discord's
   `{"message","code"}` with 400/401/404/429 (Retry-After).
-- No pings of @everyone/@here; at most 2000 characters (400 above, as
+- No pings at all (as poll results: tools mention with Discord ids,
+  which match no name); content at most 2000 characters (400 above, as
   Discord); per webhook 5 posts per 2 s (Discord's limit).
 - Delivered as other messages (readers, push, Mumble: "Name: text").
 

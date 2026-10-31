@@ -250,6 +250,7 @@ func run() error {
 	}()
 	mux := http.NewServeMux()
 	mux.Handle("/api/upload", fileHandler)
+	mux.HandleFunc("/api/webhooks/", hub.ServeWebhook) // see sidecar/webhookpost.go
 	for _, path := range auth.Paths {
 		mux.Handle(path, accounts)
 	}

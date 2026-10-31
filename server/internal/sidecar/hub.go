@@ -235,6 +235,8 @@ type MumbleUser struct {
 type Hub struct {
 	store *store.Store
 	now   func() time.Time
+	// Posts per webhook (see webhookpost.go).
+	webhookLimits webhookLimits
 	// Nil: no voice channel chats (a Murmur server).
 	voice Voice
 	// The server's public address, for upload links sent to Mumble clients.
@@ -1199,6 +1201,10 @@ func (h *Hub) mumbleText(m store.Message) string {
 			file = h.publicBase + FileURL(u)
 		}
 		text = strings.TrimSpace(text + " " + file)
+	}
+	// From the server, as Mumble users see it: the webhook's name first.
+	if m.Webhook != 0 {
+		text = m.Author + ": " + text
 	}
 	// Mumble clients have no replies: a short quote first.
 	if r := m.Reply; r != nil && r.Author != "" {
