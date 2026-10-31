@@ -19,20 +19,10 @@ import (
 const maxAccountServers = 100
 
 // servers: the account's list of servers it joined (the rail; see
-// store.AccountServers: each with the account's name there), from our own
-// site and the apps; guests have none
-// (nothing of theirs survives on a shared device).
+// store.AccountServers: each with the account's name there).
 func (a *Service) servers(w http.ResponseWriter, r *http.Request) {
-	if !a.ownSite(w, r, "the server list is only on your home server's own site") {
-		return
-	}
-	acc, ok := a.AccountFor(r)
+	acc, ok := a.homeListAccount(w, r, "server list")
 	if !ok {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not logged in"})
-		return
-	}
-	if acc.Temporary {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "set a password first: guest accounts keep no server list"})
 		return
 	}
 	// account: the one the client means (a stale window after another
@@ -45,11 +35,7 @@ func (a *Service) servers(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	if r.Method == http.MethodGet {
-		body.Account = r.URL.Query().Get("account")
-	}
-	if body.Account != "" && names.Key(body.Account) != names.Key(acc.Name) {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "another login is active here now"})
+	if !meant(w, r, acc, body.Account) {
 		return
 	}
 	var err error
@@ -85,9 +71,47 @@ func (a *Service) servers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot change the server list"})
 }
 
-// otherOrigin: a canonical web origin (scheme and lower-case host, no
-// path) of another server than this one.
+// homeListAccount: the logged-in account, for a list it keeps on its home
+// server (the rail's servers, friends): from our own site and the apps;
+// guests have none (nothing of theirs survives on a shared device).
+func (a *Service) homeListAccount(w http.ResponseWriter, r *http.Request, what string) (store.Account, bool) {
+	if !a.ownSite(w, r, "the "+what+" is only on your home server's own site") {
+		return store.Account{}, false
+	}
+	acc, ok := a.AccountFor(r)
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not logged in"})
+		return store.Account{}, false
+	}
+	if acc.Temporary {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "set a password first: guest accounts keep no " + what})
+		return store.Account{}, false
+	}
+	return acc, true
+}
+
+// meant: the request is for this account (account: the name the client
+// means, "" for any; on GET from the query). A stale window after another
+// login in this browser must not change that one's lists.
+func meant(w http.ResponseWriter, r *http.Request, acc store.Account, account string) bool {
+	if r.Method == http.MethodGet {
+		account = r.URL.Query().Get("account")
+	}
+	if account != "" && names.Key(account) != names.Key(acc.Name) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "another login is active here now"})
+		return false
+	}
+	return true
+}
+
+// otherOrigin: a canonical web origin of another server than this one.
 func (a *Service) otherOrigin(origin string) bool {
+	return canonicalOrigin(origin) && !slices.Contains(a.AllowedOrigins, origin)
+}
+
+// canonicalOrigin: a web origin as browsers write it (scheme and lower-case
+// host, no default port, no path).
+func canonicalOrigin(origin string) bool {
 	u, err := url.Parse(origin)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" || len(origin) > 300 {
 		return false
@@ -98,8 +122,7 @@ func (a *Service) otherOrigin(origin string) bool {
 		}
 	}
 	defaultPort := map[string]string{"https": "443", "http": "80"}[u.Scheme]
-	return origin == u.Scheme+"://"+strings.ToLower(u.Host) && u.Port() != defaultPort && !strings.HasSuffix(u.Hostname(), ".") &&
-		!slices.Contains(a.AllowedOrigins, origin)
+	return origin == u.Scheme+"://"+strings.ToLower(u.Host) && u.Port() != defaultPort && !strings.HasSuffix(u.Hostname(), ".")
 }
 
 // validListName: the account's name on that server (its rules may differ

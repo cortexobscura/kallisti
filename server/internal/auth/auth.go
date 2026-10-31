@@ -227,7 +227,7 @@ type credentials struct {
 }
 
 // Paths: what ServeHTTP answers (for the server's router).
-var Paths = []string{"/api/server", "/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/servers", "/api/stream-key", "/api/fedi", "/api/fedi/",
+var Paths = []string{"/api/server", "/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/servers", "/api/friends", "/api/stream-key", "/api/fedi", "/api/fedi/",
 	"/api/v1/", "/oauth/", "/.well-known/webfinger", "/api/oauth/"}
 
 func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -295,6 +295,8 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.oauthGrants(w, r)
 	case r.URL.Path == "/api/servers":
 		a.servers(w, r)
+	case r.URL.Path == "/api/friends":
+		a.friends(w, r)
 	case r.URL.Path == "/api/stream-key":
 		a.streamKey(w, r)
 	case r.URL.Path == "/api/me" && r.Method == http.MethodGet:

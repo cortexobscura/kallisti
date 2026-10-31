@@ -18,7 +18,23 @@ channel), and opens a direct chat there.
 - Presence from the servers the user is connected to (the client sees it
   there already); no server-to-server sharing.
 
+- A friend is an account on one server: its origin, its user id there,
+  and the name last seen (the same person on two servers: two entries).
+
+## Design
+
+- Kept with the home account on its home server (`/api/friends`, like
+  `/api/servers`: own site only, not for guest accounts); without a home
+  account on the device.
+- "Add friend" / "Remove friend" in a registered user's menu (any server
+  in the rail).
+- A Friends view: online ones first (from the servers in the rail: their
+  user id online there; voice channel if visible), then the others; each
+  with Message (a `/dm/<user id>` link for that server's client) and
+  Remove.
+
 ## Acceptance Criteria
 
-- To be set with the design (identity matching across servers, where the
-  list is kept).
+- Server: store and handler tests (own site, guests refused, limits).
+- Client: unit tests for presence matching and the list; checked in a
+  browser with two servers.
