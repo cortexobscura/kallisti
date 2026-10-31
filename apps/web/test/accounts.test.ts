@@ -27,6 +27,20 @@ describe("accounts API", () => {
     ]);
   });
 
+  it("reads and changes the account's friends list", async () => {
+    const calls: Call[] = [];
+    const bob = { origin: "https://b.example", user: 7, name: "bob" };
+    const api = createAccountsApi("http://srv", fakeFetch(200, { friends: [bob, { origin: "x" }] }, calls));
+    expect(await api.friends("al ice")).toEqual([bob]);
+    await api.addFriend(bob, "alice");
+    await api.removeFriend("https://b.example", 7, "alice");
+    expect(calls.map((c) => [c.url, c.init.method, c.init.body && JSON.parse(String(c.init.body))])).toEqual([
+      ["http://srv/api/friends?account=al%20ice", "GET", undefined],
+      ["http://srv/api/friends", "POST", { ...bob, account: "alice" }],
+      ["http://srv/api/friends", "DELETE", { origin: "https://b.example", user: 7, account: "alice" }],
+    ]);
+  });
+
   it("logs in with the cookie included", async () => {
     const calls: Call[] = [];
     const api = createAccountsApi("http://srv:8080", fakeFetch(200, { name: "Alice" }, calls));

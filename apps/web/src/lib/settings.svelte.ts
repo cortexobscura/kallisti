@@ -1,3 +1,4 @@
+import { parseDeviceFriends, type Friend } from "./friends";
 import { deviceListOf, parseDeviceLists, setDeviceList, type ChannelList } from "./channelList";
 import { isBlocked, parseBlocked, toggleBlocked } from "./blocked";
 import { collapsedIn, parseCollapsed, toggleCollapsed } from "./categories";
@@ -53,6 +54,10 @@ export const channelLists = {
   of: (server: string) => deviceListOf(channelListStore.value, server),
   set: (server: string, list: ChannelList) => channelListStore.set(setDeviceList(channelListStore.value, server, list)),
 };
+
+// The friends list without a home account (with one, the server keeps it).
+const friendsStore = persisted("friends", parseDeviceFriends);
+export const deviceFriends = { get: () => friendsStore.value, set: (list: Friend[]) => friendsStore.set(list) };
 
 const directStore = persisted("directChats", parseDirectPrefs);
 

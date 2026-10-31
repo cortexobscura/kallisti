@@ -7,10 +7,13 @@ import type { ChannelKind } from "./channelForm";
 export const messageLink = (origin: string, chat: number, message: number) => `${origin}/channels/${chat}/${message}`;
 export const channelLink = (origin: string, chat: number) => `${origin}/channels/${chat}`;
 export const voiceLink = (origin: string, channel: number) => `${origin}/voice/${channel}`;
+// A direct chat with a registered user (by user id), from the friends list.
+export const dmLink = (origin: string, user: number) => `${origin}/dm/${user}`;
 
-export type ChannelLink = { chat: number; message?: number } | { voice: number };
+export type ChannelLink = { chat: number; message?: number } | { voice: number } | { dm: number };
 
-// null: not a message, chat or voice channel link to this server (origin).
+// null: not a message, chat, voice channel or direct chat link to this
+// server (origin).
 export const parseMessageLink = (url: string, origin: string): ChannelLink | null => {
   let u: URL;
   try {
@@ -21,6 +24,8 @@ export const parseMessageLink = (url: string, origin: string): ChannelLink | nul
   if (u.origin !== new URL(origin).origin) return null;
   const v = /^\/voice\/(\d+)$/.exec(u.pathname);
   if (v) return { voice: Number(v[1]) };
+  const d = /^\/dm\/(\d+)$/.exec(u.pathname);
+  if (d) return Number(d[1]) <= 0xffffffff ? { dm: Number(d[1]) } : null;
   const m = /^\/channels\/(\d+)(?:\/(\d+))?$/.exec(u.pathname);
   if (!m) return null;
   return m[2] ? { chat: Number(m[1]), message: Number(m[2]) } : { chat: Number(m[1]) };

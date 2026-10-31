@@ -5,6 +5,7 @@
 import type { Challenge, Proof } from "./captcha";
 import type { FediLink } from "./fedi";
 import { type SavedServer, savedServers } from "./serverList";
+import { parseFriends, type Friend } from "./friends";
 
 // A logged-in account; temporary: a guest account without a password (the
 // server deletes it after a day without a visit). password false: made
@@ -127,6 +128,11 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       savedServers(((await call(`/api/servers?account=${encodeURIComponent(account)}`)) as { servers?: unknown }).servers),
     addServer: async (server: SavedServer, account: string) => void (await call("/api/servers", { ...server, account })),
     removeServer: async (origin: string, account: string) => void (await call("/api/servers", { origin, account }, "DELETE")),
+    // The home account's friends (see lib/friends; not for guests).
+    friends: async (account: string) =>
+      parseFriends(((await call(`/api/friends?account=${encodeURIComponent(account)}`)) as { friends?: unknown }).friends),
+    addFriend: async (f: Friend, account: string) => void (await call("/api/friends", { ...f, account })),
+    removeFriend: async (origin: string, user: number, account: string) => void (await call("/api/friends", { origin, user, account }, "DELETE")),
     // Another server asks who you are (Kallisti as a login provider): the
     // question for this authorize query, and the answer (where to go).
     oauthRequest: async (query: string) =>

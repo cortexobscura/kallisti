@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { channelLink, inviteTarget, messageLink, parseMessageLink, plainLink, voiceLink } from "../src/lib/messageLink";
+import { channelLink, dmLink, inviteTarget, messageLink, parseMessageLink, plainLink, voiceLink } from "../src/lib/messageLink";
 
 describe("message links", () => {
   it("make a link to a message on the server", () => {
@@ -42,5 +42,17 @@ describe("what Copy link and Copy invite link make", () => {
     expect(inviteTarget({ access: 20, invites: true })).toBe(20);
     expect(inviteTarget({ access: 20, invites: false })).toBeNull();
     expect(inviteTarget({ access: null, invites: true })).toBeNull();
+  });
+});
+
+describe("direct chat links", () => {
+  it("open a direct chat with a registered user of that server", () => {
+    expect(dmLink("https://a.example", 7)).toBe("https://a.example/dm/7");
+    expect(parseMessageLink("https://a.example/dm/7", "https://a.example")).toEqual({ dm: 7 });
+    expect(parseMessageLink("https://b.example/dm/7", "https://a.example")).toBeNull();
+    // Only user ids (32 bits): not some other user by overflow.
+    expect(parseMessageLink("https://a.example/dm/4294967295", "https://a.example")).toEqual({ dm: 4294967295 });
+    expect(parseMessageLink(`https://a.example/dm/4294967296`, "https://a.example")).toBeNull();
+    expect(parseMessageLink(`https://a.example/dm/${"9".repeat(400)}`, "https://a.example")).toBeNull();
   });
 });

@@ -4,6 +4,10 @@
   import Authorize from "./components/Authorize.svelte";
   import Connect from "./components/Connect.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
+  import FriendsDialog from "./components/FriendsDialog.svelte";
+  import { createFriends } from "./lib/friends.svelte";
+  import { friendPresence, isFriend, type FriendServer } from "./lib/friends";
+  import { dmLink } from "./lib/messageLink";
   import ServerRail, { type RailServer } from "./components/ServerRail.svelte";
   import { apiWithToken, createAccountsApi, memoryStore, type Account, type AccountActions } from "./lib/accounts";
   import { connect, type Connection, type Credentials } from "./lib/connection.svelte";
@@ -41,7 +45,7 @@
   import { loadCaptureWorklet, startAfter } from "./lib/voice/worklet";
   import { closeVoiceOutput } from "./lib/voice/output";
   import { swapContext } from "./lib/voice/restart";
-  import { settings } from "./lib/settings.svelte";
+  import { deviceFriends, settings } from "./lib/settings.svelte";
   import { themeOf } from "./lib/settings";
   import { fediResult, reauthInstance, withoutFediResult } from "./lib/fedi";
   import Toast from "./components/Toast.svelte";
@@ -414,6 +418,54 @@
   });
   $effect(() => () => hub.close());
   const allSessions = () => [session, ...hub.servers.flatMap((a) => (a.session ? [a.session] : []))];
+
+  // The friends list (see lib/friends): with the home account kept at
+  // home (as the server list), else on this device. Loaded with the home
+  // server, again when the page shows or another login comes.
+  // Owned by the home login (owner, see below), else this device's.
+  let friendsNotice = $state<string | null>(null);
+  const friends = createFriends({
+    owner: () => (owner !== null && account ? account.name : null),
+    remote: (name) => ({ load: () => api.friends(name), add: (f) => api.addFriend(f, name), remove: (o, u) => api.removeFriend(o, u, name) }),
+    device: deviceFriends,
+    onError: () => (friendsNotice = "Your friends list could not be saved."),
+  });
+  // At once on another login (no account sees another's list), and when
+  // the home server is in.
+  $effect(() => {
+    void owner;
+    void connection?.state.status;
+    untrack(() => void friends.sync());
+  });
+  $effect(() => {
+    const onShow = () => document.visibilityState === "visible" && !authorizeQuery && void friends.sync();
+    document.addEventListener("visibilitychange", onShow);
+    return () => document.removeEventListener("visibilitychange", onShow);
+  });
+  // The home server takes part when it is a Kallisti server (the desktop
+  // app with a plain Mumble server has no origin to keep friends by).
+  const homeFriends = $derived(!desktop || kallisti !== null);
+  // Per server of the rail: its friends, for its client's user menus.
+  const friendsOn = (origin: string) => ({
+    has: (user: number) => isFriend(friends.list, origin, user),
+    toggle: (user: number, name: string) => (isFriend(friends.list, origin, user) ? friends.remove(origin, user) : friends.add({ origin, user, name })),
+  });
+  // Where friends are: what the rail's servers show (nobody else tells).
+  let showFriends = $state(false);
+  const friendRows = $derived.by(() => {
+    // A lost connection tells nothing (its last state is old).
+    const view = (origin: string, c: Connection | null, name: string): FriendServer[] =>
+      c && !c.closed
+        ? [{ origin, name, online: c.text.online, users: c.state.users, voiceName: (id) => (id === 0 ? null : (c.state.channels[id]?.name ?? null)) }]
+        : [];
+    return friendPresence(friends.list, [
+      ...(homeFriends ? view(homeOrigin(), connection, railServers[0]?.name ?? "Home") : []),
+      ...hub.servers.flatMap((a, i) => view(a.origin, a.session?.connection ?? null, railServers[i + 1]?.name ?? new URL(a.origin).host)),
+    ]);
+  });
+  // A server here with a session (see serverLinks openMessageLink).
+  const canMessage = (origin: string) =>
+    (homeFriends && origin === homeOrigin() && connection?.state.status === "synced") || hub.servers.some((a) => a.origin === origin && a.session);
   const shownAdded = $derived(hub.shown === null ? null : (hub.servers.find((a) => a.origin === hub.shown) ?? null));
   // Each server's mark (see Client onBadge).
   let badges = $state<Record<string, RailBadge>>({});
@@ -623,7 +675,12 @@
 <!-- The rail of servers: the same while a server connects, fails or
      reconnects (in the client's drawer on phones; beside these screens). -->
 {#snippet rail()}
-  <ServerRail servers={railServers} onSelect={selectServer} onAdd={owner !== null ? () => (addingFor = { owner: owner! }) : undefined} />
+  <ServerRail
+    servers={railServers}
+    onSelect={selectServer}
+    onAdd={owner !== null ? () => (addingFor = { owner: owner! }) : undefined}
+    onFriends={() => (showFriends = true)}
+  />
 {/snippet}
 <!-- A screen without the client, with the rail if there are servers to switch to. -->
 {#snippet withRail(content: Snippet)}
@@ -663,9 +720,9 @@
       </div>
     {/if}
   {/snippet}
-  {@render serverView("", session, { account: account ? accountActions : undefined, onLogIn: () => leave(null), site: kallisti ?? location.origin, openSettings: reopenSettings, onSettingsOpened: () => (reopenSettings = false) })}
+  {@render serverView("", session, { friends: homeFriends ? friendsOn(homeOrigin()) : undefined, account: account ? accountActions : undefined, onLogIn: () => leave(null), site: kallisti ?? location.origin, openSettings: reopenSettings, onSettingsOpened: () => (reopenSettings = false) })}
   {#each hub.servers as a (a.origin)}
-    {#if a.session}{@render serverView(a.origin, a.session, { pushSync: serverPush.syncFor(a), account: addedActions(a.origin), site: a.origin })}{/if}
+    {#if a.session}{@render serverView(a.origin, a.session, { friends: friendsOn(a.origin), pushSync: serverPush.syncFor(a), account: addedActions(a.origin), site: a.origin })}{/if}
   {/each}
   {#if shownAdded}
     {@const a = shownAdded}
@@ -723,7 +780,18 @@
 
 <div class="status-bar" aria-hidden="true"></div>
 
+{#if showFriends}
+  <FriendsDialog
+    rows={friendRows}
+    {canMessage}
+    onMessage={(origin, user) => links.openMessageLink(dmLink(origin, user))}
+    onRemove={(origin, user) => friends.remove(origin, user)}
+    onClose={() => (showFriends = false)}
+  />
+{/if}
+
 {#if fediNotice}<Toast text={fediNotice} />{/if}
+{#key friendsNotice}{#if friendsNotice}<Toast text={friendsNotice} />{/if}{/key}
 {#key hub.error}{#if hub.error}<Toast text={hub.error} />{/if}{/key}
 
 {#if addingServer}

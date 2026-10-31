@@ -37,6 +37,6 @@
 - [x] [Coming back to the app: no "Reconnecting" and no empty frame](issues/seamless-resume.md)
 - [x] [iOS app without the Mumble bridge](issues/ios-no-mumble-bridge.md)
 - [x] [Personal channel list: hide, show again, own order](issues/personal-channel-list.md)
-- [ ] [Friends across servers](issues/global-friends.md)
+- [x] [Friends across servers](issues/global-friends.md)
 - [ ] [Remove the fallback for plain-named session cookies (after 2026-11-28)](issues/remove-plain-cookie-fallback.md)
 - [x] [Fixes from the multi-server branch that main could use](issues/hardening-from-multi-server.md) (merged with the branch)

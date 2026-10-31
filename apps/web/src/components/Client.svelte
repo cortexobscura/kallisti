@@ -183,6 +183,7 @@
     onBadge,
     link = null,
     onLinkUsed,
+    friends,
     onInvite,
     onServerLink,
     pushSync,
@@ -233,6 +234,8 @@
     // message opens; onLinkUsed once done.
     link?: string | null;
     onLinkUsed?: () => void;
+    // This server's registered users in my friends list (see lib/friends).
+    friends?: { has: (user: number) => boolean; toggle: (user: number, name: string) => void };
     // An invite link clicked here (any server's): true, the caller takes it.
     onInvite?: (url: string) => boolean;
     // A message, chat or voice link of another server in the rail: shown
@@ -747,7 +750,14 @@
     }
     return true;
   };
-  const openMessage = (link: ChannelLink | null) => !!link && ("voice" in link ? askJoin(link.voice) : openChat(link.chat, link.message));
+  // dm: from the friends list (a registered user of this server).
+  const openMessage = (link: ChannelLink | null) =>
+    !!link &&
+    ("voice" in link
+      ? askJoin(link.voice)
+      : "dm" in link
+        ? openDirectById(link.dm)
+        : openChat(link.chat, link.message));
   // A link to a voice channel (or an invite to one): joined after a
   // question (already there: shown). false: no such channel for us.
   let joinAsk = $state<number | null>(null);
@@ -1539,6 +1549,14 @@
     streamClient?.setDeaf(me?.selfDeaf ?? false);
   });
   // A direct chat from the list: the partner's session if online.
+  // A /dm/ link: the user's name must be known (online, or a member), or
+  // two unknown ones would share one chat's drafts.
+  const openDirectById = (id: number) => {
+    const name = Object.values(server.users).find((u) => u.userId === id)?.name ?? text.members[id];
+    if (!name) return (flash("This user is not online or not known here."), false);
+    openDirect({ id, name });
+    return true;
+  };
   const openDirect = (peer: Peer) => {
     const user = Object.values(server.users).find((u) => u.userId === peer.id);
     show({ kind: "dm", session: user?.session ?? null, name: peer.name, userId: peer.id });
@@ -1905,6 +1923,7 @@
     blocked={blockedUsers.has(menuUser.name)}
     onBlock={() => blockedUsers.toggle(menuUser.name)}
     onMessage={readOnly ? undefined : () => show({ kind: "dm", session: menuUser.session, name: menuUser.name, userId: menuUser.userId })}
+    friend={friends && menuUser.userId !== null ? { is: friends.has(menuUser.userId), onToggle: () => friends.toggle(menuUser.userId!, menuUser.name) } : undefined}
     onSettings={() => (showSettings = true)}
     fediHandle={menuUser.userId === null ? undefined : (name) => fetchFediHandle(connection.httpBase, name)}
     role={roleOf(text.roles, menuUser.userId)}
@@ -1955,6 +1974,7 @@
     blocked={blockedUsers.has(p.name)}
     onBlock={() => blockedUsers.toggle(p.name)}
     onMessage={me?.userId != null && !readOnly ? () => openDirect(p) : undefined}
+    friend={friends ? { is: friends.has(p.id), onToggle: () => friends.toggle(p.id, p.name) } : undefined}
     onSettings={() => {}}
     fediHandle={(name) => fetchFediHandle(connection.httpBase, name)}
     role={roleOf(text.roles, p.id)}

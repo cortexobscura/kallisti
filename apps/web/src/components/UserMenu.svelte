@@ -23,6 +23,7 @@
     blocked,
     onBlock,
     onMessage,
+    friend,
     onSettings,
     role = null,
     status = null,
@@ -53,6 +54,8 @@
     onBlock: () => void;
     // None: we cannot write to them (an offline user, we are a guest).
     onMessage?: () => void;
+    // A registered user: in my friends list (see lib/friends), or not.
+    friend?: { is: boolean; onToggle: () => void };
     onSettings: () => void;
     role?: Role | null;
     status?: UserStatus | null;
@@ -114,8 +117,9 @@
   {#if isMe}
     <button onclick={act(onSettings)}>Settings</button>
   {:else}
-    {#if onMessage}
-      <button onclick={act(onMessage)}>Message</button>
+    {#if onMessage || friend}
+      {#if onMessage}<button onclick={act(onMessage)}>Message</button>{/if}
+      {#if friend}<button onclick={act(friend.onToggle)}>{friend.is ? "Remove friend" : "Add friend"}</button>{/if}
       <div class="sep"></div>
     {/if}
     {#if !byId}
