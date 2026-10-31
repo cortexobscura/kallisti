@@ -111,21 +111,22 @@ func run() error {
 		return fmt.Errorf("create upload directory: %w", err)
 	}
 	fileHandler := &files.Handler{
-		Store:           db,
-		Dir:             cfg.UploadDir,
-		MaxBytes:        cfg.UploadMaxBytes,
-		QuotaBytes:      cfg.UploadQuotaBytes,
-		Now:             time.Now,
-		Redeem:          hub.RedeemUploadToken,
-		RedeemEmoji:     hub.RedeemEmojiToken,
-		OnEmoji:         hub.EmojiChanged,
-		RedeemUserEmoji: hub.RedeemUserEmojiToken,
-		OnUserEmoji:     hub.UserEmojiChanged,
-		RedeemSticker:   hub.RedeemStickerToken,
-		OnSticker:       hub.StickersChanged,
-		RedeemLogo:      hub.RedeemLogoToken,
-		OnLogo:          hub.LogoChanged,
-		OnPreview:       hub.UploadPreview,
+		Store:                db,
+		Dir:                  cfg.UploadDir,
+		MaxBytes:             cfg.UploadMaxBytes,
+		QuotaBytes:           cfg.UploadQuotaBytes,
+		Now:                  time.Now,
+		Redeem:               hub.RedeemUploadToken,
+		RedeemEmoji:          hub.RedeemEmojiToken,
+		OnEmoji:              hub.EmojiChanged,
+		RedeemUserEmoji:      hub.RedeemUserEmojiToken,
+		OnUserEmoji:          hub.UserEmojiChanged,
+		RedeemSticker:        hub.RedeemStickerToken,
+		OnSticker:            hub.StickersChanged,
+		RedeemLogo:           hub.RedeemLogoToken,
+		RedeemWebhookPicture: hub.RedeemWebhookPictureToken,
+		OnLogo:               hub.LogoChanged,
+		OnPreview:            hub.UploadPreview,
 	}
 	// Once: uploads from before sizes were kept.
 	if err := db.MeasureUploads(fileHandler.Measure); err != nil {
@@ -261,6 +262,8 @@ func run() error {
 	mux.Handle("/api/stickers/", fileHandler)
 	mux.Handle("/api/logo", fileHandler)
 	mux.Handle("/api/logo/", fileHandler)
+	mux.Handle("/api/webhook-picture", fileHandler)
+	mux.Handle("/api/webhook-picture/", fileHandler)
 	mux.Handle("/api/avatars/", avatars)
 	mux.Handle("/api/link-image/", linkImages)
 	mux.Handle("/api/push", pushes)

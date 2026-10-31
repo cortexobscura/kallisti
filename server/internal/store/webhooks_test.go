@@ -93,3 +93,32 @@ func TestWebhookMessages(t *testing.T) {
 		t.Errorf("stored reply: %+v", got.Reply)
 	}
 }
+
+func TestWebhookPicture(t *testing.T) {
+	s := open(t)
+	s.EnsureChannels([]string{"general"})
+	at := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	w, _ := s.AddWebhook("hash", Webhook{Channel: 1, Name: "CI", Creator: "alice", CreatedAt: at}, 10)
+	if _, _, err := s.WebhookPicture(w.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("none yet: %v", err)
+	}
+	if ch, err := s.SetWebhookPicture(w.ID, []byte("png"), at.Add(time.Minute)); err != nil || ch != 1 {
+		t.Fatal(ch, err)
+	}
+	data, when, err := s.WebhookPicture(w.ID)
+	if err != nil || string(data) != "png" || !when.Equal(at.Add(time.Minute)) {
+		t.Fatalf("got %q %v %v", data, when, err)
+	}
+	if list, _ := s.Webhooks(1); !list[0].Picture {
+		t.Errorf("listed without: %+v", list[0])
+	}
+	if _, err := s.SetWebhookPicture(w.ID, nil, at); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.WebhookPicture(w.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("removed: %v", err)
+	}
+	if _, err := s.SetWebhookPicture(99, []byte("png"), at); !errors.Is(err, ErrNotFound) {
+		t.Errorf("no webhook: %v", err)
+	}
+}

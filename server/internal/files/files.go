@@ -74,6 +74,9 @@ type Handler struct {
 	// OnLogo: the logo changed.
 	RedeemLogo func(token string) (author string, ok bool)
 	OnLogo     func()
+	// The same for a webhook's picture (staff): which webhook's.
+	RedeemWebhookPicture func(token string) (webhook int64, ok bool)
+	OnWebhookPicture     func(webhook int64)
 	// Previews makes previews (nil: none, see previews.go); OnPreview: an
 	// upload got one.
 	Previews  *thumbs.Maker
@@ -98,6 +101,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.post(w, r, h.uploadLogo)
 	case strings.HasPrefix(r.URL.Path, "/api/logo/") && get:
 		h.serveLogo(w, r)
+	case r.URL.Path == "/api/webhook-picture" && h.RedeemWebhookPicture != nil:
+		h.post(w, r, h.uploadWebhookPicture)
+	case strings.HasPrefix(r.URL.Path, "/api/webhook-picture/") && get:
+		h.serveWebhookPicture(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/stickers/") && get:
 		h.serveSticker(w, r)
 	case strings.HasPrefix(r.URL.Path, "/files/") && get:

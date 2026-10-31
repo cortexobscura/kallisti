@@ -304,6 +304,7 @@ type uploadToken struct {
 	personal bool
 	sticker  *store.Sticker // a token for adding this sticker
 	logo     bool           // for the server's logo
+	webhook  int64          // for this webhook's picture
 	expires  time.Time
 }
 
@@ -837,7 +838,7 @@ func (c *Conn) Handle(raw []byte) {
 	case "redeem-invite":
 		c.redeemInvite(*id, req.Token)
 		return
-	case "webhooks", "create-webhook", "rename-webhook", "delete-webhook":
+	case "webhooks", "create-webhook", "rename-webhook", "delete-webhook", "webhook-picture-token", "remove-webhook-picture":
 		c.webhookRequest(*id, req)
 		return
 	case "set-guests-read-only":
@@ -1404,7 +1405,7 @@ func (h *Hub) issueToken(t uploadToken) string {
 // RedeemUploadToken returns the author a file upload token was issued to.
 func (h *Hub) RedeemUploadToken(token string) (string, bool) {
 	t, ok := h.redeem(token)
-	if !ok || t.emoji != "" || t.personal || t.sticker != nil || t.logo {
+	if !ok || t.emoji != "" || t.personal || t.sticker != nil || t.logo || t.webhook != 0 {
 		return "", false
 	}
 	return t.author, true

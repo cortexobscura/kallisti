@@ -16,6 +16,7 @@ type Webhook struct {
 	Name      string
 	Creator   string
 	CreatedAt time.Time
+	Picture   bool // it has one (see SetWebhookPicture)
 }
 
 const webhooksTable = `CREATE TABLE IF NOT EXISTS webhooks (
@@ -24,15 +25,17 @@ const webhooksTable = `CREATE TABLE IF NOT EXISTS webhooks (
 	channel    INTEGER NOT NULL, -- the text channel
 	name       TEXT NOT NULL,
 	creator    TEXT NOT NULL,
-	created_at INTEGER NOT NULL
+	created_at INTEGER NOT NULL,
+	picture    BLOB, -- a PNG square (see the files handler); NULL: none
+	picture_at INTEGER NOT NULL DEFAULT 0
 )`
 
-const webhookSelect = `SELECT id, channel, name, creator, created_at FROM webhooks `
+const webhookSelect = `SELECT id, channel, name, creator, created_at, picture IS NOT NULL FROM webhooks `
 
 func scanWebhook(row interface{ Scan(...any) error }) (Webhook, error) {
 	var w Webhook
 	var created int64
-	err := row.Scan(&w.ID, &w.Channel, &w.Name, &w.Creator, &created)
+	err := row.Scan(&w.ID, &w.Channel, &w.Name, &w.Creator, &created, &w.Picture)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Webhook{}, ErrNotFound
 	}
@@ -107,4 +110,22 @@ func webhookChannel(row *sql.Row) (channel int64, err error) {
 		return 0, ErrNotFound
 	}
 	return channel, err
+}
+
+// SetWebhookPicture sets (nil: removes) a webhook's picture and says whose
+// channel it is.
+func (s *Store) SetWebhookPicture(id int64, png []byte, at time.Time) (channel int64, err error) {
+	return webhookChannel(s.db.QueryRow(`UPDATE webhooks SET picture = ?, picture_at = ? WHERE id = ? RETURNING channel`, png, at.UnixMilli(), id))
+}
+
+// WebhookPicture is a webhook's picture and when it was set (ErrNotFound:
+// none).
+func (s *Store) WebhookPicture(id int64) ([]byte, time.Time, error) {
+	var png []byte
+	var at int64
+	err := s.db.QueryRow(`SELECT picture, picture_at FROM webhooks WHERE id = ? AND picture IS NOT NULL`, id).Scan(&png, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, time.Time{}, ErrNotFound
+	}
+	return png, time.UnixMilli(at).UTC(), err
 }

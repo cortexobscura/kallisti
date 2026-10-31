@@ -28,6 +28,7 @@ type wireWebhook struct {
 	Name    string `json:"name"`
 	Creator string `json:"creator"`
 	Created int64  `json:"created"` // Unix ms
+	Picture bool   `json:"picture,omitempty"`
 }
 
 // webhookName is a name as kept (false: empty, too long, or with control
@@ -47,13 +48,15 @@ func (c *Conn) sendWebhooks(channel int64) {
 	}
 	out := make([]wireWebhook, len(list))
 	for i, w := range list {
-		out[i] = wireWebhook{ID: w.ID, Name: w.Name, Creator: w.Creator, Created: w.CreatedAt.UnixMilli()}
+		out[i] = wireWebhook{ID: w.ID, Name: w.Name, Creator: w.Creator, Created: w.CreatedAt.UnixMilli(), Picture: w.Picture}
 	}
 	c.send(map[string]any{"type": "webhooks", "channel": channel, "webhooks": out})
 }
 
 // webhookRequest answers the webhook requests: webhooks (the list of a
-// channel), create-webhook, rename-webhook, delete-webhook.
+// channel), create-webhook, rename-webhook, delete-webhook,
+// webhook-picture-token (one upload, see files' webhook pictures),
+// remove-webhook-picture.
 func (c *Conn) webhookRequest(id mumble.Identity, req request) {
 	h := c.hub
 	// As channel management: a channel deleted meanwhile gets no webhook.
@@ -64,7 +67,7 @@ func (c *Conn) webhookRequest(id mumble.Identity, req request) {
 		c.manageError("only admins and moderators manage webhooks")
 		return
 	}
-	if req.Type == "rename-webhook" || req.Type == "delete-webhook" {
+	if req.Type != "webhooks" && req.Type != "create-webhook" {
 		var err error
 		if channel, err = h.store.WebhookChannel(req.Webhook); err != nil {
 			c.manageError("no such webhook")
@@ -106,6 +109,24 @@ func (c *Conn) webhookRequest(id mumble.Identity, req request) {
 			return
 		}
 		h.webhookLimits.forget(req.Webhook)
+	case "webhook-picture-token":
+		c.send(map[string]any{"type": "upload-token", "token": h.issueToken(uploadToken{author: id.Name, webhook: req.Webhook})})
+		return
+	case "remove-webhook-picture":
+		if _, err := h.store.SetWebhookPicture(req.Webhook, nil, h.now()); err != nil {
+			c.manageError("no such webhook")
+			return
+		}
 	}
 	c.sendWebhooks(channel)
+}
+
+// RedeemWebhookPictureToken says which webhook's picture a token uploads
+// (once, before it expires).
+func (h *Hub) RedeemWebhookPictureToken(token string) (webhook int64, ok bool) {
+	t, ok := h.redeem(token)
+	if !ok || t.webhook == 0 {
+		return 0, false
+	}
+	return t.webhook, true
 }

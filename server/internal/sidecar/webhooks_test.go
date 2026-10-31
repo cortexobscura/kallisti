@@ -95,3 +95,42 @@ func TestManageWebhooks(t *testing.T) {
 		t.Fatalf("after delete: %d", len(list))
 	}
 }
+
+// Staff get a token for one picture upload (see files' webhook pictures),
+// and remove a picture.
+func TestWebhookPictureRequests(t *testing.T) {
+	h, staff, carol := webhookHub(t)
+	ci := h.channels[1].ID
+	id, _ := createWebhook(t, staff, ci, "CI")
+	carol.Handle([]byte(fmt.Sprintf(`{"type":"webhook-picture-token","webhook":%d}`, id)))
+	if m := next(t, carol); m["type"] != "error" {
+		t.Fatalf("carol: %v", m)
+	}
+	pictureToken := func() string {
+		staff.Handle([]byte(fmt.Sprintf(`{"type":"webhook-picture-token","webhook":%d}`, id)))
+		m := next(t, staff)
+		token, _ := m["token"].(string)
+		if m["type"] != "upload-token" || token == "" {
+			t.Fatalf("got %v", m)
+		}
+		return token
+	}
+	if _, ok := h.RedeemLogoToken(pictureToken()); ok {
+		t.Error("a logo token")
+	}
+	if _, ok := h.RedeemUploadToken(pictureToken()); ok {
+		t.Error("a file upload token")
+	}
+	token := pictureToken()
+	if got, ok := h.RedeemWebhookPictureToken(token); !ok || got != id {
+		t.Fatalf("redeem: %d %v", got, ok)
+	}
+	if _, ok := h.RedeemWebhookPictureToken(token); ok {
+		t.Error("redeemed twice")
+	}
+	h.store.SetWebhookPicture(id, []byte("png"), clock)
+	staff.Handle([]byte(fmt.Sprintf(`{"type":"remove-webhook-picture","webhook":%d}`, id)))
+	if w := webhooksOf(t, staff, ci)[0].(map[string]any); w["picture"] != nil {
+		t.Fatalf("still has one: %v", w)
+	}
+}
