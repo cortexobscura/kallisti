@@ -4,7 +4,7 @@
   import type { UserStatus } from "../lib/presence";
   import type { User } from "@kallisti/protocol";
   import type { Peer } from "../lib/textChannels";
-  import { onlineRows, readerRow, type OnlineMember, type ReaderGroup, type ReaderRow } from "../lib/members";
+  import { onlineRows, readerRow, withoutFriends, type OnlineMember, type ReaderGroup, type ReaderRow } from "../lib/members";
   import type { FriendRow } from "../lib/friends";
   import Avatar from "./Avatar.svelte";
   import Badge from "./Badge.svelte";
@@ -62,6 +62,9 @@
     onToggleGroup?: (key: string) => void;
   } = $props();
   const shut = (key: string) => collapsed.includes(key);
+  // This server's friends show only in the Friends group.
+  const friendIds = $derived(new Set(friends.filter((r) => r.friend.origin === friendsHere).map((r) => r.friend.user)));
+  const own = (list: ReaderRow<User>[]) => withoutFriends(list, friendIds);
 </script>
 
 <!-- Offline users: faded, no status (Discord hides their custom one). -->
@@ -148,14 +151,14 @@
 <aside aria-label="Members" {inert}>
   {@render friendRows()}
   {#if readers}
-    {#if voiceFirst}{@render rows("here", `In ${channelName}`, onlineRows(here, []))}{/if}
+    {#if voiceFirst}{@render rows("here", `In ${channelName}`, own(onlineRows(here, [])))}{/if}
     {#each readers as g (g.title)}
-      {@render rows(`readers ${g.title}`, g.title, g.rows)}
+      {@render rows(`readers ${g.title}`, g.title, own(g.rows))}
     {/each}
   {:else}
-    {@render rows("here", `In ${channelName}`, onlineRows(here, []))}
-    {@render rows("online", "Online", onlineRows(elsewhere, hidden))}
-    {@render rows("offline", "Offline", offline.map((p) => ({ offline: p })))}
+    {@render rows("here", `In ${channelName}`, own(onlineRows(here, [])))}
+    {@render rows("online", "Online", own(onlineRows(elsewhere, hidden)))}
+    {@render rows("offline", "Offline", own(offline.map((p) => ({ offline: p }))))}
   {/if}
 </aside>
 

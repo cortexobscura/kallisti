@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bioRequest, hiddenMembers, offlineMembers, onlineRows, pictureNames, readerGroups, readerRow, type ReaderRow } from "../src/lib/members";
+import { bioRequest, hiddenMembers, offlineMembers, onlineRows, pictureNames, readerGroups, readerRow, withoutFriends, type ReaderRow } from "../src/lib/members";
 import { initialTextState, parseServerEvent, reduceText } from "../src/lib/textChannels";
 
 describe("offlineMembers", () => {
@@ -200,5 +200,18 @@ describe("readerRow", () => {
       { key: "u7", name: "ann" },
       { key: "o8", name: "bob" },
     ]);
+  });
+});
+
+describe("withoutFriends", () => {
+  it("leaves out this server's friends (they show in the Friends group)", () => {
+    const rows: ReaderRow<{ name: string; userId: number | null; session: number }>[] = [
+      { user: { name: "bob", userId: 7, session: 1 } },
+      { user: { name: "guest", userId: null, session: 2 } },
+      { member: { id: 8, name: "carol", session: 3 } },
+      { offline: { id: 9, name: "dave" } },
+      { offline: { id: 10, name: "erin" } },
+    ];
+    expect(withoutFriends(rows, new Set([7, 8, 9])).map((r) => readerRow(r).name)).toEqual(["guest", "erin"]);
   });
 });

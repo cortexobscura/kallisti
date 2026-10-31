@@ -82,3 +82,11 @@ export const pictureNames = (members: Members, pictures: ReadonlySet<number>) =>
 
 // An offline user's bio (online ones come with their user state).
 export const bioRequest = (user: number) => JSON.stringify({ type: "bio", user });
+
+// Without this server's friends (by user id): they show in the Friends
+// group on top of the member list, not twice.
+export const withoutFriends = <U extends { userId: number | null }>(rows: readonly ReaderRow<U>[], friends: ReadonlySet<number>): ReaderRow<U>[] =>
+  rows.filter((r) => {
+    const id = "user" in r ? r.user.userId : "member" in r ? r.member.id : r.offline.id;
+    return id === null || !friends.has(id);
+  });
