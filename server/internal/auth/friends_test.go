@@ -65,6 +65,12 @@ func TestFriendsChecks(t *testing.T) {
 	if code := add(own, c, "https://chat.bob.org", -1, "bob"); code != http.StatusBadRequest {
 		t.Errorf("negative user: %d", code)
 	}
+	// No user id at all: not user 0.
+	for _, method := range []string{"POST", "DELETE"} {
+		if code, _ := call(t, srv, method, "/api/friends", own, map[string]any{"origin": "https://chat.bob.org", "name": "bob"}, c); code != http.StatusBadRequest {
+			t.Errorf("%s without a user id: %d", method, code)
+		}
+	}
 	if code := add(own, nil, "https://chat.bob.org", 1, "bob"); code != http.StatusUnauthorized {
 		t.Errorf("no login: %d", code)
 	}

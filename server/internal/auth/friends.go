@@ -21,7 +21,7 @@ func (a *Service) friends(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Origin  string `json:"origin"`
-		User    int64  `json:"user"`
+		User    *int64 `json:"user"` // required: none is not user 0
 		Name    string `json:"name"`
 		Account string `json:"account"`
 	}
@@ -32,7 +32,7 @@ func (a *Service) friends(w http.ResponseWriter, r *http.Request) {
 	if !meant(w, r, acc, body.Account) {
 		return
 	}
-	valid := canonicalOrigin(body.Origin) && body.User >= 0 && body.User <= 1<<32-1
+	valid := canonicalOrigin(body.Origin) && body.User != nil && *body.User >= 0 && *body.User <= 1<<32-1
 	var err error
 	switch r.Method {
 	case http.MethodGet:
@@ -47,7 +47,7 @@ func (a *Service) friends(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a server's address, a user id and a name"})
 			return
 		}
-		f := store.Friend{Origin: body.Origin, User: uint32(body.User), Name: body.Name}
+		f := store.Friend{Origin: body.Origin, User: uint32(*body.User), Name: body.Name}
 		if err = a.Store.AddFriend(acc.ID, f, maxFriends); errors.Is(err, store.ErrTooManyFriends) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "your friends list is full"})
 			return
@@ -60,7 +60,7 @@ func (a *Service) friends(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a server's address and a user id"})
 			return
 		}
-		if err = a.Store.RemoveFriend(acc.ID, body.Origin, uint32(body.User)); err == nil {
+		if err = a.Store.RemoveFriend(acc.ID, body.Origin, uint32(*body.User)); err == nil {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
