@@ -49,6 +49,7 @@ type Message struct {
 	// "everyone" or "here": the message mentions all (by a moderator).
 	MentionAll string
 	NoPing     bool    // a reply that does not ping the original's author
+	Webhook    int64   // posted by this webhook (0: by a user; see Webhook)
 	Thread     *Thread // the thread started from it
 	Poll       *Poll   // a poll message (its Text: the poll as text)
 }
@@ -95,6 +96,7 @@ type NewMessage struct {
 	MentionAll string       // "", "here" or "everyone" (see Message)
 	NoPing     bool         // see Message
 	Poll       *Poll        // a poll (answers without voters)
+	Webhook    int64        // see Message
 	// The sender's id for this send ("": none), the same on each retry: a
 	// second send with it finds the first (see MessageByNonce).
 	Nonce string
@@ -247,7 +249,7 @@ func Open(path string) (*Store, error) {
 	// One writer at a time is all SQLite allows anyway, and an in-memory
 	// database exists only for one connection.
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(schema + reactionsTable + ";" + statusTable + ";" + channelListTable + ";" + emojiTable + ";" + userEmojiTables + ";" + stickersTable + ";" + invitesTable + ";" + pushTables + ";" + streamKeysTable + ";" + categoriesTable + ";" + threadsTable + ";" + fediTables + ";" + pollsTables + ";" + logoTable + ";" + accountServersTable + ";" + friendsTable + ";" + oauthTables); err != nil {
+	if _, err := db.Exec(schema + reactionsTable + ";" + statusTable + ";" + channelListTable + ";" + emojiTable + ";" + userEmojiTables + ";" + stickersTable + ";" + invitesTable + ";" + webhooksTable + ";" + pushTables + ";" + streamKeysTable + ";" + categoriesTable + ";" + threadsTable + ";" + fediTables + ";" + pollsTables + ";" + logoTable + ";" + accountServersTable + ";" + friendsTable + ";" + oauthTables); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("create schema: %w", err)
 	}
@@ -444,8 +446,9 @@ func migrate(db *sql.DB) error {
 		{"pinned_at", "INTEGER"},
 		{"mention_all", "TEXT NOT NULL DEFAULT ''"},
 		{"no_ping", "INTEGER NOT NULL DEFAULT 0"},
-		{"nonce", "TEXT"},        // the sender's id for the send (see MessageByNonce)
-		{"nonce_author", "TEXT"}, // see nonceAuthor
+		{"webhook_id", "INTEGER NOT NULL DEFAULT 0"}, // see Message.Webhook
+		{"nonce", "TEXT"},                            // the sender's id for the send (see MessageByNonce)
+		{"nonce_author", "TEXT"},                     // see nonceAuthor
 		{"sticker_id", "INTEGER"},
 	}); err != nil {
 		return err
@@ -692,9 +695,14 @@ func (s *Store) RenameChannel(id int64, name string) error {
 	return s.textChannel(`UPDATE channels SET name = ? WHERE id = ? AND `+textOnly, name, id)
 }
 
-// HideChannel removes a text channel from the list; its history stays.
+// HideChannel removes a text channel from the list; its history stays,
+// its webhooks go (one that comes back has no old secret URLs).
 func (s *Store) HideChannel(id int64) error {
-	return s.textChannel(`UPDATE channels SET hidden = 1 WHERE id = ? AND `+textOnly, id)
+	if err := s.textChannel(`UPDATE channels SET hidden = 1 WHERE id = ? AND `+textOnly, id); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`DELETE FROM webhooks WHERE channel = ?`, id)
+	return err
 }
 
 // SetPositions puts the given text channels in this order.
@@ -808,8 +816,8 @@ func (s *Store) AddMessage(n NewMessage) (Message, error) {
 			return Message{}, err
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO messages (id, channel_id, author, verified, author_id, text, created_at, sticker_id, reply_to, mention_all, no_ping, nonce, nonce_author) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, n.ChannelID, n.Author, n.Verified, authorID, n.Text, n.At.UnixMilli(), sticker, reply, n.MentionAll, n.NoPing, nonce, nonceBy); err != nil {
+	if _, err := tx.Exec(`INSERT INTO messages (id, channel_id, author, verified, author_id, text, created_at, sticker_id, reply_to, mention_all, no_ping, nonce, nonce_author, webhook_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, n.ChannelID, n.Author, n.Verified, authorID, n.Text, n.At.UnixMilli(), sticker, reply, n.MentionAll, n.NoPing, nonce, nonceBy, n.Webhook); err != nil {
 		return Message{}, err
 	}
 	// An upload attached once is used: the same one twice fails too.
@@ -828,7 +836,7 @@ func (s *Store) AddMessage(n NewMessage) (Message, error) {
 			return Message{}, err
 		}
 	}
-	msgs := []Message{{ID: id, ChannelID: n.ChannelID, Author: n.Author, Verified: n.Verified, AuthorID: authorID, Text: n.Text, CreatedAt: n.At, Sticker: ms, Reply: quote, MentionAll: n.MentionAll, NoPing: n.NoPing}}
+	msgs := []Message{{ID: id, ChannelID: n.ChannelID, Author: n.Author, Verified: n.Verified, AuthorID: authorID, Text: n.Text, CreatedAt: n.At, Sticker: ms, Reply: quote, MentionAll: n.MentionAll, NoPing: n.NoPing, Webhook: n.Webhook}}
 	if err := withUploads(tx, msgs); err != nil {
 		return Message{}, err
 	}
@@ -992,7 +1000,7 @@ func withUploads(q interface {
 }
 
 const messageSelect = `SELECT m.id, m.channel_id, m.author, m.verified, m.author_id, m.text, m.created_at, m.edited_at, m.pinned_at,
-		m.reply_to, r.author, r.text, m.mention_all, m.no_ping, m.sticker_id, st.name
+		m.reply_to, r.author, r.text, m.mention_all, m.no_ping, m.sticker_id, st.name, m.webhook_id
 	FROM messages m LEFT JOIN messages r ON r.id = m.reply_to LEFT JOIN stickers st ON st.id = m.sticker_id `
 
 func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
@@ -1003,7 +1011,7 @@ func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 	var replyAuthor, replyText, stickerName sql.NullString
 	var stickerID sql.NullInt64
 	if err := row.Scan(&m.ID, &m.ChannelID, &m.Author, &m.Verified, &authorID, &m.Text, &at, &edited, &pinned,
-		&replyTo, &replyAuthor, &replyText, &m.MentionAll, &m.NoPing, &stickerID, &stickerName); err != nil {
+		&replyTo, &replyAuthor, &replyText, &m.MentionAll, &m.NoPing, &stickerID, &stickerName, &m.Webhook); err != nil {
 		return Message{}, err
 	}
 	if authorID.Valid {
