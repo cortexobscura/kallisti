@@ -508,8 +508,14 @@
     {#if account.qr && !account.temporary}
       <div class="account">
         <span class="label">Log in on another device</span>
-        <p class="hint">Show a code here and scan it with your phone: no password to type there.</p>
-        <div class="buttons"><button type="button" class="secondary" onclick={() => (qrShown = true)}>Show a login code</button></div>
+        <p class="hint">
+          Show a code here and scan it with your phone: no password to type there.{#if account.qr.scan}
+            Or scan the code another device shows on its login screen.{/if}
+        </p>
+        <div class="buttons">
+          <button type="button" class="secondary" onclick={() => (qrShown = true)}>Show a login code</button>
+          {#if account.qr.scan}<button type="button" class="secondary" onclick={account.qr.scan}>Scan a code</button>{/if}
+        </div>
       </div>
     {/if}
     <div class="account">

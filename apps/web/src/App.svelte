@@ -4,6 +4,7 @@
   import Authorize from "./components/Authorize.svelte";
   import QrLinkDialog from "./components/QrLinkDialog.svelte";
   import { deviceLabel, parseQrLink } from "./lib/qrLogin";
+  import { canScan, scanCode } from "./lib/qrScan";
   import Connect from "./components/Connect.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
   import { createFriends } from "./lib/friends.svelte";
@@ -72,7 +73,30 @@
   // The desktop app's server is chosen on the login screen (see below).
   let api = $state.raw(createAccountsApi(httpBase(PROXY_URL)));
   // QR login with the home server (see lib/qrLogin).
-  const qrLogin = (): QrLogin => ({ api, origin: api.base || location.origin, device: deviceLabel(navigator.userAgent, isDesktop()) });
+  const qrLogin = (): QrLogin => ({
+    api,
+    origin: api.base || location.origin,
+    device: deviceLabel(navigator.userAgent, isDesktop()),
+    ...(canScan() && { scan: () => void scanQr() }),
+  });
+  // The phone apps' scanner: a code of this server, or of the first one
+  // (the app has none yet: that server is chosen first).
+  const scanQr = async () => {
+    try {
+      const text = await scanCode();
+      if (text === null) return;
+      const link = parseQrLink(text);
+      if (!link) return void (loginNote = "This is not a Kallisti login code.");
+      if (link.origin !== kallisti) {
+        if (account) return void (loginNote = `This code is for ${new URL(link.origin).host}, not for this server.`);
+        await chooseServer(link.origin);
+        if (kallisti !== link.origin) return;
+      }
+      qrToken = link.token;
+    } catch (err) {
+      loginNote = err instanceof Error ? err.message : String(err);
+    }
+  };
   let account = $state<Account | null>(null);
   // Until the server says whether a session is saved: no login screen (it
   // would flash). A saved session connects at once; logging out is the way
@@ -777,6 +801,7 @@
           ownerKnown = true;
         }}
         onConnect={start}
+        onScan={qrLogin().scan}
         {fediSignup}
         onFediSignupDone={() => (connectHome ? window.close() : (fediSignup = false))}
         onHandoff={() => (connectPhase = "deliver")}

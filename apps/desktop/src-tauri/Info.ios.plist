@@ -4,6 +4,8 @@
 <dict>
   <key>ITSAppUsesNonExemptEncryption</key>
   <false/>
+  <key>NSCameraUsageDescription</key>
+  <string>Kallisti uses the camera to scan login codes.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Kallisti uses the microphone for voice chat.</string>
   <key>UIBackgroundModes</key>

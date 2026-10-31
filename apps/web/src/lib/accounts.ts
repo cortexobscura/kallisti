@@ -277,6 +277,8 @@ export type QrLogin = {
   api: Pick<ReturnType<typeof createAccountsApi>, "qrStart" | "qrScan" | "qrAnswer" | "qrWait">;
   origin: string;
   device: string;
+  // The phone apps: scan a code with the camera (see lib/qrScan).
+  scan?: () => void;
 };
 
 // The API of another server, with this login's own token (not the cookie).
