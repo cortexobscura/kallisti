@@ -45,7 +45,7 @@
   import { loadCaptureWorklet, startAfter } from "./lib/voice/worklet";
   import { closeVoiceOutput } from "./lib/voice/output";
   import { swapContext } from "./lib/voice/restart";
-  import { deviceFriends, settings } from "./lib/settings.svelte";
+  import { settings } from "./lib/settings.svelte";
   import { themeOf } from "./lib/settings";
   import { fediResult, reauthInstance, withoutFediResult } from "./lib/fedi";
   import Toast from "./components/Toast.svelte";
@@ -422,12 +422,11 @@
   // The friends list (see lib/friends): with the home account kept at
   // home (as the server list), else on this device. Loaded with the home
   // server, again when the page shows or another login comes.
-  // Owned by the home login (owner, see below), else this device's.
+  // Owned by the home login (owner, see below): no friends without one.
   let friendsNotice = $state<string | null>(null);
   const friends = createFriends({
     owner: () => (owner !== null && account ? account.name : null),
     remote: (name) => ({ load: () => api.friends(name), add: (f) => api.addFriend(f, name), remove: (o, u) => api.removeFriend(o, u, name) }),
-    device: deviceFriends,
     onError: () => (friendsNotice = "Your friends list could not be saved."),
   });
   // At once on another login (no account sees another's list), and when
@@ -444,7 +443,7 @@
   });
   // The home server takes part when it is a Kallisti server (the desktop
   // app with a plain Mumble server has no origin to keep friends by).
-  const homeFriends = $derived(!desktop || kallisti !== null);
+  const homeFriends = $derived(owner !== null && (!desktop || kallisti !== null));
   // Per server of the rail: its friends, for its client's user menus.
   const friendsOn = (origin: string) => ({
     has: (user: number) => isFriend(friends.list, origin, user),
@@ -679,7 +678,7 @@
     servers={railServers}
     onSelect={selectServer}
     onAdd={owner !== null ? () => (addingFor = { owner: owner! }) : undefined}
-    onFriends={() => (showFriends = true)}
+    onFriends={owner !== null ? () => (showFriends = true) : undefined}
   />
 {/snippet}
 <!-- A screen without the client, with the rail if there are servers to switch to. -->
@@ -722,7 +721,7 @@
   {/snippet}
   {@render serverView("", session, { friends: homeFriends ? friendsOn(homeOrigin()) : undefined, account: account ? accountActions : undefined, onLogIn: () => leave(null), site: kallisti ?? location.origin, openSettings: reopenSettings, onSettingsOpened: () => (reopenSettings = false) })}
   {#each hub.servers as a (a.origin)}
-    {#if a.session}{@render serverView(a.origin, a.session, { friends: friendsOn(a.origin), pushSync: serverPush.syncFor(a), account: addedActions(a.origin), site: a.origin })}{/if}
+    {#if a.session}{@render serverView(a.origin, a.session, { friends: owner !== null ? friendsOn(a.origin) : undefined, pushSync: serverPush.syncFor(a), account: addedActions(a.origin), site: a.origin })}{/if}
   {/each}
   {#if shownAdded}
     {@const a = shownAdded}

@@ -2,16 +2,16 @@ import { withFriend, withoutFriend, type Friend } from "./friends";
 
 type Remote = { load: () => Promise<Friend[]>; add: (f: Friend) => Promise<void>; remove: (origin: string, user: number) => Promise<void> };
 
-// The friends list (see lib/friends) of its owner: a home account (kept on
-// its home server, remote) or, null, this device. Another owner empties it
-// at once (no account sees another's), and a change made for an earlier
-// owner (a dialog left open over a logout) is not taken. Changes show at
-// once and end loads still running (their answer is older); writes go one
-// after the other; a refused one is told and brings the server's list back.
+// The friends list (see lib/friends) of its owner: a home account, kept on
+// its home server (null: none, no friends without an account). Another
+// owner empties it at once (no account sees another's), and a change made
+// for an earlier owner (a dialog left open over a logout) is not taken.
+// Changes show at once and end loads still running (their answer is
+// older); writes go one after the other; a refused one is told and brings
+// the server's list back.
 export const createFriends = (deps: {
   owner: () => string | null;
   remote: (owner: string) => Remote;
-  device: { get: () => Friend[]; set: (list: Friend[]) => void };
   onError?: () => void;
 }) => {
   let state = $state.raw<{ of: string | null | undefined; list: Friend[] }>({ of: undefined, list: [] });
@@ -21,7 +21,7 @@ export const createFriends = (deps: {
     const owner = deps.owner();
     if (owner !== state.of) state = { of: owner, list: [] };
     const mine = ++loads;
-    if (owner === null) return void (state = { of: null, list: deps.device.get() });
+    if (owner === null) return;
     try {
       const list = await deps.remote(owner).load();
       if (mine === loads && state.of === owner) state = { of: owner, list };
@@ -31,10 +31,9 @@ export const createFriends = (deps: {
   };
   const change = (next: (list: Friend[]) => Friend[], send: (r: Remote) => Promise<void>) => {
     const owner = deps.owner();
-    if (owner !== state.of) return;
+    if (owner === null || owner !== state.of) return;
     loads++;
     state = { of: owner, list: next(state.list) };
-    if (owner === null) return deps.device.set(state.list);
     const remote = deps.remote(owner);
     writes = writes
       .then(() => send(remote))

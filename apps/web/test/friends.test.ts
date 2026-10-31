@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { friendPresence, isFriend, parseDeviceFriends, parseFriends, withFriend, withoutFriend, type Friend, type FriendServer } from "../src/lib/friends";
+import { befriendable, friendPresence, isFriend, parseFriends, withFriend, withoutFriend, type Friend, type FriendServer } from "../src/lib/friends";
 
 const bob: Friend = { origin: "https://b.example", user: 7, name: "bob" };
 const carol: Friend = { origin: "https://a.example", user: 3, name: "carol" };
@@ -12,10 +12,11 @@ describe("the friends list", () => {
     expect(parseFriends([bob, { ...bob, name: "again" }])).toEqual([bob]);
   });
 
-  it("reads the device's list (broken: none)", () => {
-    expect(parseDeviceFriends(JSON.stringify([bob]))).toEqual([bob]);
-    expect(parseDeviceFriends("{nonsense")).toEqual([]);
-    expect(parseDeviceFriends(null)).toEqual([]);
+  it("takes members only (no guest accounts, no users without an account)", () => {
+    const members = { 7: "bob" };
+    expect(befriendable(7, members)).toBe(true);
+    expect(befriendable(8, members)).toBe(false); // a guest account
+    expect(befriendable(null, members)).toBe(false);
   });
 
   it("adds (a known one: the new name, the same place) and removes by server and user id", () => {

@@ -1,9 +1,9 @@
-import type { Online } from "./members";
+import type { Members, Online } from "./members";
 
 // A friend is an account on one server (this one or another): its origin,
 // its registered user id there, and the name last seen. The same person on
 // two servers is two friends. Kept with the home account (the server's
-// /api/friends), else on the device.
+// /api/friends): no friends without an account.
 export type Friend = { origin: string; user: number; name: string };
 
 const webOrigin = (s: string) => {
@@ -23,14 +23,6 @@ export const parseFriends = (v: unknown): Friend[] =>
   Array.isArray(v)
     ? v.filter(isFriendEntry).reduce<Friend[]>((list, { origin, user, name }) => (isFriend(list, origin, user) ? list : [...list, { origin, user, name }]), [])
     : [];
-// The list kept on the device (without a home account).
-export const parseDeviceFriends = (raw: string | null): Friend[] => {
-  try {
-    return parseFriends(JSON.parse(raw ?? "[]"));
-  } catch {
-    return [];
-  }
-};
 
 const same = (f: Friend, origin: string, user: number) => f.origin === origin && f.user === user;
 export const isFriend = (list: readonly Friend[], origin: string, user: number) => list.some((f) => same(f, origin, user));
@@ -63,3 +55,7 @@ export const friendPresence = (list: readonly Friend[], servers: readonly Friend
   });
   return [...rows.filter((r) => r.online), ...rows.filter((r) => !r.online)];
 };
+
+// Who can be a friend: a registered user who is a member (guest accounts
+// are not: they go after a day).
+export const befriendable = (user: number | null, members: Members): user is number => user !== null && user in members;

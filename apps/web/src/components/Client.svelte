@@ -109,6 +109,7 @@
   import { isMentionAll, mentionNames, pingsMe, replyPing } from "../lib/mentions";
   import { blockedUsers, channelLists, channelPrefs, collapsedCategories, directPrefs, settings, userAudio } from "../lib/settings.svelte";
   import { textGroups, textOrder } from "../lib/categories";
+  import { befriendable } from "../lib/friends";
   import { keepShown, moveOwn, ownView, pruned, shownBeside, toggleHidden, voiceBeside, type ChannelList, type ListKind } from "../lib/channelList";
   import { forgetPref, isMuted, mutedIds, notifies, prefOf, pushLists, setThreadPref, withoutMuted, withParents, type ChannelPref } from "../lib/channelPrefs";
   import { closeDirect, quietDirects, reopenDirect, togglePin, visibleDirects } from "../lib/directList";
@@ -1923,7 +1924,7 @@
     blocked={blockedUsers.has(menuUser.name)}
     onBlock={() => blockedUsers.toggle(menuUser.name)}
     onMessage={readOnly ? undefined : () => show({ kind: "dm", session: menuUser.session, name: menuUser.name, userId: menuUser.userId })}
-    friend={friends && menuUser.userId !== null ? { is: friends.has(menuUser.userId), onToggle: () => friends.toggle(menuUser.userId!, menuUser.name) } : undefined}
+    friend={friends && befriendable(menuUser.userId, text.members) ? { is: friends.has(menuUser.userId), onToggle: () => friends.toggle(menuUser.userId!, menuUser.name) } : undefined}
     onSettings={() => (showSettings = true)}
     fediHandle={menuUser.userId === null ? undefined : (name) => fetchFediHandle(connection.httpBase, name)}
     role={roleOf(text.roles, menuUser.userId)}
@@ -1974,7 +1975,7 @@
     blocked={blockedUsers.has(p.name)}
     onBlock={() => blockedUsers.toggle(p.name)}
     onMessage={me?.userId != null && !readOnly ? () => openDirect(p) : undefined}
-    friend={friends ? { is: friends.has(p.id), onToggle: () => friends.toggle(p.id, p.name) } : undefined}
+    friend={friends && befriendable(p.id, text.members) ? { is: friends.has(p.id), onToggle: () => friends.toggle(p.id, p.name) } : undefined}
     onSettings={() => {}}
     fediHandle={(name) => fetchFediHandle(connection.httpBase, name)}
     role={roleOf(text.roles, p.id)}
