@@ -1,0 +1,257 @@
+package auth
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"kallisti.chat/server/internal/store"
+)
+
+// Log in with a QR code (see the web app's lib/qrLogin): one device shows
+// a code (a link with the token), another scans it, the logged-in one of
+// the two confirms, and the other gets a session.
+//   - An offer: a logged-in device shows it; a logged-out one scans it
+//     (gets a claim secret), the owner confirms (owner secret, its
+//     session), the scanner takes its session (wait with the claim).
+//   - A request: a logged-out device shows it; a logged-in one scans and
+//     confirms (the token, its session), the owner takes its session
+//     (wait with the owner secret).
+// A code is in memory for qrLifetime, scanned once; its session is taken
+// once. Guests neither give nor get one.
+
+const (
+	qrLifetime    = 2 * time.Minute
+	maxDeviceName = 64
+	maxQRPending  = 10_000
+)
+
+type qrGrant struct {
+	offer   bool
+	account store.Account // an offer's owner; a request's scanner
+	token   string        // in the code
+	owner   string        // the showing device's secret
+	claim   string        // an offer's scanner's secret
+	device  string        // the showing device's name
+	scanner string        // the scanning device's name
+	state   string        // waiting, scanned, approved, refused
+	expires time.Time
+}
+
+// qrGrants keeps grants by each of their keys (token, owner, claim).
+type qrGrants struct {
+	mu sync.Mutex
+	by map[string]*qrGrant
+}
+
+func (q *qrGrants) add(g *qrGrant, now time.Time) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.by == nil {
+		q.by = map[string]*qrGrant{}
+	}
+	if len(q.by) >= maxQRPending {
+		for k, e := range q.by {
+			if !now.Before(e.expires) {
+				delete(q.by, k)
+			}
+		}
+		if len(q.by) >= maxQRPending {
+			return false
+		}
+	}
+	q.by[g.token], q.by[g.owner] = g, g
+	return true
+}
+
+// with runs fn on a live grant by one of its keys (and its lock held);
+// false: none.
+func (q *qrGrants) with(key string, now time.Time, fn func(g *qrGrant)) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	g, ok := q.by[key]
+	if !ok || key == "" || !now.Before(g.expires) {
+		return false
+	}
+	fn(g)
+	return true
+}
+
+// drop forgets a grant (its session was taken). With the lock held.
+func (q *qrGrants) drop(g *qrGrant) {
+	for _, k := range []string{g.token, g.owner, g.claim} {
+		delete(q.by, k)
+	}
+}
+
+// deviceName is a device's name as kept (false: empty, too long, or with
+// control characters).
+func deviceName(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	n := utf8.RuneCountInString(s)
+	return s, n > 0 && n <= maxDeviceName && !strings.ContainsFunc(s, unicode.IsControl)
+}
+
+func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(v); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return false
+	}
+	return true
+}
+
+// qrStart makes a code: an offer with a session, else a request.
+func (a *Service) qrStart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Device string `json:"device"`
+	}
+	if !a.allow(r) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
+		return
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	device, ok := deviceName(req.Device)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a device name has 1 to 64 characters"})
+		return
+	}
+	acc, logged := a.AccountFor(r)
+	if logged && acc.Temporary {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "set a password first: a guest account cannot log in elsewhere"})
+		return
+	}
+	now := a.Now()
+	g := &qrGrant{offer: logged, token: randomHex(32), owner: randomHex(32), device: device, state: "waiting", expires: now.Add(qrLifetime)}
+	if logged {
+		g.account = acc
+	}
+	if !a.qr.add(g, now) {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "too many codes at once, try again later"})
+		return
+	}
+	kind := "request"
+	if g.offer {
+		kind = "offer"
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"kind": kind, "token": g.token, "owner": g.owner, "expires": g.expires.UnixMilli()})
+}
+
+// qrScan: a device scanned a code (once).
+func (a *Service) qrScan(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token  string `json:"token"`
+		Device string `json:"device"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	device, ok := deviceName(req.Device)
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a device name has 1 to 64 characters"})
+		return
+	}
+	acc, logged := a.AccountFor(r)
+	status, answer := http.StatusNotFound, map[string]any{"error": "this code is not valid any more"}
+	a.qr.with(req.Token, a.Now(), func(g *qrGrant) {
+		switch {
+		case req.Token != g.token || g.state != "waiting":
+		case g.offer:
+			g.claim, g.scanner, g.state = randomHex(32), device, "scanned"
+			a.qr.by[g.claim] = g
+			status, answer = http.StatusOK, map[string]any{"kind": "offer", "claim": g.claim, "device": g.device}
+		case !logged:
+			status, answer = http.StatusUnauthorized, map[string]any{"error": "log in on this device first"}
+		case acc.Temporary:
+			status, answer = http.StatusForbidden, map[string]any{"error": "set a password first: a guest account cannot log in elsewhere"}
+		default:
+			g.account, g.scanner, g.state = acc, device, "scanned"
+			status, answer = http.StatusOK, map[string]any{"kind": "request", "device": g.device}
+		}
+	})
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, status, answer)
+}
+
+// qrAnswer: the logged-in device of the two confirms or refuses: an
+// offer's owner (its secret), a request's scanner (the token); both with
+// the session of the grant's account.
+func (a *Service) qrAnswer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Secret string `json:"secret"`
+		Yes    bool   `json:"yes"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	acc, logged := a.AccountFor(r)
+	status := http.StatusNotFound
+	a.qr.with(req.Secret, a.Now(), func(g *qrGrant) {
+		answers := g.state == "scanned" && (g.offer && req.Secret == g.owner || !g.offer && req.Secret == g.token)
+		switch {
+		case !answers:
+		case !logged || acc.ID != g.account.ID:
+			status = http.StatusUnauthorized
+		case req.Yes:
+			g.state, status = "approved", http.StatusNoContent
+		default:
+			g.state, status = "refused", http.StatusNoContent
+		}
+	})
+	if status == http.StatusNoContent {
+		w.WriteHeader(status)
+		return
+	}
+	writeJSON(w, status, map[string]string{"error": map[int]string{
+		http.StatusNotFound:     "this code is not valid any more",
+		http.StatusUnauthorized: "log in as this account to answer",
+	}[status]})
+}
+
+// qrWait: a code's state for one of its devices; the one that logs in
+// takes its session here, once.
+func (a *Service) qrWait(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Secret string `json:"secret"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	answer := map[string]any{"state": "expired"}
+	var take *store.Account
+	a.qr.with(req.Secret, a.Now(), func(g *qrGrant) {
+		owner, claim := req.Secret == g.owner, g.claim != "" && req.Secret == g.claim
+		if !owner && !claim {
+			return // the token is no secret
+		}
+		answer = map[string]any{"state": g.state}
+		if owner && g.scanner != "" {
+			answer["device"] = g.scanner
+		}
+		if claim {
+			answer["device"] = g.device
+		}
+		// Whose session: the scanner's of an offer, the owner's of a request.
+		if g.state == "approved" && (claim || owner && !g.offer) {
+			acc := g.account
+			take = &acc
+			a.qr.drop(g)
+		}
+	})
+	if take == nil {
+		writeJSON(w, http.StatusOK, answer)
+		return
+	}
+	token, ok := a.startSession(w, r, *take)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, withToken(map[string]any{"state": "done", "name": take.Name}, token))
+}
