@@ -24,3 +24,11 @@ Fixes:
 - Go tests for the bridge grace; Rust compiles for macOS (no GUI test on
   the dev Mac); vitest for the media-session/rejoin logic.
 - Manual: the user (macOS app in the background) and a Linux/Android user.
+
+## Closed (2026-10-31)
+
+All three fixes are in since 2026-10-20 (bridge ping grace, macOS web view
+and App Nap, Android media session); the mobile apps keep voice in the
+background, and the resume fix hides short reconnects. No new reports.
+Closed without the manual check, at the user's word; open again if
+someone reports it.
