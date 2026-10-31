@@ -76,6 +76,12 @@ describe("pollState", () => {
     pollState(() => Promise.reject(new Error("offline")), (s) => (states.push(s.state), true), 100, Date.now() + 350);
     await vi.advanceTimersByTimeAsync(1000);
     expect(states).toEqual(["expired"]);
+
+    // A request that never answers: expired at the deadline too.
+    const hung: string[] = [];
+    pollState(() => new Promise<QrState>(() => {}), (s) => (hung.push(s.state), true), 100, Date.now() + 350);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(hung).toEqual(["expired"]);
     vi.useRealTimers();
   });
 });

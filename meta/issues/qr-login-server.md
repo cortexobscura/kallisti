@@ -21,5 +21,5 @@
 
 ## Acceptance Criteria
 
-- Go tests: both directions, refusals, expiry, single use, guests, wrong
+- [x] Go tests: both directions, refusals, expiry, single use, guests, wrong
   secrets, an owner logged out meanwhile, limits.

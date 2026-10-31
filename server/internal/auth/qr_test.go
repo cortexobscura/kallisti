@@ -242,6 +242,18 @@ func TestQRLoginRevoked(t *testing.T) {
 			t.Errorf("after the logout: %v", got)
 		}
 	}
+	// The offer's owner sees it refused, not done.
+	if _, got := post(t, srv, "/api/qr/wait", map[string]string{"secret": owner}, nil); got["state"] != "refused" {
+		t.Errorf("owner: %v", got)
+	}
+}
+
+// Bodies are small (also unauthenticated ones).
+func TestQRBodyLimit(t *testing.T) {
+	_, srv := setup(t)
+	if resp, _ := post(t, srv, "/api/qr/wait", map[string]string{"secret": strings.Repeat("a", 1<<20)}, nil); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("a large body: %d", resp.StatusCode)
+	}
 }
 
 // Taking a session needs a device without one (as scanning does).

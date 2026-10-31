@@ -32,7 +32,8 @@
   let other = $state(""); // the other device
   let error = $state("");
   let stop = () => {};
-  onDestroy(() => stop());
+  let gone = false;
+  onDestroy(() => ((gone = true), stop()));
 
   // Its state, until it ends.
   const follow = (c: QrStart) =>
@@ -60,7 +61,9 @@
     phase = "loading";
     other = "";
     try {
-      code = await api.qrStart(device);
+      const made = await api.qrStart(device);
+      if (gone) return;
+      code = made;
       phase = "showing";
       stop = follow(code);
     } catch (err) {

@@ -34,7 +34,8 @@
   let other = $state("");
   let error = $state("");
   let stop = () => {};
-  onDestroy(() => stop());
+  let gone = false;
+  onDestroy(() => ((gone = true), stop()));
 
   const failed = (err: unknown, scanning: boolean) => {
     const status = apiStatus(err);
@@ -53,6 +54,7 @@
   // Once, as it opens (a code is scanned once).
   void untrack(() => api.qrScan(token, device)).then(
     (s) => {
+      if (gone) return; // closed while it was read: no login after all
       other = s.device;
       if (s.kind === "request") return void (phase = "ask");
       phase = "waiting";

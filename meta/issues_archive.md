@@ -331,3 +331,5 @@
 - [x] [Friends in the member list; collapsible member groups](issues/friends-in-member-list.md)
 - [x] [Large GIFs: an MP4 preview, shown like a picture](issues/gif-video-previews.md)
 - [x] [Fixes from the multi-server branch that main could use](issues/hardening-from-multi-server.md) (merged with the branch)
+- [x] [QR login: server grants](issues/qr-login-server.md)
+- [x] [QR login: web](issues/qr-login-web.md)

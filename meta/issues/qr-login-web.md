@@ -13,5 +13,5 @@
 
 ## Acceptance Criteria
 
-- Vitest for the pure parts; Playwright with two browsers, both
+- [x] Vitest for the pure parts; Playwright with two browsers, both
   directions.

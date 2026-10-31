@@ -39,7 +39,7 @@ type qrGrant struct {
 	claim   string        // an offer's scanner's secret
 	device  string        // the showing device's name
 	scanner string        // the scanning device's name
-	state   string        // waiting, scanned, approved, refused, done (an offer's, for its owner)
+	state   string        // waiting, scanned, approved, taking (its session being made), refused, done (an offer's, for its owner)
 	voucher string        // the approving session's key: the new one only while it is valid
 	expires time.Time
 }
@@ -103,9 +103,9 @@ func deviceName(s string) (string, bool) {
 	return s, n > 0 && n <= maxDeviceName && !strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) })
 }
 
-// readJSON reads a request's body (limited in ServeHTTP).
+// readJSON reads a small request body (also unauthenticated ones).
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(v); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return false
 	}
@@ -249,6 +249,9 @@ func (a *Service) qrWait(w http.ResponseWriter, r *http.Request) {
 			return // the token is no secret
 		}
 		answer = map[string]any{"state": g.state}
+		if g.state == "taking" {
+			answer["state"] = "approved"
+		}
 		if owner && g.scanner != "" {
 			answer["device"] = g.scanner
 		}
@@ -264,15 +267,7 @@ func (a *Service) qrWait(w http.ResponseWriter, r *http.Request) {
 			status, answer = http.StatusConflict, map[string]any{"error": "log out on this device first"}
 			return
 		}
-		taken := *g
-		take = &taken
-		if claim {
-			g.state = "done"
-			delete(a.qr.by, g.claim)
-			delete(a.qr.by, g.token)
-		} else {
-			a.qr.forget(g)
-		}
+		g.state, take = "taking", g // once: no other wait takes it now
 	})
 	if take == nil {
 		writeJSON(w, status, answer)
@@ -280,6 +275,19 @@ func (a *Service) qrWait(w http.ResponseWriter, r *http.Request) {
 	}
 	token := randomHex(32)
 	err := a.Store.CreateSessionVouched(tokenHash(token), take.account.ID, a.Now().Add(sessionLifetime), take.voucher, a.Now())
+	// Only then its end shows: an offer's owner sees it done (or refused).
+	a.qr.mu.Lock()
+	switch {
+	case err != nil:
+		take.state = "refused"
+	case take.offer:
+		take.state = "done"
+		delete(a.qr.by, take.claim)
+		delete(a.qr.by, take.token)
+	default:
+		a.qr.forget(take)
+	}
+	a.qr.mu.Unlock()
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusOK, map[string]any{"state": "refused"})
 		return

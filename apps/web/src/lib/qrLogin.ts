@@ -73,14 +73,16 @@ export const pollState = (wait: () => Promise<QrState>, onState: (s: QrState) =>
   let timer: ReturnType<typeof setTimeout> | undefined;
   const tick = () => {
     timer = setTimeout(async () => {
-      if (Date.now() > until) return void (stopped || onState({ state: "expired" }));
+      const left = until - Date.now();
+      if (left <= 0) return void (stopped || onState({ state: "expired" }));
       let st: QrState;
       try {
-        st = await wait();
+        // A request that hangs ends at the deadline too.
+        st = await Promise.race([wait(), new Promise<QrState>((done) => setTimeout(() => done({ state: "expired" }), left))]);
       } catch {
         return stopped || tick();
       }
-      if (!stopped && onState(st)) tick();
+      if (!stopped && onState(st) && Date.now() < until) tick();
     }, ms);
   };
   tick();

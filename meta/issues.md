@@ -31,6 +31,4 @@
   - [ ] [Webhooks: web client](issues/webhooks-web.md)
   - [ ] [Webhooks: picture](issues/webhooks-picture.md)
 - [ ] [Log in with a QR code](issues/qr-login.md)
-  - [ ] [QR login: server grants](issues/qr-login-server.md)
-  - [ ] [QR login: web](issues/qr-login-web.md)
   - [ ] [QR login: the apps' scanner](issues/qr-login-apps.md)
