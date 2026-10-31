@@ -109,7 +109,9 @@
   import { isMentionAll, mentionNames, pingsMe, replyPing } from "../lib/mentions";
   import { blockedUsers, channelLists, channelPrefs, collapsedCategories, directPrefs, settings, userAudio } from "../lib/settings.svelte";
   import { textGroups, textOrder } from "../lib/categories";
-  import { befriendable } from "../lib/friends";
+  import { befriendable, type FriendRow } from "../lib/friends";
+  import { collapsedMemberGroups } from "../lib/settings.svelte";
+  import FriendMenu from "./FriendMenu.svelte";
   import { keepShown, moveOwn, ownView, pruned, shownBeside, toggleHidden, voiceBeside, type ChannelList, type ListKind } from "../lib/channelList";
   import { forgetPref, isMuted, mutedIds, notifies, prefOf, pushLists, setThreadPref, withoutMuted, withParents, type ChannelPref } from "../lib/channelPrefs";
   import { closeDirect, quietDirects, reopenDirect, togglePin, visibleDirects } from "../lib/directList";
@@ -235,8 +237,17 @@
     // message opens; onLinkUsed once done.
     link?: string | null;
     onLinkUsed?: () => void;
-    // This server's registered users in my friends list (see lib/friends).
-    friends?: { has: (user: number) => boolean; toggle: (user: number, name: string) => void };
+    // My friends list (see lib/friends): this server's users in it, all of
+    // them with where they are (on top of the member list), a direct chat
+    // on another server of the rail (canMessage: one with a login here).
+    friends?: {
+      has: (user: number) => boolean;
+      toggle: (user: number, name: string) => void;
+      rows: readonly FriendRow[];
+      canMessage: (origin: string) => boolean;
+      message: (origin: string, user: number) => void;
+      remove: (origin: string, user: number) => void;
+    };
     // An invite link clicked here (any server's): true, the caller takes it.
     onInvite?: (url: string) => boolean;
     // A message, chat or voice link of another server in the rail: shown
@@ -1204,6 +1215,17 @@
     event.preventDefault();
     menu = { userId, ...menuAnchor(event, (event.currentTarget as Element).getBoundingClientRect()) };
   };
+  // A friend in the member list: one of this server opens its member menu,
+  // one elsewhere a small menu (a direct chat there, remove).
+  let friendMenu = $state<{ row: FriendRow; x: number; y: number } | null>(null);
+  const openFriend = (row: FriendRow, event: MouseEvent) => {
+    if (row.friend.origin === site) {
+      const online = Object.values(server.users).find((u) => u.userId === row.friend.user);
+      return online ? openMenu(online.session, event) : openMemberMenu(row.friend.user, event);
+    }
+    event.preventDefault();
+    friendMenu = { row, ...menuAnchor(event, (event.currentTarget as Element).getBoundingClientRect()) };
+  };
   $effect(() => {
     if (memberMenuId !== null) connection.requestBio(memberMenuId);
   });
@@ -1788,6 +1810,19 @@
     onMove={(step) => channels.move(m.kind, m.id, step)}
     onDelete={() => channels.startDelete(m.kind, m.id)}
     onClose={channels.closeMenu}
+  />
+{/if}
+
+{#if friendMenu && friends}
+  {@const f = friendMenu.row.friend}
+  <FriendMenu
+    name={f.name}
+    server={friendMenu.row.server ?? new URL(f.origin).host}
+    x={friendMenu.x}
+    y={friendMenu.y}
+    onMessage={friends.canMessage(f.origin) ? () => friends.message(f.origin, f.user) : undefined}
+    onRemove={() => friends.remove(f.origin, f.user)}
+    onClose={() => (friendMenu = null)}
   />
 {/if}
 
@@ -2394,6 +2429,11 @@
       {readers}
       voiceFirst={view.kind === "voice"}
       onMemberMenu={openMemberMenu}
+      friends={friends?.rows ?? []}
+      friendsHere={site}
+      onFriend={openFriend}
+      collapsed={collapsedMemberGroups.value}
+      onToggleGroup={collapsedMemberGroups.toggle}
       here={users.filter((u) => u.channelId === channelId)}
       elsewhere={users.filter((u) => u.channelId !== channelId)}
     />

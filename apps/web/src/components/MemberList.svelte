@@ -5,6 +5,7 @@
   import type { User } from "@kallisti/protocol";
   import type { Peer } from "../lib/textChannels";
   import { onlineRows, readerRow, type OnlineMember, type ReaderGroup, type ReaderRow } from "../lib/members";
+  import type { FriendRow } from "../lib/friends";
   import Avatar from "./Avatar.svelte";
   import Badge from "./Badge.svelte";
   import Emoji from "./Emoji.svelte";
@@ -25,6 +26,11 @@
     roleOf = () => null,
     statusOf = () => ({ presence: "online", custom: null }),
     inert = false,
+    friends = [],
+    friendsHere = "",
+    onFriend = () => {},
+    collapsed = [],
+    onToggleGroup,
   }: {
     here: User[];
     elsewhere: User[];
@@ -45,7 +51,17 @@
     roleOf?: (user: Pick<User, "userId">) => Tag | null;
     statusOf?: (session: number) => UserStatus;
     inert?: boolean;
+    // My friends from all my servers (see lib/friends), on top; those of
+    // this server (its origin: friendsHere) without the server's name.
+    friends?: readonly FriendRow[];
+    friendsHere?: string;
+    onFriend?: (row: FriendRow, event: MouseEvent) => void;
+    // Collapsed groups by key (see lib/memberGroups); undefined: none
+    // collapse.
+    collapsed?: readonly string[];
+    onToggleGroup?: (key: string) => void;
   } = $props();
+  const shut = (key: string) => collapsed.includes(key);
 </script>
 
 <!-- Offline users: faded, no status (Discord hides their custom one). -->
@@ -67,11 +83,26 @@
   </li>
 {/snippet}
 
+<!-- A group's heading: a button that collapses it. -->
+{#snippet heading(key: string, title: string, count: number)}
+  <h2>
+    {#if onToggleGroup}
+      <button class="group" aria-expanded={!shut(key)} onclick={() => onToggleGroup(key)}>
+        <svg class="chevron" class:shut={shut(key)} width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        {title} — {count}
+      </button>
+    {:else}
+      {title} — {count}
+    {/if}
+  </h2>
+{/snippet}
+
 <!-- A group: users we see, members online in channels we cannot see
      (without a channel), offline members. -->
-{#snippet rows(title: string, list: ReaderRow<User>[])}
+{#snippet rows(key: string, title: string, list: ReaderRow<User>[])}
   {#if list.length}
-    <h2>{title} — {list.length}</h2>
+    {@render heading(key, title, list.length)}
+    {#if !shut(key)}
     <ul>
       {#each list as r (readerRow(r).key)}
         {#if "user" in r}
@@ -86,19 +117,45 @@
         {/if}
       {/each}
     </ul>
+    {/if}
+  {/if}
+{/snippet}
+
+<!-- Friends: online ones first; where they are below the name. -->
+{#snippet friendRows()}
+  {#if friends.length}
+    {@render heading("friends", "Friends", friends.length)}
+    {#if !shut("friends")}
+      <ul aria-label="Friends">
+        {#each friends as r (`${r.friend.origin} ${r.friend.user}`)}
+          {@const elsewhere = r.friend.origin !== friendsHere}
+          {@const where = [elsewhere ? (r.server ?? new URL(r.friend.origin).host) : "", r.voice ? `in ${r.voice}` : ""].filter(Boolean).join(" · ")}
+          <li>
+            <button class="hover-row" class:offline={!r.online} onclick={(e) => onFriend(r, e)} oncontextmenu={(e) => onFriend(r, e)}>
+              <Avatar name={r.friend.name} size={32} status={r.online ? "online" : undefined} registered={!r.online} />
+              <span class="who">
+                <span class="line"><span class="ellipsis"><UserName name={r.friend.name} /></span></span>
+                {#if where}<span class="custom ellipsis">{where}</span>{/if}
+              </span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
 {/snippet}
 
 <aside aria-label="Members" {inert}>
+  {@render friendRows()}
   {#if readers}
-    {#if voiceFirst}{@render rows(`In ${channelName}`, onlineRows(here, []))}{/if}
+    {#if voiceFirst}{@render rows("here", `In ${channelName}`, onlineRows(here, []))}{/if}
     {#each readers as g (g.title)}
-      {@render rows(g.title, g.rows)}
+      {@render rows(`readers ${g.title}`, g.title, g.rows)}
     {/each}
   {:else}
-    {@render rows(`In ${channelName}`, onlineRows(here, []))}
-    {@render rows("Online", onlineRows(elsewhere, hidden))}
-    {@render rows("Offline", offline.map((p) => ({ offline: p })))}
+    {@render rows("here", `In ${channelName}`, onlineRows(here, []))}
+    {@render rows("online", "Online", onlineRows(elsewhere, hidden))}
+    {@render rows("offline", "Offline", offline.map((p) => ({ offline: p })))}
   {/if}
 </aside>
 
@@ -120,12 +177,31 @@
   h2:first-child {
     margin-top: 8px;
   }
+  .group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    color: inherit;
+  }
+  .group:hover {
+    color: var(--text);
+  }
+  .chevron {
+    transition: transform 0.1s;
+  }
+  .chevron.shut {
+    transform: rotate(-90deg);
+  }
   ul {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-  button {
+  .hover-row {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -139,7 +215,7 @@
     font-weight: 500;
     text-align: left;
   }
-  button:hover {
+  .hover-row:hover {
     --avatar-cutout: var(--bg-hover);
   }
   .who {

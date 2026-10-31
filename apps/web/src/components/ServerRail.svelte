@@ -8,22 +8,10 @@
 
   // Several servers in one client (see lib/serverList): a click shows one,
   // (+) adds one; without onAdd, no (+).
-  // onFriends: the friends list (see lib/friends), above the servers.
-  let {
-    servers,
-    onSelect,
-    onAdd,
-    onFriends,
-  }: { servers: readonly RailServer[]; onSelect?: (id: string) => void; onAdd?: () => void; onFriends?: () => void } = $props();
+  let { servers, onSelect, onAdd }: { servers: readonly RailServer[]; onSelect?: (id: string) => void; onAdd?: () => void } = $props();
 </script>
 
 <nav class="rail" aria-label="Servers">
-  {#if onFriends}
-    <div class="item">
-      <button class="server friends" title="Friends" aria-label="Friends" onclick={onFriends}><Icon name="friends" size={26} /></button>
-    </div>
-    <div class="sep" aria-hidden="true"></div>
-  {/if}
   {#each servers as s (s.id)}
     {@const mentions = s.active ? 0 : (s.mentions ?? 0)}
     <div class="item">
@@ -56,12 +44,6 @@
     gap: 8px;
     padding: 12px 0;
     background: var(--bg-rail);
-  }
-  .sep {
-    width: 32px;
-    height: 2px;
-    border-radius: 1px;
-    background: var(--border-subtle);
   }
   .item {
     position: relative;
@@ -134,8 +116,7 @@
     object-fit: cover;
   }
   /* An icon, not a "+": a character's height depends on the font. */
-  .add,
-  .friends {
+  .add {
     display: grid;
     place-items: center;
     color: var(--accent);

@@ -4,7 +4,6 @@
   import Authorize from "./components/Authorize.svelte";
   import Connect from "./components/Connect.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
-  import FriendsDialog from "./components/FriendsDialog.svelte";
   import { createFriends } from "./lib/friends.svelte";
   import { friendPresence, isFriend, type FriendServer } from "./lib/friends";
   import { dmLink } from "./lib/messageLink";
@@ -448,9 +447,14 @@
   const friendsOn = (origin: string) => ({
     has: (user: number) => isFriend(friends.list, origin, user),
     toggle: (user: number, name: string) => (isFriend(friends.list, origin, user) ? friends.remove(origin, user) : friends.add({ origin, user, name })),
+    get rows() {
+      return friendRows;
+    },
+    canMessage,
+    message: (o: string, user: number) => void links.openMessageLink(dmLink(o, user)),
+    remove: (o: string, user: number) => friends.remove(o, user),
   });
   // Where friends are: what the rail's servers show (nobody else tells).
-  let showFriends = $state(false);
   const friendRows = $derived.by(() => {
     // A lost connection tells nothing (its last state is old).
     const view = (origin: string, c: Connection | null, name: string): FriendServer[] =>
@@ -678,7 +682,6 @@
     servers={railServers}
     onSelect={selectServer}
     onAdd={owner !== null ? () => (addingFor = { owner: owner! }) : undefined}
-    onFriends={owner !== null ? () => (showFriends = true) : undefined}
   />
 {/snippet}
 <!-- A screen without the client, with the rail if there are servers to switch to. -->
@@ -778,16 +781,6 @@
 {/if}
 
 <div class="status-bar" aria-hidden="true"></div>
-
-{#if showFriends}
-  <FriendsDialog
-    rows={friendRows}
-    {canMessage}
-    onMessage={(origin, user) => links.openMessageLink(dmLink(origin, user))}
-    onRemove={(origin, user) => friends.remove(origin, user)}
-    onClose={() => (showFriends = false)}
-  />
-{/if}
 
 {#if fediNotice}<Toast text={fediNotice} />{/if}
 {#key friendsNotice}{#if friendsNotice}<Toast text={friendsNotice} />{/if}{/key}

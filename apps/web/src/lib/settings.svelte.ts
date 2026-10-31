@@ -1,3 +1,4 @@
+import { parseCollapsedGroups, toggleGroup } from "./memberGroups";
 import { deviceListOf, parseDeviceLists, setDeviceList, type ChannelList } from "./channelList";
 import { isBlocked, parseBlocked, toggleBlocked } from "./blocked";
 import { collapsedIn, parseCollapsed, toggleCollapsed } from "./categories";
@@ -52,6 +53,15 @@ const channelListStore = persisted("channelLists", parseDeviceLists);
 export const channelLists = {
   of: (server: string) => deviceListOf(channelListStore.value, server),
   set: (server: string, list: ChannelList) => channelListStore.set(setDeviceList(channelListStore.value, server, list)),
+};
+
+// The member list's collapsed groups (see lib/memberGroups).
+const memberGroupsStore = persisted("collapsedMemberGroups", parseCollapsedGroups);
+export const collapsedMemberGroups = {
+  get value() {
+    return memberGroupsStore.value;
+  },
+  toggle: (key: string) => memberGroupsStore.set(toggleGroup(memberGroupsStore.value, key)),
 };
 
 const directStore = persisted("directChats", parseDirectPrefs);
