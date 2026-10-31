@@ -61,7 +61,8 @@ func previewJob(u store.Upload, dir string, f thumbs.Format, video bool) (thumbs
 	return j, pixels > 0 && big && (f.Alpha || u.Type == "image/jpeg")
 }
 
-// job is an upload's preview job (with a JPEG's Exif orientation).
+// job is an upload's preview job (with a JPEG's Exif orientation; none
+// for a GIF that shows transparency).
 func (h *Handler) job(u store.Upload) (thumbs.Job, bool) {
 	if h.Previews == nil || !plainKey(u.Key) {
 		return thumbs.Job{}, false
@@ -73,6 +74,15 @@ func (h *Handler) job(u store.Upload) (thumbs.Job, bool) {
 			j.Orientation = mediasize.ExifOrientation(f, st.Size())
 			f.Close()
 		}
+	}
+	// A GIF that shows transparency stays a GIF (its video would be boxed).
+	if ok && j.Video {
+		f, err := os.Open(j.Src)
+		if err != nil {
+			return j, false
+		}
+		defer f.Close()
+		ok = !gifShowsTransparency(f)
 	}
 	return j, ok
 }

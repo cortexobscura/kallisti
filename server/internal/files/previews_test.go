@@ -192,6 +192,24 @@ func TestGIFGetsAVideoPreview(t *testing.T) {
 	}
 }
 
+// A GIF that shows transparency stays a GIF (a video has none: a box).
+func TestTransparentGIFGetsNoVideo(t *testing.T) {
+	_, _, h := setupHandler(t, 1<<20)
+	withPreviews(t, h, `printf mp4 > "$out"`)
+	write := func(key string, p color.Palette) store.Upload {
+		var b bytes.Buffer
+		gif.Encode(&b, image.NewPaletted(image.Rect(0, 0, 1700, 100), p), nil)
+		os.WriteFile(filepath.Join(h.Dir, key), b.Bytes(), 0o600)
+		return store.Upload{Key: key, Type: "image/gif", Size: int64(b.Len()), Media: store.Media{Width: 1700, Height: 100}}
+	}
+	if _, ok := h.job(write("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", color.Palette{color.Black, color.White})); !ok {
+		t.Error("opaque gif: no video")
+	}
+	if _, ok := h.job(write("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", color.Palette{color.Transparent, color.White})); ok {
+		t.Error("transparent gif: a video")
+	}
+}
+
 func TestJXLIsADownloadWithAPreview(t *testing.T) {
 	srv, s, h := setupHandler(t, 1<<20)
 	ready := withPreviews(t, h, `head -c 5000 /dev/zero > "$out"`)

@@ -376,7 +376,7 @@ func startPreviews(ctx context.Context, cfg config.Config, h *files.Handler) {
 		log("media previews off: no usable ffmpeg", "err", err)
 		return
 	}
-	slog.Info("media previews on", "ffmpeg", tool.Command[len(tool.Command)-1], "format", tool.Format.Type)
+	slog.Info("media previews on", "ffmpeg", tool.Command[len(tool.Command)-1], "format", tool.Format.Type, "gif_videos", tool.Video)
 	h.Previews = thumbs.New(ctx, tool, previewWorkers, previewQueue)
 	go h.MakeMissingPreviews(ctx)
 }

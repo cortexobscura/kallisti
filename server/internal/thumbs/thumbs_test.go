@@ -47,7 +47,7 @@ func TestArgs(t *testing.T) {
 		// A GIF's video: all frames, even sides (H.264), no sound, playable
 		// while it loads.
 		{"gif as a video", WebP, Job{Type: "image/gif", Max: 640, Video: true},
-			[]string{"-f gif -i", "min(640,iw)", "force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2", "-an -sn -dn", "-c:v libx264 -threads 1 -pix_fmt yuv420p -crf 26 -preset slow -movflags +faststart -f mp4 -y"},
+			[]string{"-f gif -i", "min(640,iw)", "force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2", "-an -sn -dn", "-c:v libx264 -threads 1 -enc_time_base 1/100 -fs 8388608 -pix_fmt yuv420p -crf 26 -preset slow -movflags +faststart -f mp4 -y"},
 			[]string{"-frames:v", "libwebp"}},
 	} {
 		got := strings.Join(Args(c.format, c.job, "/tmp/o"), " ")
@@ -393,6 +393,19 @@ func TestRealFFmpeg(t *testing.T) {
 	f, _ := os.ReadFile(job.Dst)
 	if got := mediasize.Probe(bytes.NewReader(f), int64(len(f)), ctype); err != nil || ctype != "video/mp4" || got.Width != 640 || got.Height != 320 {
 		t.Errorf("gif: %s %+v %v", ctype, got, err)
+	}
+	// Frames of their own lengths (GIF delays are hundredths of a second):
+	// all kept, the video as long as the GIF (2.57 s), not on a guessed
+	// frame rate.
+	frames.Delay = []int{2, 2, 200, 3, 50}
+	frames.Image = append(frames.Image, frames.Image[0], frames.Image[1])
+	b.Reset()
+	gif.EncodeAll(&b, frames)
+	os.WriteFile(filepath.Join(dir, "gif"), b.Bytes(), 0o600)
+	_, err = m.Make(t.Context(), job)
+	f, _ = os.ReadFile(job.Dst)
+	if got := mediasize.Probe(bytes.NewReader(f), int64(len(f)), "video/mp4"); err != nil || got.Duration < 2540 || got.Duration > 2600 {
+		t.Errorf("gif of mixed delays: %+v %v", got, err)
 	}
 }
 

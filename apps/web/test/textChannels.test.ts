@@ -691,3 +691,11 @@ describe("the own channel list", () => {
     expect(reduceText(s, parseServerEvent(JSON.stringify({ type: "ready", channels: [] }))!).channelList).toBeNull();
   });
 });
+
+describe("attachments", () => {
+  it("keep the preview's type (a GIF's video)", () => {
+    const upload = { url: "/files/k/a.gif", name: "a.gif", type: "image/gif", size: 5, preview: "/files/k/a.gif?preview", previewType: "video/mp4" };
+    const ev = parseServerEvent(JSON.stringify({ type: "message", message: { id: 1, channel: 1, author: "a", text: "", at: 1, uploads: [upload] } }));
+    expect(ev?.type === "message" ? ev.message.uploads?.[0]?.previewType : null).toBe("video/mp4");
+  });
+});

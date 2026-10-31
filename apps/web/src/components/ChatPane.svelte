@@ -1,7 +1,7 @@
 <script lang="ts">
   import UserName from "./UserName.svelte";
   import { autosize } from "../lib/autosize";
-  import { afterImageError, asSpoiler, attachmentView, chatSrc, imageBox, lightboxOf } from "../lib/media";
+  import { afterImageError, asSpoiler, attachmentView, chatSrc, chatVideo, imageBox, lazyVideo, lightboxOf } from "../lib/media";
   import { emojiImages } from "../lib/emojiImages.svelte";
   import Emoji from "./Emoji.svelte";
   import EmojiPicker from "./EmojiPicker.svelte";
@@ -540,6 +540,8 @@
   const hideAgain = (u: Shown) => (shownFiles = new Set([...shownFiles].filter((url) => url !== u.url)));
   // Attachments that cannot play or show (see attachmentView): files.
   let unplayable = $state(new Set<string>());
+  // GIFs whose video failed (see lib/media chatVideo): the GIF instead.
+  let gifVideoFailed = $state(new Set<string>());
 
   // Suggestions while typing "@name", "#channel" or ":emoji" (see
   // lib/suggest, lib/combobox).
@@ -1726,6 +1728,24 @@
 <!-- fill: the picture fills its grid cell (the cell keeps the size). -->
 {#snippet picture(u: Attachment, alt: string, fill = false)}
   {@const box = fill ? null : imageBox(u)}
+  {@const video = gifVideoFailed.has(u.url) ? null : chatVideo(u)}
+  {#if video}
+    <!-- A large GIF's video, shown like the picture (the link or button
+         around it names it; the lightbox has the GIF). -->
+    <video
+      muted
+      loop
+      playsinline
+      disablepictureinpicture
+      disableremoteplayback
+      aria-hidden="true"
+      style:width={box && `${box.width}px`}
+      style:aspect-ratio={box && `auto ${u.width} / ${u.height}`}
+      onloadeddata={keepBottom}
+      onerror={() => (gifVideoFailed = new Set([...gifVideoFailed, u.url]))}
+      {@attach lazyVideo(video, () => (gifVideoFailed = new Set([...gifVideoFailed, u.url])))}
+    ></video>
+  {:else}
   <img
     src={chatSrc(u)}
     {alt}
@@ -1740,6 +1760,7 @@
       else unplayable = new Set([...unplayable, u.url]);
     }}
   />
+  {/if}
 {/snippet}
 
 <!-- Two or more pictures as a grid (see lib/fileGrid), the other files
@@ -2171,7 +2192,8 @@
     color: inherit;
     cursor: pointer;
   }
-  .spoiler-file img {
+  .spoiler-file img,
+  .spoiler-file video {
     grid-area: 1 / 1;
     max-width: 100%;
     max-height: 300px;
@@ -2663,7 +2685,9 @@
     border-radius: 0;
   }
   .cell .image img,
-  .cell .spoiler-file img {
+  .cell .image video,
+  .cell .spoiler-file img,
+  .cell .spoiler-file video {
     width: 100%;
     height: 100%;
     max-width: none;
@@ -2673,7 +2697,8 @@
   }
   /* The largest box: in step with imageBox (lib/media). contain: a
      picture whose ratio differs from the server's is not squashed. */
-  .image img {
+  .image img,
+  .image video {
     display: block;
     max-width: min(400px, 100%);
     max-height: 300px;

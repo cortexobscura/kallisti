@@ -104,6 +104,12 @@ func Args(f Format, j Job, out string) []string {
 	a = append(a, "-f", demuxers[j.Type], "-i", "file:"+j.Src)
 	a = append(a, frames...)
 	a = append(a, "-an", "-sn", "-dn", "-vf", vf, "-c:v", f.Codec, "-threads", "1")
+	if j.Video {
+		// GIF delays are hundredths of a second: each frame keeps its own
+		// (not a guessed frame rate, which drops and moves frames). And
+		// no file over the limit, not even while encoding.
+		a = append(a, "-enc_time_base", "1/100", "-fs", strconv.Itoa(maxOutput))
+	}
 	if f.Args != nil {
 		a = append(a, f.Args...)
 	} else if f.Alpha && j.Type != "image/jpeg" && strings.HasPrefix(j.Type, "image/") {

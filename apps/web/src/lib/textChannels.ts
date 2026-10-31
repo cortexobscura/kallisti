@@ -32,7 +32,8 @@ import { followedThreads, isThread, isThreads, withThreads, type Thread, type Th
 export type TextChannel = { id: number; name: string; mumble?: number; topic?: string; slowMode?: number; category?: number };
 // width, height: pixels (as shown); duration: milliseconds. Missing when
 // the server does not know them.
-// preview: a smaller picture (see lib/media chatSrc), once the server made one.
+// preview: a smaller picture (see lib/media chatSrc), once the server made one;
+// previewType: its type (video/mp4: a large GIF's video, see chatVideo).
 // description: the alt text. A spoiler's name starts with "SPOILER_" (see
 // lib/media spoilerUpload).
 export type Attachment = {
@@ -44,6 +45,7 @@ export type Attachment = {
   height?: number;
   duration?: number;
   preview?: string;
+  previewType?: string;
   description?: string;
 };
 export type TextMessage = {
@@ -525,6 +527,7 @@ const isAttachment = (v: unknown): v is Attachment =>
   optSize(v.height) &&
   optSize(v.duration) &&
   optStr(v.preview) &&
+  optStr(v.previewType) &&
   optStr(v.description);
 const isPreview = (v: unknown): v is LinkPreview =>
   isObj(v) &&

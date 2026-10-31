@@ -57,8 +57,14 @@ export const imageBox = ({ width, height }: Sized, max = { width: 400, height: 3
 
 // The server's smaller picture (made with ffmpeg, if it has it): a large
 // picture's in the chat (the original opens in the lightbox), a video's
-// poster.
-export const chatSrc = (u: { url: string; preview?: string }) => u.preview ?? u.url;
+// poster. A GIF's video is not a picture (see chatVideo).
+export const chatSrc = (u: { url: string; preview?: string; previewType?: string }) =>
+  u.preview !== undefined && !u.previewType?.startsWith("video/") ? u.preview : u.url;
+
+// A large GIF's video (about a tenth of the GIF), shown like the picture:
+// playing, looping, muted, without controls; null: none.
+export const chatVideo = (u: { type?: string; preview?: string; previewType?: string }) =>
+  u.preview !== undefined && u.type?.startsWith("image/") && u.previewType?.startsWith("video/") ? u.preview : null;
 
 // A video with a poster loads nothing until played; without one its
 // metadata and first frame.
@@ -90,6 +96,28 @@ export const releaseMedia = (el: HTMLMediaElement) => {
 
 // As a Svelte attachment: {@attach releaseOnDestroy}.
 export const releaseOnDestroy = (el: HTMLMediaElement) => () => releaseMedia(el);
+
+// A GIF's video (see chatVideo), as a Svelte attachment: loaded and played
+// only near the screen (as lazy pictures; a long chat has many), paused
+// out of view. A refused play (autoplay not allowed: iOS Low Power Mode):
+// onRefused (the GIF instead); an interrupted one (paused meanwhile) is
+// nothing.
+export const lazyVideo = (src: string, onRefused: () => void) => (el: HTMLVideoElement) => {
+  const io = new IntersectionObserver(
+    ([entry]) => {
+      if (!entry?.isIntersecting) return el.pause();
+      if (!el.src) el.src = src;
+      el.muted = true; // before play, for iOS
+      el.play().catch((err: unknown) => (err as { name?: string } | null)?.name === "NotAllowedError" && onRefused());
+    },
+    { rootMargin: "300px" },
+  );
+  io.observe(el);
+  return () => {
+    io.disconnect();
+    releaseMedia(el);
+  };
+};
 
 // Spoiler attachments are marked by name, as in Discord (no extra field on
 // the server); they show without the prefix, hidden until clicked.

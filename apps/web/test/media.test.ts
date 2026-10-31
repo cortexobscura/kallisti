@@ -4,9 +4,11 @@ import {
   asSpoiler,
   attachmentView,
   chatSrc,
+  chatVideo,
   downloadUrl,
   formatDuration,
   imageBox,
+  lazyVideo,
   lightboxOf,
   mediaKind,
   mediaRatio,
@@ -21,6 +23,16 @@ describe("previews", () => {
   it("show a picture's preview in the chat, else the picture", () => {
     expect(chatSrc({ url: "/files/k/a.png", preview: "/files/k/a.png?preview" })).toBe("/files/k/a.png?preview");
     expect(chatSrc({ url: "/files/k/a.png" })).toBe("/files/k/a.png");
+  });
+
+  it("show a large GIF's video like a picture (a picture never gets the video)", () => {
+    const gif = { url: "/files/k/a.gif", type: "image/gif", preview: "/files/k/a.gif?preview", previewType: "video/mp4" };
+    expect(chatVideo(gif)).toBe("/files/k/a.gif?preview");
+    expect(chatSrc(gif)).toBe("/files/k/a.gif");
+    expect(chatVideo({ type: "image/png", preview: "/files/k/a.png?preview", previewType: "image/webp" })).toBeNull();
+    // A video's preview is its poster, not a video to show.
+    expect(chatVideo({ type: "video/mp4", preview: "/files/k/v.mp4?preview", previewType: "image/webp" })).toBeNull();
+    expect(chatVideo({ type: "image/gif" })).toBeNull();
   });
 
   it("give a video a poster and load it only when played", () => {
@@ -177,5 +189,51 @@ describe("media players", () => {
     onlyOne(b);
     expect(a.pause).toHaveBeenCalledOnce();
     releaseMedia(b);
+  });
+});
+
+describe("lazyVideo", () => {
+  // A stub observer the test drives.
+  let seen: ((entries: { isIntersecting: boolean }[]) => void) | null = null;
+  class FakeObserver {
+    constructor(cb: (entries: { isIntersecting: boolean }[]) => void) {
+      seen = cb;
+    }
+    observe() {}
+    disconnect() {
+      seen = null;
+    }
+  }
+  const video = (play: () => Promise<void>) => ({ src: "", muted: false, play: vi.fn(play), pause: vi.fn(), removeAttribute: vi.fn(), load: vi.fn() });
+
+  it("loads and plays only near the screen, pauses out of view", async () => {
+    vi.stubGlobal("IntersectionObserver", FakeObserver);
+    const el = video(async () => {});
+    const stop = lazyVideo("/v.mp4", () => {})(el as unknown as HTMLVideoElement);
+    expect(el.src).toBe("");
+    seen!([{ isIntersecting: true }]);
+    expect(el.src).toBe("/v.mp4");
+    expect(el.muted).toBe(true);
+    expect(el.play).toHaveBeenCalled();
+    seen!([{ isIntersecting: false }]);
+    expect(el.pause).toHaveBeenCalled();
+    stop();
+    expect(seen).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it("a refused play (no autoplay allowed): the GIF instead; an interrupted one: nothing", async () => {
+    vi.stubGlobal("IntersectionObserver", FakeObserver);
+    const onFail = vi.fn();
+    const refused = video(() => Promise.reject(Object.assign(new Error("no"), { name: "NotAllowedError" })));
+    lazyVideo("/v.mp4", onFail)(refused as unknown as HTMLVideoElement);
+    seen!([{ isIntersecting: true }]);
+    await vi.waitFor(() => expect(onFail).toHaveBeenCalledTimes(1));
+    const interrupted = video(() => Promise.reject(Object.assign(new Error("paused"), { name: "AbortError" })));
+    lazyVideo("/v.mp4", onFail)(interrupted as unknown as HTMLVideoElement);
+    seen!([{ isIntersecting: true }]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(onFail).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
   });
 });
