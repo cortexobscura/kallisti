@@ -1,3 +1,4 @@
+import { parseChannelList, type ChannelList } from "./channelList";
 import { escapeHtml, type ChatMessage } from "@kallisti/protocol";
 import { markdown } from "./markdown";
 import { spoilerUpload } from "./media";
@@ -158,6 +159,8 @@ export type ServerEvent =
       threads?: Thread[];
       follows?: number[];
       threadArchive?: number;
+      // An account's own channel list (see lib/channelList).
+      channelList?: ChannelList;
     }
   // A registered user was added or renamed (name), or removed (gone).
   | { type: "member"; id: number; name?: string }
@@ -229,6 +232,8 @@ export type ServerEvent =
   | { type: "thread"; thread: Thread }
   | { type: "thread-deleted"; channel: number; id: number }
   | { type: "follows"; threads: number[] }
+  // The account's own channel list, changed (also on another device).
+  | { type: "channel-list"; list: ChannelList }
   | { type: "archived-threads"; channel: number; threads: Thread[]; more: boolean }
   | { type: "thread-archive"; seconds: number }
   | { type: "no-thread"; id: number }
@@ -366,6 +371,9 @@ export type TextState = {
   // for (pages so far), and the archive time (seconds).
   threads: Threads;
   follows: ReadonlySet<number>;
+  // The own channel list kept with the account (null: none, without an
+  // account; then the device keeps it).
+  channelList: ChannelList | null;
   archived: Readonly<Record<number, { threads: Thread[]; more: boolean }>>;
   threadArchive: number;
 };
@@ -421,6 +429,7 @@ export const initialTextState: TextState = {
   bios: {},
   threads: {},
   follows: new Set(),
+  channelList: null,
   archived: {},
   threadArchive: 3 * 24 * 3600,
 };
@@ -615,6 +624,7 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
         ...(isObj(v.online) && Object.values(v.online).every(isNum) ? { online: v.online as Online } : {}),
         ...(isThreads(v.threads) ? { threads: v.threads } : {}),
         ...(isIds(v.follows) ? { follows: v.follows } : {}),
+        ...(isObj(v.channelList) ? { channelList: parseChannelList(v.channelList) } : {}),
         ...(isNum(v.threadArchive) ? { threadArchive: v.threadArchive } : {}),
       };
     }
@@ -718,6 +728,8 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
       return isNum(v.channel) && isNum(v.id) ? { type: "thread-deleted", channel: v.channel, id: v.id } : null;
     case "follows":
       return isIds(v.threads) ? { type: "follows", threads: v.threads } : null;
+    case "channel-list":
+      return isObj(v.list) ? { type: "channel-list", list: parseChannelList(v.list) } : null;
     case "archived-threads":
       return isNum(v.channel) && isThreads(v.threads) ? { type: "archived-threads", channel: v.channel, threads: v.threads, more: v.more === true } : null;
     case "thread-archive":
@@ -853,6 +865,7 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
         // archived thread).
         threads: keptThreads(state.threads, event.channels, event.threads ?? []),
         follows: new Set(event.follows ?? []),
+        channelList: event.channelList ?? null,
         archived: {},
         threadArchive: event.threadArchive ?? initialTextState.threadArchive,
         voiceChannels: {
@@ -961,6 +974,8 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
     }
     case "follows":
       return { ...state, follows: new Set(event.threads) };
+    case "channel-list":
+      return { ...state, channelList: event.list };
     case "archived-threads": {
       // Pages come in order: a page's threads go after those we have.
       const known = (state.archived[event.channel]?.threads ?? []).filter((t) => !event.threads.some((x) => x.id === t.id));

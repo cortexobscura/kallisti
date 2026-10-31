@@ -4,6 +4,7 @@
   import { longPress } from "../lib/longPress";
   import { mirrorIds, withoutMirrors } from "../lib/mirrors";
   import { shownCollapsed, textGroups, type TextCategory } from "../lib/categories";
+  import { noChannelList, ownView } from "../lib/channelList";
   import { isLocked } from "../lib/privateChannels";
   import { htmlToText } from "../lib/htmlText";
   import type { ChannelKind } from "../lib/channelForm";
@@ -53,6 +54,9 @@
     currentThread = null,
     onOpenThread,
     onThreadMenu,
+    view,
+    hiddenCount = 0,
+    onShowHidden,
   }: {
     server: ServerState;
     currentChannel: number | null;
@@ -113,11 +117,24 @@
     currentThread?: number | null;
     onOpenThread?: (t: Thread) => void;
     onThreadMenu?: (id: number, event: MouseEvent) => void;
+    // The text groups and voice tree as the user sees them (see
+    // lib/channelList ownView; undefined: as the server orders them), and
+    // the hidden channels to show again.
+    view?: { groups: ReturnType<typeof textGroups>; tree: ChannelNode | null };
+    hiddenCount?: number;
+    onShowHidden?: () => void;
   } = $props();
 
   // Text channel mirrors (for Mumble clients) are not voice channels here.
-  const tree = $derived(withoutMirrors(channelTree(server), mirrorIds(server, textChannels, categories)));
-  const groups = $derived(textGroups(textChannels, categories));
+  const own = $derived(
+    view ??
+      ownView(textGroups(textChannels, categories), withoutMirrors(channelTree(server), mirrorIds(server, textChannels, categories)), noChannelList, {
+        text: () => true,
+        voice: () => true,
+      }),
+  );
+  const tree = $derived(own.tree);
+  const groups = $derived(own.groups);
   // A collapsed category still shows these (see lib/categories).
   const loud = $derived(new Set([...unreadText].filter((id) => !mutedText.has(id))));
   let collapsed = $state(false);
@@ -341,6 +358,9 @@
       <ul>{@render channel(tree, 0)}</ul>
     {/if}
   {/if}
+  {#if onShowHidden && hiddenCount}
+    <button type="button" class="hidden-channels" onclick={onShowHidden}>Hidden channels ({hiddenCount})</button>
+  {/if}
   {#if directs.length && onOpenDirect}
     {@render category("Direct messages", directCollapsed, () => (directCollapsed = !directCollapsed))}
     {#if !directCollapsed}
@@ -415,6 +435,18 @@
   }
   .chevron {
     transition: transform 0.15s;
+  }
+  .hidden-channels {
+    margin: 4px 8px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: left;
+  }
+  .hidden-channels:hover {
+    background: var(--bg-hover);
+    color: var(--text);
   }
   .chevron.collapsed {
     transform: rotate(-90deg);

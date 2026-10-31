@@ -51,6 +51,7 @@
     setSelfState,
     voiceElsewhere,
     selfOf,
+    channelTree,
   } from "@kallisti/protocol";
   import { localStore } from "../lib/storage";
   import { tick, untrack, type ComponentProps, type Snippet } from "svelte";
@@ -106,8 +107,9 @@
   import { chatSeen, notificationBody, notifier, shouldNotify } from "../lib/notify";
   import { createNotifyLeader } from "../lib/notifyLeader";
   import { isMentionAll, mentionNames, pingsMe, replyPing } from "../lib/mentions";
-  import { blockedUsers, channelPrefs, collapsedCategories, directPrefs, settings, userAudio } from "../lib/settings.svelte";
-  import { textOrder } from "../lib/categories";
+  import { blockedUsers, channelLists, channelPrefs, collapsedCategories, directPrefs, settings, userAudio } from "../lib/settings.svelte";
+  import { textGroups, textOrder } from "../lib/categories";
+  import { keepShown, moveOwn, ownView, pruned, shownBeside, toggleHidden, voiceBeside, type ChannelList, type ListKind } from "../lib/channelList";
   import { forgetPref, isMuted, mutedIds, notifies, prefOf, pushLists, setThreadPref, withoutMuted, withParents, type ChannelPref } from "../lib/channelPrefs";
   import { closeDirect, quietDirects, reopenDirect, togglePin, visibleDirects } from "../lib/directList";
   import { browserPushSupport, syncPush, type PushPrefs } from "../lib/push";
@@ -138,6 +140,7 @@
   import MembersDialog from "./MembersDialog.svelte";
   import JoinDialog from "./JoinDialog.svelte";
   import AccessDialog from "./AccessDialog.svelte";
+  import HiddenChannelsDialog from "./HiddenChannelsDialog.svelte";
   import Icon from "./Icon.svelte";
   import ServerRail from "./ServerRail.svelte";
   import SettingsDialog from "./SettingsDialog.svelte";
@@ -147,7 +150,7 @@
   import QuickSwitcher, { type Place as SwitcherPlace } from "./QuickSwitcher.svelte";
   import Shortcuts from "./Shortcuts.svelte";
   import { IS_MAC, navAction, stepPlace } from "../lib/switcher";
-  import { mirrorIds } from "../lib/mirrors";
+  import { mirrorIds, withoutMirrors } from "../lib/mirrors";
   import { railBadge, tabTitle, type RailBadge } from "../lib/title";
   import { inviteTarget, messageLink, parseMessageLink, plainLink, type ChannelLink } from "../lib/messageLink";
   import { inviteLink, inviteOf, invitePlace, parseInviteLink } from "../lib/invites";
@@ -287,6 +290,7 @@
   let showSettings = $state(untrack(() => openSettings));
   if (untrack(() => openSettings)) untrack(() => onSettingsOpened)?.(); // once, on mount
   let showSwitcher = $state(false);
+  let showHidden = $state(false);
   let showShortcuts = $state(false);
   let membersOpen = $state(true);
   // Kallisti servers: root is a lobby, voice channels are joined on purpose.
@@ -945,7 +949,22 @@
     blockedUsers.has,
     () => pageVisible && active,
   );
-  const unreadText = $derived(withoutMuted(textView.unread, mutedText));
+  // The own channel list (see lib/channelList): the account's, else this
+  // device's. Hidden channels show no unread marker (mentions still count).
+  const ownList = $derived(text.channelList ?? channelLists.of(connection.httpBase));
+  // Without channels that are gone (see pruned), once they are known.
+  const saveList = (list: ChannelList) => {
+    const known = text.available && server.status === "synced";
+    const next = known ? pruned(list, new Set(text.channels.map((c) => c.id)), new Set(Object.keys(server.channels).map(Number))) : list;
+    if (text.channelList) connection.setChannelList(next);
+    else channelLists.set(connection.httpBase, next);
+  };
+  // With the threads of hidden channels (not listed under them either).
+  const hiddenText = $derived.by(() => {
+    const hidden = new Set(ownList.hidden.text);
+    return new Set([...hidden, ...Object.values(text.threads).flatMap((t) => (hidden.has(t.channel) ? [t.id] : []))]);
+  });
+  const unreadText = $derived(withoutMuted(textView.unread, new Set([...mutedText, ...hiddenText])));
   // Unread counts as shown (muted direct chats count none).
   const mentions = $derived(quietDirects(textView.mentions, text.directs, mutedText));
   // Mentions in voice channel chats, by voice channel.
@@ -1594,7 +1613,7 @@
     if (action === "switcher") showSwitcher = true;
     else if (action === "shortcuts") showShortcuts = true;
     else {
-      const nav = places.filter((p) => p.kind === "text" || p.key[0] === "d");
+      const nav = places.filter((p) => (p.kind === "text" ? shownTextIds.has(Number(p.key.slice(1))) : p.key[0] === "d"));
       const here = textId !== null ? `t${textId}` : directChatId !== null ? `d${directChatId}` : null;
       const next = stepPlace(
         nav.map((p) => p.key),
@@ -1617,8 +1636,9 @@
     const mirrors = mirrorIds(server, text.channels, text.categories); // hidden, as in the sidebar
     const categoryName = (id?: number) => text.categories.find((c) => c.id === id)?.name;
     return [
-      // In the sidebar's order (Alt+Up/Down follows it).
-      ...textOrder(text.channels, text.categories).flatMap((c) => [
+      // In the sidebar's order (Alt+Up/Down follows it), then the hidden
+      // ones (found here, not stepped through).
+      ...[...shownText, ...textOrder(text.channels, text.categories).filter((c) => !shownTextIds.has(c.id))].flatMap((c) => [
         {
           key: `t${c.id}`,
           name: c.name,
@@ -1654,6 +1674,40 @@
   });
   const channels = createChannelManagement(() => connection);
 
+  // Hidden channels that exist (to show again), and the own list's part of
+  // a channel's menu: hide, move among those shown beside it (the root
+  // voice channel: none).
+  const hiddenChannels = $derived([
+    ...text.channels.filter((c) => ownList.hidden.text.includes(c.id)).map((c) => ({ kind: "text" as const, id: c.id, name: c.name })),
+    ...Object.values(server.channels)
+      .filter((c) => ownList.hidden.voice.includes(c.id))
+      .map((c) => ({ kind: "voice" as const, id: c.id, name: c.name })),
+  ]);
+  // The sidebar as the user sees it (one source for the sidebar, the menu,
+  // Alt+Up/Down). Kept shown: the open text channel, the voice channel we
+  // are in, those with a mention.
+  const sideView = $derived(
+    ownView(textGroups(text.channels, text.categories), withoutMirrors(channelTree(server), mirrorIds(server, text.channels, text.categories)), ownList, {
+      text: keepShown(textId, mentions),
+      voice: keepShown(server.session === null ? null : (server.users[server.session]?.channelId ?? null), mentionVoice),
+    }),
+  );
+  const shownText = $derived(sideView.groups.flatMap((g) => g.channels));
+  const shownTextIds = $derived(new Set(shownText.map((c) => c.id)));
+  const ownMenu = (kind: string, id: number) => {
+    if ((kind !== "text" && kind !== "voice") || (kind === "voice" && id === 0)) return undefined;
+    const k: ListKind = kind;
+    const beside = k === "text" ? shownBeside(sideView.groups, id) : sideView.tree ? voiceBeside(sideView.tree, id) : [];
+    const i = beside.indexOf(id);
+    return {
+      hidden: ownList.hidden[k].includes(id),
+      onHide: () => saveList(toggleHidden(ownList, k, id)),
+      canUp: i > 0,
+      canDown: i >= 0 && i < beside.length - 1,
+      onMove: (step: -1 | 1) => saveList(moveOwn(ownList, k, beside, id, step)),
+    };
+  };
+
   // Back to the lobby. Its chat is not a place to stay: show a text channel.
   const leaveVoice = () => {
     if (!me || !lobby) return;
@@ -1681,6 +1735,10 @@
 
 <!-- Menus and dialogs act on the connection: none while it is lost. -->
 <div class="overlays" inert={lost}>
+{#if showHidden}
+  <HiddenChannelsDialog channels={hiddenChannels} onShow={(kind, id) => saveList(toggleHidden(ownList, kind, id))} onClose={() => (showHidden = false)} />
+{/if}
+
 {#if channels.menu}
   {@const m = channels.menu}
   <ChannelMenu
@@ -1705,6 +1763,7 @@
     onModerators={() => channels.startModerators(m.kind, m.id)}
     notify={m.kind === "text" ? { pref: prefOf(channelPrefs.value, connection.httpBase, m.id), desktop: prefs.notifications } : undefined}
     onNotify={(patch) => channelPrefs.set(connection.httpBase, m.id, patch)}
+    own={ownMenu(m.kind, m.id)}
     onEdit={() => channels.startEdit(m.kind, m.id)}
     onCreateSub={() => channels.startCreate("voice", m.id)}
     onMove={(step) => channels.move(m.kind, m.id, step)}
@@ -2078,6 +2137,9 @@
       canCreate={channels.canCreate}
       onCreate={channels.startCreate}
       onChannelMenu={channels.open}
+      view={sideView}
+      hiddenCount={hiddenChannels.length}
+      onShowHidden={() => (showHidden = true)}
       onDirectMenu={openDirectMenu}
       threadsOf={(id) => activeThreads(text.threads, id)}
       follows={text.follows}

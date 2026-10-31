@@ -1,3 +1,4 @@
+import { deviceListOf, parseDeviceLists, setDeviceList, type ChannelList } from "./channelList";
 import { isBlocked, parseBlocked, toggleBlocked } from "./blocked";
 import { collapsedIn, parseCollapsed, toggleCollapsed } from "./categories";
 import { parseChannelPrefs, setChannelPref, type ChannelPref, type ChannelPrefs } from "./channelPrefs";
@@ -43,6 +44,14 @@ const collapsedStore = persisted("collapsedCategories", parseCollapsed);
 export const collapsedCategories = {
   of: (server: string) => collapsedIn(collapsedStore.value, server),
   toggle: (server: string, id: number) => collapsedStore.set(toggleCollapsed(collapsedStore.value, server, id)),
+};
+
+// Own channel lists without an account (with one, the server keeps it).
+const channelListStore = persisted("channelLists", parseDeviceLists);
+
+export const channelLists = {
+  of: (server: string) => deviceListOf(channelListStore.value, server),
+  set: (server: string, list: ChannelList) => channelListStore.set(setDeviceList(channelListStore.value, server, list)),
 };
 
 const directStore = persisted("directChats", parseDirectPrefs);

@@ -1,3 +1,4 @@
+import { channelListRequest, type ChannelList } from "./channelList";
 import { micInfoRequest, type MicInfo } from "./voice/micInfo";
 import { endPollRequest, voteRequest, type PollBody } from "./polls";
 import { threadRequest, type ThreadAction } from "./threads";
@@ -452,6 +453,13 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     },
     setAway: (on: boolean) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(awayRequest(on));
+    },
+    // The account's own channel list: shown at once, kept by the server
+    // (which sends it to the account's other devices).
+    setChannelList: (list: ChannelList) => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      text = { ...text, channelList: list };
+      ws.send(channelListRequest(list));
     },
     markRead: (channel: number, message: number) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(markReadRequest(channel, message));

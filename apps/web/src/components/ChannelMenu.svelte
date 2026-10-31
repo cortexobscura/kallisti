@@ -31,6 +31,7 @@
     onModerators,
     direct,
     thread,
+    own,
     category = false,
     onClose,
   }: {
@@ -77,6 +78,8 @@
     // undefined: may not), take its channel's notification settings again
     // (undefined: it does).
     thread?: { following: boolean; onFollow: () => void; archived: boolean; onArchive?: () => void; onInherit?: () => void };
+    // Text and voice channels: the user's own list (see lib/channelList).
+    own?: { hidden: boolean; onHide: () => void; canUp: boolean; canDown: boolean; onMove: (step: -1 | 1) => void };
     // A text category (see lib/categories).
     category?: boolean;
     onClose: () => void;
@@ -99,6 +102,12 @@
     {#if onCopyInvite}
       <button onclick={act(onCopyInvite)}>Copy invite link<span class="sub">One use, valid 7 days</span></button>
     {/if}
+    <div class="sep"></div>
+  {/if}
+  {#if own}
+    <button onclick={act(own.onHide)}>{own.hidden ? `Show ${noun}` : `Hide ${noun}`}</button>
+    {#if own.canUp}<button onclick={act(() => own.onMove(-1))}>Move up for me</button>{/if}
+    {#if own.canDown}<button onclick={act(() => own.onMove(1))}>Move down for me</button>{/if}
     <div class="sep"></div>
   {/if}
   {#if thread}
@@ -161,7 +170,7 @@
       <div class="sep"></div>
       <button class="danger" onclick={act(onDelete)}>Delete {noun}</button>
     {/if}
-  {:else if !notify && recording === undefined && !direct && !thread}
+  {:else if !notify && recording === undefined && !direct && !thread && !own}
     <p class="none">You may not change this channel.</p>
   {/if}
 </ContextMenu>

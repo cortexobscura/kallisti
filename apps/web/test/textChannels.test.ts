@@ -675,3 +675,19 @@ describe("stickers", () => {
     expect(JSON.parse(sendRequest(3, "", undefined, 9, false, "n1", 7))).toEqual({ type: "send", channel: 3, text: "", reply: 9, nonce: "n1", sticker: 7 });
   });
 });
+
+describe("the own channel list", () => {
+  const list = { hidden: { text: [2], voice: [] }, order: { text: [], voice: [5, 3] } };
+
+  it("comes with ready (an account's), and its changes from the account's devices", () => {
+    expect(initialTextState.channelList).toBeNull();
+    const ready = parseServerEvent(JSON.stringify({ type: "ready", channels: [], channelList: list }));
+    let s = reduceText(initialTextState, ready!);
+    expect(s.channelList).toEqual(list);
+    const next = { ...list, hidden: { text: [], voice: [7] } };
+    s = reduceText(s, parseServerEvent(JSON.stringify({ type: "channel-list", list: next }))!);
+    expect(s.channelList).toEqual(next);
+    // Without an account the server sends none: the device keeps it.
+    expect(reduceText(s, parseServerEvent(JSON.stringify({ type: "ready", channels: [] }))!).channelList).toBeNull();
+  });
+});
