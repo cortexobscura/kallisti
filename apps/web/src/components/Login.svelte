@@ -1,5 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import QrShowDialog from "./QrShowDialog.svelte";
+  import { deviceLabel } from "../lib/qrLogin";
   import { parseInviteLink } from "../lib/invites";
   import UserName from "./UserName.svelte";
   import { serverOrigin } from "../lib/serverList";
@@ -94,6 +96,15 @@
     } finally {
       checking = false;
     }
+  };
+
+  // Log in with a QR code (see lib/qrLogin): the phone confirmed.
+  let qrShown = $state(false);
+  const qrDone = async (name: string) => {
+    qrShown = false;
+    const account = (await api.me()) ?? { name, temporary: false };
+    onAccountChange(account);
+    connectAs(account.name, true);
   };
 
   const connectAs = (name: string, isAccount: boolean, pw = serverPassword) => {
@@ -389,6 +400,12 @@
         {mumbleOnly ? "Connect" : mode === "guest" ? "Join as guest" : mode === "login" ? "Log in" : "Create account"}
       </button>
     </form>
+    {#if !mumbleOnly}
+      <div class="card fedi">
+        <p class="hint">Logged in on your phone or another device already? No password needed.</p>
+        <button class="secondary" type="button" onclick={() => (qrShown = true)}>Log in with a QR code</button>
+      </div>
+    {/if}
     {/if}
     {#if invite}
       <form class="card fedi" onsubmit={openAtHome}>
@@ -413,6 +430,16 @@
     {/if}
   {/if}
 </div>
+
+{#if qrShown}
+  <QrShowDialog
+    {api}
+    origin={api.base || location.origin}
+    device={deviceLabel(navigator.userAgent, isDesktop())}
+    onLoggedIn={qrDone}
+    onClose={() => (qrShown = false)}
+  />
+{/if}
 
 <!-- Desktop: the chosen server, with a way back to the address step. -->
 {#snippet serverLine()}
