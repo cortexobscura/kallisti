@@ -16,8 +16,8 @@ import (
 )
 
 // Previews (with ffmpeg, see thumbs): a video's frame as its poster, a
-// large picture made smaller for the chat (the original is for the
-// lightbox and downloads). Made after the upload is stored, never in its
+// large picture made smaller for the chat, a large GIF as a video shown
+// like a picture (the original is for the lightbox and downloads). Made after the upload is stored, never in its
 // request; kept next to it as <key>.preview and served at its URL with
 // ?preview, so the same key gives access. A failed or useless preview is
 // not tried again (store.NoPreview).
@@ -25,6 +25,7 @@ import (
 const (
 	thumbSide   = 480  // a video's frame, the longer side
 	previewSide = 1000 // a picture's preview
+	gifSide     = 640  // a GIF's video
 	// Pictures with a longer side or more bytes get a preview.
 	bigSide  = 1600
 	bigBytes = 1 << 20
@@ -32,21 +33,25 @@ const (
 
 func previewPath(dir, key string) string { return filepath.Join(dir, key+".preview") }
 
-// previewJob is the job for an upload's preview, if it gets one. GIFs keep
-// their animation (none); PNG and WebP only in a format with transparency.
-// Nothing with more pixels than inline pictures may have (ffmpeg's memory;
-// ffmpeg checks the coded frames too, see thumbs.Job.MaxPixels).
-func previewJob(u store.Upload, dir string, f thumbs.Format) (thumbs.Job, bool) {
+// previewJob is the job for an upload's preview, if it gets one. A large
+// GIF keeps its animation as a video (video: ffmpeg can write one; else
+// none); PNG and WebP only in a format with transparency. Nothing with
+// more pixels than inline pictures may have (ffmpeg's memory; ffmpeg
+// checks the coded frames too, see thumbs.Job.MaxPixels).
+func previewJob(u store.Upload, dir string, f thumbs.Format, video bool) (thumbs.Job, bool) {
 	j := thumbs.Job{Src: filepath.Join(dir, u.Key), Dst: previewPath(dir, u.Key), Type: u.Type}
 	pixels := u.Width * u.Height
+	big := max(u.Width, u.Height) > bigSide || u.Size > bigBytes
 	switch {
 	case !thumbs.Supported(u.Type) || pixels > imagesize.MaxPixels:
 		return j, false
 	case strings.HasPrefix(u.Type, "video/"):
 		j.Max, j.Seek = thumbSide, u.Duration >= 2000
 		return j, true
+	case u.Type == "image/gif":
+		j.Max, j.Video = gifSide, true
+		return j, video && pixels > 0 && big
 	}
-	big := max(u.Width, u.Height) > bigSide || u.Size > bigBytes
 	j.Max = previewSide
 	if isPreviewed(u.Type) { // its only picture
 		// ffmpeg checks the width rounded up to its stride (up to 64);
@@ -61,7 +66,7 @@ func (h *Handler) job(u store.Upload) (thumbs.Job, bool) {
 	if h.Previews == nil || !plainKey(u.Key) {
 		return thumbs.Job{}, false
 	}
-	j, ok := previewJob(u, h.Dir, h.Previews.Format())
+	j, ok := previewJob(u, h.Dir, h.Previews.Format(), h.Previews.Video())
 	if ok && u.Type == "image/jpeg" {
 		if f, err := os.Open(j.Src); err == nil {
 			st, _ := f.Stat()

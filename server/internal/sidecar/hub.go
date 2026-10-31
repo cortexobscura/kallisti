@@ -499,8 +499,10 @@ type wireUpload struct {
 	Height   int   `json:"height,omitempty"`
 	Duration int64 `json:"duration,omitempty"`
 	// A smaller picture (see files' previews): a video's poster, a large
-	// picture for the chat.
+	// picture for the chat, a large GIF's video (previewType video/mp4,
+	// shown like a picture).
 	Preview     string `json:"preview,omitempty"`
+	PreviewType string `json:"previewType,omitempty"`
 	Description string `json:"description,omitempty"` // alt text
 }
 
@@ -522,6 +524,14 @@ func previewURL(u store.Upload) string {
 		return ""
 	}
 	return FileURL(u) + "?preview"
+}
+
+// previewType is its preview's type ("": none).
+func previewType(u store.Upload) string {
+	if !u.HasPreview() {
+		return ""
+	}
+	return u.Preview
 }
 
 // UploadPreview: an upload got its preview. If it is attached already,
@@ -553,7 +563,7 @@ func toWireFor(m store.Message, viewer *uint32) wireMessage {
 	}
 	for _, u := range m.Uploads {
 		w.Uploads = append(w.Uploads, wireUpload{URL: FileURL(u), Name: u.Name, Type: u.Type, Size: u.Size, Width: u.Width, Height: u.Height,
-			Duration: u.Duration, Preview: previewURL(u), Description: u.Description})
+			Duration: u.Duration, Preview: previewURL(u), PreviewType: previewType(u), Description: u.Description})
 	}
 	if len(w.Uploads) > 0 {
 		w.Upload = &w.Uploads[0]

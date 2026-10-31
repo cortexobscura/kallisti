@@ -324,7 +324,7 @@ func TestSendWithUpload(t *testing.T) {
 	for _, c := range []*Conn{alice, bob} {
 		m := next(t, c)
 		up, _ := m["message"].(map[string]any)["upload"].(map[string]any)
-		if m["type"] != "message-edited" || up["preview"] != "/files/abc/cat.png?preview" || m["message"].(map[string]any)["edited"] != nil {
+		if m["type"] != "message-edited" || up["preview"] != "/files/abc/cat.png?preview" || up["previewType"] != "image/webp" || m["message"].(map[string]any)["edited"] != nil {
 			t.Fatalf("preview: %v", m)
 		}
 	}

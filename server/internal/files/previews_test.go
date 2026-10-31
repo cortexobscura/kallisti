@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"image"
+	"image/color"
+	"image/gif"
 	"image/png"
 	"io"
 	"net/http"
@@ -35,7 +37,7 @@ func TestPreviewJob(t *testing.T) {
 		{"large jpeg", store.Upload{Type: "image/jpeg", Size: 1000, Media: big}, thumbs.JPEG, true, 1000, false},
 		{"heavy webp", store.Upload{Type: "image/webp", Size: 2 << 20, Media: store.Media{Width: 800, Height: 600}}, thumbs.WebP, true, 1000, false},
 		{"small png", store.Upload{Type: "image/png", Size: 1000, Media: store.Media{Width: 800, Height: 600}}, thumbs.WebP, false, 0, false},
-		{"gif keeps its animation", store.Upload{Type: "image/gif", Size: 5 << 20, Media: big}, thumbs.WebP, false, 0, false},
+		{"gif keeps its animation", store.Upload{Type: "image/gif", Size: 5 << 20, Media: big}, thumbs.WebP, false, 0, false}, // no video (see below)
 		// The image's ffmpeg (6.1) fails on grids and drops the rotation
 		// (irot) browsers show: the original is small enough anyway.
 		{"avif: none", store.Upload{Type: "image/avif", Size: 5 << 20, Media: big}, thumbs.WebP, false, 0, false},
@@ -50,10 +52,36 @@ func TestPreviewJob(t *testing.T) {
 		{"download", store.Upload{Type: "application/octet-stream", Size: 5 << 20}, thumbs.WebP, false, 0, false},
 	} {
 		c.u.Key = "k"
-		j, ok := previewJob(c.u, "/up", c.format)
-		if ok != c.ok || ok && (j.Max != c.max || j.Seek != c.seek || j.Src != "/up/k" || j.Dst != "/up/k.preview" || j.Type != c.u.Type) {
+		j, ok := previewJob(c.u, "/up", c.format, false)
+		if ok != c.ok || ok && (j.Max != c.max || j.Seek != c.seek || j.Video || j.Src != "/up/k" || j.Dst != "/up/k.preview" || j.Type != c.u.Type) {
 			t.Errorf("%s: %+v %v", c.name, j, ok)
 		}
+	}
+}
+
+// With H.264, large GIFs get a video (about a tenth of the GIF), shown
+// like a picture; small ones stay as they are.
+func TestGIFPreviewJob(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		u    store.Upload
+		ok   bool
+	}{
+		{"heavy gif", store.Upload{Type: "image/gif", Size: 5 << 20, Media: store.Media{Width: 480, Height: 283}}, true},
+		{"wide gif", store.Upload{Type: "image/gif", Size: 1000, Media: store.Media{Width: 2000, Height: 100}}, true},
+		{"small gif", store.Upload{Type: "image/gif", Size: 500 << 10, Media: store.Media{Width: 400, Height: 400}}, false},
+		{"gif with too many pixels", store.Upload{Type: "image/gif", Size: 5 << 20, Media: store.Media{Width: 9000, Height: 9000}}, false},
+		{"gif of unknown size", store.Upload{Type: "image/gif", Size: 5 << 20}, false},
+	} {
+		c.u.Key = "k"
+		j, ok := previewJob(c.u, "/up", thumbs.WebP, true)
+		if ok != c.ok || ok && (!j.Video || j.Max != 640 || j.Type != "image/gif") {
+			t.Errorf("%s: %+v %v", c.name, j, ok)
+		}
+	}
+	// Other uploads are not videos.
+	if j, _ := previewJob(store.Upload{Key: "k", Type: "image/png", Size: 5 << 20, Media: store.Media{Width: 2000, Height: 1000}}, "/up", thumbs.WebP, true); j.Video {
+		t.Error("png as a video")
 	}
 }
 
@@ -65,7 +93,7 @@ func fakeTool(t *testing.T, body string) thumbs.Tool {
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	return thumbs.Tool{Command: []string{path}, Format: thumbs.WebP}
+	return thumbs.Tool{Command: []string{path}, Format: thumbs.WebP, Video: true}
 }
 
 func bigPNG(t *testing.T) []byte {
@@ -143,6 +171,27 @@ func TestUploadGetsAPreview(t *testing.T) {
 
 // JPEG XL: few browsers show it, so it is a download (as
 // application/octet-stream) that always gets a preview, even a larger one.
+// A large GIF's preview is a video (shown like a picture), smaller than
+// the GIF.
+func TestGIFGetsAVideoPreview(t *testing.T) {
+	srv, s, h := setupHandler(t, 1<<20)
+	ready := withPreviews(t, h, `printf mp4 > "$out"`)
+	var b bytes.Buffer
+	gif.Encode(&b, image.NewPaletted(image.Rect(0, 0, 1700, 100), color.Palette{color.Black, color.White}), nil)
+	_, v := upload(t, srv, "good", "wide.gif", "image/gif", b.Bytes())
+	key := v["key"].(string)
+	if got := <-ready; got != key {
+		t.Fatalf("ready: %s", got)
+	}
+	if u, _ := s.UploadByKey(key); u.Preview != "video/mp4" || !u.HasPreview() {
+		t.Fatalf("stored %+v", u)
+	}
+	resp, body := get(t, srv.URL+v["url"].(string)+"?preview")
+	if resp.StatusCode != 200 || body != "mp4" || resp.Header.Get("Content-Type") != "video/mp4" {
+		t.Fatalf("preview: %d %q %v", resp.StatusCode, body, resp.Header)
+	}
+}
+
 func TestJXLIsADownloadWithAPreview(t *testing.T) {
 	srv, s, h := setupHandler(t, 1<<20)
 	ready := withPreviews(t, h, `head -c 5000 /dev/zero > "$out"`)

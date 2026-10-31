@@ -151,7 +151,9 @@ type Upload struct {
 const NoPreview = "-"
 
 // HasPreview: a preview was made.
-func (u Upload) HasPreview() bool { return strings.HasPrefix(u.Preview, "image/") }
+func (u Upload) HasPreview() bool {
+	return strings.HasPrefix(u.Preview, "image/") || u.Preview == "video/mp4" // a GIF's
+}
 
 // Media: a picture's or video's size in pixels, a video's or audio's
 // length in milliseconds (zero: unknown; see mediasize).

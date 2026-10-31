@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"os"
@@ -43,6 +44,11 @@ func TestArgs(t *testing.T) {
 		{"jpeg mirrored", JPEG, Job{Type: "image/jpeg", Max: 1000, Orientation: 2}, []string{"-vf hflip,scale="}, nil},
 		{"webp", WebP, Job{Type: "image/webp", Max: 1000}, []string{"-f webp_pipe"}, nil},
 		{"fewer pixels", WebP, Job{Type: "image/webp", Max: 1000, MaxPixels: 100}, []string{"-max_pixels 100 -f webp_pipe"}, nil},
+		// A GIF's video: all frames, even sides (H.264), no sound, playable
+		// while it loads.
+		{"gif as a video", WebP, Job{Type: "image/gif", Max: 640, Video: true},
+			[]string{"-f gif -i", "min(640,iw)", "force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2", "-an -sn -dn", "-c:v libx264 -threads 1 -pix_fmt yuv420p -crf 26 -preset slow -movflags +faststart -f mp4 -y"},
+			[]string{"-frames:v", "libwebp"}},
 	} {
 		got := strings.Join(Args(c.format, c.job, "/tmp/o"), " ")
 		for _, s := range c.has {
@@ -106,6 +112,13 @@ func TestFind(t *testing.T) {
 	if _, err := find("", onlyFFmpeg, encoders(" V png x\n")); err == nil {
 		t.Error("no usable encoder: found")
 	}
+	// Videos (of GIFs) only with H.264.
+	if tool, _ := find("", onlyFFmpeg, encoders(" V libwebp x\n V libx264 y\n")); !tool.Video {
+		t.Errorf("with libx264: %+v", tool)
+	}
+	if tool, _ := find("", onlyFFmpeg, encoders(" V libwebp x\n")); tool.Video {
+		t.Errorf("without libx264: %+v", tool)
+	}
 }
 
 // fakeFFmpeg writes a shell script that acts as ffmpeg; out is the output
@@ -157,6 +170,18 @@ func TestMakeStoresFile(t *testing.T) {
 	}
 	if got := names(t, tmp); len(got) != 0 {
 		t.Errorf("left in the temporary directory: %v", got)
+	}
+}
+
+func TestMakeVideo(t *testing.T) {
+	_, _, job := setup(t)
+	job.Type, job.Video = "image/gif", true
+	m := New(t.Context(), fakeFFmpeg(t, `printf mp4 > "$out"`), 2, 4)
+	if ctype, err := m.Make(t.Context(), job); err != nil || ctype != "video/mp4" {
+		t.Fatalf("make: %q %v", ctype, err)
+	}
+	if !Supported("image/gif") {
+		t.Error("gif not read")
 	}
 }
 
@@ -348,6 +373,26 @@ func TestRealFFmpeg(t *testing.T) {
 				t.Errorf("transparency lost: %v", err)
 			}
 		}
+	}
+	// An animated GIF of odd sides: a video of even ones.
+	if !tool.Video {
+		t.Log("no libx264: no GIF videos")
+		return
+	}
+	frames := &gif.GIF{}
+	for i := range 3 {
+		p := image.NewPaletted(image.Rect(0, 0, 1001, 501), color.Palette{color.Black, color.White})
+		p.SetColorIndex(i, i, 1)
+		frames.Image, frames.Delay = append(frames.Image, p), append(frames.Delay, 10)
+	}
+	b.Reset()
+	gif.EncodeAll(&b, frames)
+	os.WriteFile(filepath.Join(dir, "gif"), b.Bytes(), 0o600)
+	job := Job{Src: filepath.Join(dir, "gif"), Dst: filepath.Join(dir, "out"), Type: "image/gif", Max: 640, Video: true}
+	ctype, err := m.Make(t.Context(), job)
+	f, _ := os.ReadFile(job.Dst)
+	if got := mediasize.Probe(bytes.NewReader(f), int64(len(f)), ctype); err != nil || ctype != "video/mp4" || got.Width != 640 || got.Height != 320 {
+		t.Errorf("gif: %s %+v %v", ctype, got, err)
 	}
 }
 

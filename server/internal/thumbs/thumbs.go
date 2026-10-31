@@ -39,6 +39,9 @@ type Format struct {
 var (
 	WebP = Format{Type: "image/webp", Codec: "libwebp", Muxer: "webp", Alpha: true}
 	JPEG = Format{Type: "image/jpeg", Codec: "mjpeg", Muxer: "mjpeg", Args: []string{"-pix_fmt", "yuvj420p", "-q:v", "4"}}
+	// A GIF's video: H.264 (every browser plays it), playable while it
+	// loads; about a tenth of the GIF.
+	MP4 = Format{Type: "video/mp4", Codec: "libx264", Muxer: "mp4", Args: []string{"-pix_fmt", "yuv420p", "-crf", "26", "-preset", "slow", "-movflags", "+faststart"}}
 )
 
 // demuxers by upload type: ffmpeg reads nothing else.
@@ -49,6 +52,7 @@ var demuxers = map[string]string{
 	"image/jpeg": "jpeg_pipe",
 	"image/webp": "webp_pipe",
 	"image/jxl":  "jpegxl_pipe", // also the container; libjxl turns by the orientation
+	"image/gif":  "gif",         // as a video only (see Job.Video)
 }
 
 // Supported: Make can read uploads of this type.
@@ -60,6 +64,7 @@ type Job struct {
 	Type     string // the upload's type (see Supported)
 	Max      int    // the longer side at most, in pixels
 	Seek     bool   // a video's frame at 1 s, not the first
+	Video    bool   // all frames, as a video (MP4), not one picture
 	// Frames with more pixels are not decoded (0: imagesize.MaxPixels).
 	// ffmpeg checks the coded frames, whatever the container says.
 	MaxPixels int
@@ -71,8 +76,12 @@ type Job struct {
 // exifFilters turn a picture by its Exif orientation.
 var exifFilters = map[uint16]string{2: "hflip", 3: "hflip,vflip", 4: "vflip", 5: "transpose=0", 6: "transpose=1", 7: "transpose=3", 8: "transpose=2"}
 
-// Args are ffmpeg's arguments for a job, writing to out.
+// Args are ffmpeg's arguments for a job, writing to out (a video: MP4,
+// whatever f).
 func Args(f Format, j Job, out string) []string {
+	if j.Video {
+		f = MP4
+	}
 	// One thread each for decoding and encoding: less memory and CPU.
 	a := []string{"-nostdin", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", "file", "-threads", "1"}
 	if j.Seek {
@@ -87,7 +96,14 @@ func Args(f Format, j Job, out string) []string {
 	if t, ok := exifFilters[j.Orientation]; ok {
 		vf = t + "," + vf
 	}
-	a = append(a, "-f", demuxers[j.Type], "-i", "file:"+j.Src, "-frames:v", "1", "-an", "-sn", "-dn", "-vf", vf, "-c:v", f.Codec, "-threads", "1")
+	frames := []string{"-frames:v", "1"}
+	if j.Video {
+		vf += ",scale=trunc(iw/2)*2:trunc(ih/2)*2" // H.264 wants even sides
+		frames = nil
+	}
+	a = append(a, "-f", demuxers[j.Type], "-i", "file:"+j.Src)
+	a = append(a, frames...)
+	a = append(a, "-an", "-sn", "-dn", "-vf", vf, "-c:v", f.Codec, "-threads", "1")
 	if f.Args != nil {
 		a = append(a, f.Args...)
 	} else if f.Alpha && j.Type != "image/jpeg" && strings.HasPrefix(j.Type, "image/") {
@@ -102,6 +118,7 @@ func Args(f Format, j Job, out string) []string {
 type Tool struct {
 	Command []string // ffmpeg, behind nice where there is one
 	Format  Format
+	Video   bool // it writes MP4 (H.264) too
 }
 
 // Find looks for ffmpeg (path, or on PATH) and asks which encoders it has:
@@ -131,7 +148,7 @@ func find(path string, look func(string) (string, error), output func([]string) 
 	if nice, err := look("nice"); err == nil {
 		cmd = []string{nice, "-n", "10", ffmpeg}
 	}
-	return Tool{Command: cmd, Format: f}, nil
+	return Tool{Command: cmd, Format: f, Video: strings.Contains(string(out), " "+MP4.Codec+" ")}, nil
 }
 
 // formatOf picks the format from `ffmpeg -encoders` (lines of flags, name,
@@ -199,6 +216,9 @@ func New(ctx context.Context, tool Tool, workers, queued int) *Maker {
 // Format is what the pictures are.
 func (m *Maker) Format() Format { return m.tool.Format }
 
+// Video: it makes videos (see Job.Video).
+func (m *Maker) Video() bool { return m.tool.Video }
+
 // Enqueue queues a job; done gets the picture's type, or an error. False:
 // the queue is full (the job is dropped).
 func (m *Maker) Enqueue(j Job, done func(ctype string, err error)) bool {
@@ -235,7 +255,11 @@ func (m *Maker) Make(ctx context.Context, j Job) (string, error) {
 	}
 	tmp.Close()
 	defer os.Remove(tmp.Name())
-	limit, cancel := context.WithTimeout(ctx, m.timeout)
+	timeout, ctype := m.timeout, m.tool.Format.Type
+	if j.Video { // all frames: longer
+		timeout, ctype = 3*m.timeout, MP4.Type
+	}
+	limit, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	err = m.run(limit, Args(m.tool.Format, j, tmp.Name()))
 	switch {
@@ -251,7 +275,7 @@ func (m *Maker) Make(ctx context.Context, j Job) (string, error) {
 	if err := place(tmp.Name(), j.Dst); err != nil {
 		return "", err
 	}
-	return m.tool.Format.Type, nil
+	return ctype, nil
 }
 
 // exec runs ffmpeg with no environment but PATH (none of the server's
