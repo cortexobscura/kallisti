@@ -2649,12 +2649,14 @@
     margin-top: 4px;
   }
   /* 6 columns (see lib/fileGrid gridCells); cells keep their size while
-     the pictures load. */
+     the pictures load. A fixed width: the message body sizes to its
+     content, so "100%" of it made the grid tiny next to a short text. */
   .file-grid {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
     gap: 4px;
-    width: min(520px, 100%);
+    width: 520px;
+    max-width: 100%;
     margin-top: 4px;
     border-radius: 8px;
     overflow: hidden;

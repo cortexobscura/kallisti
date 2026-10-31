@@ -2522,3 +2522,7 @@ Large uploads were mostly handled already (pictures over 1 MB or 1600 px get a W
 ## TestFlight 0.11.0 (0.11.0.5)
 
 Main of 2026-10-31: no Mumble bridge on iOS (ITSAppUsesNonExemptEncryption false: no export compliance question), own channel list, friends in the member list, GIF videos. The Xcode sign-in had to be redone (Xcode → Settings → Accounts: "Failed to Use Accounts", "missing Xcode-Username" in the keychain); afterwards both the tauri export and `xcodebuild -exportArchive` with destination upload worked.
+
+## Tiny picture grids
+
+bajax saw two pictures as tiny squares. Reproduced in Chromium and WebKit: a message body is a flex item that sizes to its content, so the grid's `min(520px, 100%)` resolved against the content. With a short text (or none) Chromium made the grid 207 px wide; WebKit 210 px until the pictures loaded. Earlier tries used a long link as the text, which widened the body and hid the bug. Now `width: 520px; max-width: 100%`. Letting the body fill the line also fixed it, but stretched link previews and spoiler pictures to their maximum width.
