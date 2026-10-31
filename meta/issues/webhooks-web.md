@@ -9,5 +9,5 @@
 
 ## Acceptance Criteria
 
-- Vitest for the parsing and pure parts; Playwright: create, curl a
+- [x] Vitest for the parsing and pure parts; Playwright: create, curl a
   post, it shows with the tag, delete.

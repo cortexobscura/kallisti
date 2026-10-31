@@ -8,4 +8,4 @@
 
 ## Acceptance Criteria
 
-- Go tests for the upload and the serving; the client shows it.
+- [x] Go tests for the upload and the serving; the client shows it.

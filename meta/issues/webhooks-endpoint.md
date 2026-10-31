@@ -15,4 +15,4 @@
 
 ## Acceptance Criteria
 
-- Go tests: formats, errors, limits, delivery, Mumble text.
+- [x] Go tests: formats, errors, limits, delivery, Mumble text.

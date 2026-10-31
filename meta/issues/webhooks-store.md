@@ -13,5 +13,5 @@
 
 ## Acceptance Criteria
 
-- Go tests: store round trip, permissions, limits, token only at
+- [x] Go tests: store round trip, permissions, limits, token only at
   creation, channel delete.

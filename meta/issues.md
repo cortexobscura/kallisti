@@ -25,8 +25,3 @@
 - [ ] [Shorten long links in messages](issues/shorten-long-links.md)
 - [ ] [Rethink the split of text and voice channels](issues/text-voice-split.md)
 - [ ] [Remove the fallback for plain-named session cookies (after 2026-11-28)](issues/remove-plain-cookie-fallback.md)
-- [ ] [Webhooks](issues/webhooks.md)
-  - [ ] [Webhooks: store and management](issues/webhooks-store.md)
-  - [ ] [Webhooks: the endpoint](issues/webhooks-endpoint.md)
-  - [ ] [Webhooks: web client](issues/webhooks-web.md)
-  - [ ] [Webhooks: picture](issues/webhooks-picture.md)

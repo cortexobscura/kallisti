@@ -17,5 +17,5 @@ only.
 
 ## Acceptance Criteria
 
-- The sub-issues are done; curl with Discord's JSON posts a message that
+- [x] The sub-issues are done; curl with Discord's JSON posts a message that
   readers and Mumble users see.

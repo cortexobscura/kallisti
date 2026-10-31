@@ -331,3 +331,8 @@
 - [x] [Friends in the member list; collapsible member groups](issues/friends-in-member-list.md)
 - [x] [Large GIFs: an MP4 preview, shown like a picture](issues/gif-video-previews.md)
 - [x] [Fixes from the multi-server branch that main could use](issues/hardening-from-multi-server.md) (merged with the branch)
+- [x] [Webhooks](issues/webhooks.md)
+  - [x] [Webhooks: store and management](issues/webhooks-store.md)
+  - [x] [Webhooks: the endpoint](issues/webhooks-endpoint.md)
+  - [x] [Webhooks: web client](issues/webhooks-web.md)
+  - [x] [Webhooks: picture](issues/webhooks-picture.md)
