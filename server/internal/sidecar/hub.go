@@ -478,9 +478,10 @@ type wireMsgSticker struct {
 // wireQuote is the start of the message a reply answers (author empty:
 // deleted since).
 type wireQuote struct {
-	ID     int64  `json:"id"`
-	Author string `json:"author"`
-	Text   string `json:"text"`
+	ID      int64  `json:"id"`
+	Author  string `json:"author"`
+	Text    string `json:"text"`
+	Webhook bool   `json:"webhook,omitempty"` // a webhook's post (see store.Quote)
 }
 
 const quoteLength = 100
@@ -562,7 +563,7 @@ func toWireFor(m store.Message, viewer *uint32) wireMessage {
 		w.Pinned = m.PinnedAt.UnixMilli()
 	}
 	if r := m.Reply; r != nil {
-		w.Reply = &wireQuote{ID: r.ID, Author: r.Author, Text: shorten(r.Text, quoteLength)}
+		w.Reply = &wireQuote{ID: r.ID, Author: r.Author, Text: shorten(r.Text, quoteLength), Webhook: r.Webhook}
 	}
 	for _, u := range m.Uploads {
 		w.Uploads = append(w.Uploads, wireUpload{URL: FileURL(u), Name: u.Name, Type: u.Type, Size: u.Size, Width: u.Width, Height: u.Height,
@@ -1160,10 +1161,28 @@ func (h *Hub) deliver(from mumble.Identity, ch chat, m store.Message, by *Conn, 
 	}
 	h.pushFor(ch, m)
 	if ch.isVoice {
-		h.voice.SendChannelText(from.Session, ch.voice, h.mumbleText(m))
+		h.voice.SendChannelText(from.Session, ch.voice, h.mumbleLive(m))
 	} else if mirror := h.mirrorOf(ch.id); mirror != 0 && h.voice != nil {
-		h.voice.SendChannelText(from.Session, mirror, h.mumbleText(m))
+		h.voice.SendChannelText(from.Session, mirror, h.mumbleLive(m))
 	}
+}
+
+// mumbleLive is a new message for Mumble users: a webhook's comes from the
+// server, so its name goes first (see authorLabel).
+func (h *Hub) mumbleLive(m store.Message) string {
+	if m.Webhook != 0 {
+		return authorLabel(m) + ": " + h.mumbleText(m)
+	}
+	return h.mumbleText(m)
+}
+
+// authorLabel is the author as Mumble users see it: a webhook's name is
+// marked (it may be anyone's).
+func authorLabel(m store.Message) string {
+	if m.Webhook != 0 {
+		return m.Author + " (webhook)"
+	}
+	return m.Author
 }
 
 // attachments are a send's uploads for the store: the sender's own, each
@@ -1201,10 +1220,6 @@ func (h *Hub) mumbleText(m store.Message) string {
 			file = h.publicBase + FileURL(u)
 		}
 		text = strings.TrimSpace(text + " " + file)
-	}
-	// From the server, as Mumble users see it: the webhook's name first.
-	if m.Webhook != 0 {
-		text = m.Author + ": " + text
 	}
 	// Mumble clients have no replies: a short quote first.
 	if r := m.Reply; r != nil && r.Author != "" {

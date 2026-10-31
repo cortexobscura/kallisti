@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"kallisti.chat/server/internal/store"
 )
 
 func TestWebhookText(t *testing.T) {
@@ -22,6 +24,9 @@ func TestWebhookText(t *testing.T) {
 			"description":"[abc123](https://git.example/abc) fix: grids\n[def456](https://git.example/def) docs","fields":[{"name":"Branch","value":"main"}],"footer":{"text":"Gitea"}}]}`,
 			"Push\nlain\n**[kallisti] 2 new commits** https://git.example/c\n> abc123 (https://git.example/abc) fix: grids\n> def456 (https://git.example/def) docs\n**Branch**: main\nGitea"},
 		{"embed with a link only", `{"embeds":[{"url":"https://x.example"}]}`, "https://x.example"},
+		{"masked link in content", `{"content":"see [the log](https://ci.example/1)"}`, "see the log (https://ci.example/1)"},
+		{"field without a name", `{"embeds":[{"fields":[{"name":" ","value":"v"}]}]}`, "v"},
+		{"at most 10 embeds", `{"embeds":[` + strings.Repeat(`{"title":"t"},`, 11) + `{"title":"t"}]}`, strings.TrimSuffix(strings.Repeat("**t**\n", 10), "\n")},
 		{"empty", `{"content":"  ","embeds":[{}]}`, ""},
 	} {
 		var p webhookPayload
@@ -62,9 +67,14 @@ func TestWebhookPosts(t *testing.T) {
 		}
 		msgID = int64(msg["id"].(float64))
 	}
-	// Mumble users see the name (the text comes "from the server").
-	if got := h.mumbleText(mustMessage(t, h, msgID)); got != "CI bot: build green" {
+	// Mumble users see the name, marked (the text comes "from the server");
+	// their history shows it once.
+	stored := mustMessage(t, h, msgID)
+	if got := h.mumbleLive(stored); got != "CI bot (webhook): build green" {
 		t.Errorf("mumble: %q", got)
+	}
+	if got := h.historyLines([]store.Message{stored}); !strings.Contains(got, "<b>CI bot (webhook)</b>") || strings.Count(got, "CI bot") != 1 {
+		t.Errorf("history: %q", got)
 	}
 
 	// ?wait=true: the message; no username: the webhook's name; multipart
@@ -82,6 +92,21 @@ func TestWebhookPosts(t *testing.T) {
 		t.Fatalf("wait: %d %v", res.Code, got)
 	}
 	next(t, carol)
+	next(t, staff)
+
+	// Discord takes form fields too; a full 2000 characters with "@" stay
+	// whole (no pings: a zero-width space after each "@").
+	b.Reset()
+	mw = multipart.NewWriter(&b)
+	full := strings.Repeat("a", MaxTextLength-2) + "@b"
+	mw.WriteField("content", full)
+	mw.Close()
+	if res := postWebhook(h, url, mw.FormDataContentType(), b.String()); res.Code != 204 {
+		t.Fatalf("form: %d %s", res.Code, res.Body)
+	}
+	if m := next(t, carol)["message"].(map[string]any); m["text"] != quiet(full) {
+		t.Fatalf("form text: %.40q…", m["text"])
+	}
 	next(t, staff)
 
 	// Errors, as Discord's.

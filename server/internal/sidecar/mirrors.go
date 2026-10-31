@@ -253,7 +253,7 @@ func (h *Hub) historyLines(msgs []store.Message) string {
 	var b strings.Builder
 	for _, m := range msgs {
 		at := m.CreatedAt.UTC().Format("Jan 2 15:04")
-		b.WriteString("<br><b>" + html.EscapeString(m.Author) + "</b> <i>" + at + " UTC</i>: " + strings.ReplaceAll(html.EscapeString(h.mumbleText(m)), "\n", "<br>"))
+		b.WriteString("<br><b>" + html.EscapeString(authorLabel(m)) + "</b> <i>" + at + " UTC</i>: " + strings.ReplaceAll(html.EscapeString(h.mumbleText(m)), "\n", "<br>"))
 	}
 	return b.String()
 }

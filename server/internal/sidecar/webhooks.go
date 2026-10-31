@@ -38,19 +38,6 @@ func webhookName(s string) (string, bool) {
 	return s, n > 0 && n <= maxWebhookName && !strings.ContainsFunc(s, unicode.IsControl)
 }
 
-// mayWebhook: staff, for a text channel there is; else a manage error.
-func (c *Conn) mayWebhook(id mumble.Identity, channel int64) bool {
-	switch {
-	case c.hub.voice == nil || !c.hub.voice.MayManage(id.Session):
-		c.manageError("only admins and moderators manage webhooks")
-	case !c.hub.channelExists(channel):
-		c.manageError("webhooks are for text channels")
-	default:
-		return true
-	}
-	return false
-}
-
 func (c *Conn) sendWebhooks(channel int64) {
 	list, err := c.hub.store.Webhooks(channel)
 	if err != nil {
@@ -70,6 +57,10 @@ func (c *Conn) sendWebhooks(channel int64) {
 func (c *Conn) webhookRequest(id mumble.Identity, req request) {
 	h := c.hub
 	channel := req.Channel
+	if h.voice == nil || !h.voice.MayManage(id.Session) { // first: no hint which ids exist
+		c.manageError("only admins and moderators manage webhooks")
+		return
+	}
 	if req.Type == "rename-webhook" || req.Type == "delete-webhook" {
 		var err error
 		if channel, err = h.store.WebhookChannel(req.Webhook); err != nil {
@@ -77,7 +68,8 @@ func (c *Conn) webhookRequest(id mumble.Identity, req request) {
 			return
 		}
 	}
-	if !c.mayWebhook(id, channel) {
+	if !h.channelExists(channel) {
+		c.manageError("webhooks are for text channels")
 		return
 	}
 	name, ok := webhookName(req.Name)
@@ -110,6 +102,7 @@ func (c *Conn) webhookRequest(id mumble.Identity, req request) {
 			c.manageError("no such webhook")
 			return
 		}
+		h.webhookLimits.forget(req.Webhook)
 	}
 	c.sendWebhooks(channel)
 }

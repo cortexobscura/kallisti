@@ -61,7 +61,8 @@ func TestPings(t *testing.T) {
 		{from(store.Message{Text: "@everyone"}), false, false},                 // not by a moderator
 		{from(store.Message{Text: "yes", Reply: &store.Quote{Author: "alice"}}), false, true},
 		{from(store.Message{Text: "yes", Reply: &store.Quote{Author: "alice"}, NoPing: true}), false, false},
-		{from(store.Message{Text: "yes", Reply: &store.Quote{Author: ""}}), false, false}, // deleted since
+		{from(store.Message{Text: "yes", Reply: &store.Quote{Author: ""}}), false, false},                     // deleted since
+		{from(store.Message{Text: "yes", Reply: &store.Quote{Author: "alice", Webhook: true}}), false, false}, // a webhook's post named so
 		{store.Message{Author: "alice", Verified: true, AuthorID: &alice, Text: "@alice"}, true, false},
 		{store.Message{Author: "Alice", Text: "@alice me"}, false, false}, // own (no id)
 	} {

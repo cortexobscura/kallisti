@@ -66,6 +66,8 @@ type Quote struct {
 	ID     int64
 	Author string
 	Text   string
+	// A webhook's post: its name may be a user's (who is not answered).
+	Webhook bool
 }
 
 // MaxUploads is the most files one message has; MaxDescription the
@@ -649,8 +651,15 @@ func (s *Store) EnsureChannels(names []string) error {
 			return err
 		}
 	}
+	if _, err := tx.Exec(dropHiddenWebhooks); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
+
+// dropHiddenWebhooks: a hidden channel's webhooks go (one that comes back
+// has no old secret URLs).
+const dropHiddenWebhooks = `DELETE FROM webhooks WHERE channel IN (SELECT id FROM channels WHERE hidden = 1)`
 
 // SeedChannels makes the first text channels of a new server (later they
 // are managed in the client).
@@ -696,13 +705,20 @@ func (s *Store) RenameChannel(id int64, name string) error {
 }
 
 // HideChannel removes a text channel from the list; its history stays,
-// its webhooks go (one that comes back has no old secret URLs).
+// its webhooks go (see dropHiddenWebhooks).
 func (s *Store) HideChannel(id int64) error {
-	if err := s.textChannel(`UPDATE channels SET hidden = 1 WHERE id = ? AND `+textOnly, id); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`DELETE FROM webhooks WHERE channel = ?`, id)
-	return err
+	defer tx.Rollback()
+	if err := rowChanged(tx.Exec(`UPDATE channels SET hidden = 1 WHERE id = ? AND `+textOnly, id)); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(dropHiddenWebhooks); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetPositions puts the given text channels in this order.
@@ -789,7 +805,7 @@ func (s *Store) AddMessage(n NewMessage) (Message, error) {
 	var quote *Quote
 	if n.ReplyTo != 0 {
 		q := Quote{ID: n.ReplyTo}
-		err := tx.QueryRow(`SELECT author, text FROM messages WHERE id = ? AND channel_id = ?`, n.ReplyTo, n.ChannelID).Scan(&q.Author, &q.Text)
+		err := tx.QueryRow(`SELECT author, text, webhook_id != 0 FROM messages WHERE id = ? AND channel_id = ?`, n.ReplyTo, n.ChannelID).Scan(&q.Author, &q.Text, &q.Webhook)
 		if err != nil {
 			return Message{}, errors.New("the message to answer is not in this channel")
 		}
@@ -1000,7 +1016,7 @@ func withUploads(q interface {
 }
 
 const messageSelect = `SELECT m.id, m.channel_id, m.author, m.verified, m.author_id, m.text, m.created_at, m.edited_at, m.pinned_at,
-		m.reply_to, r.author, r.text, m.mention_all, m.no_ping, m.sticker_id, st.name, m.webhook_id
+		m.reply_to, r.author, r.text, COALESCE(r.webhook_id, 0) != 0, m.mention_all, m.no_ping, m.sticker_id, st.name, m.webhook_id
 	FROM messages m LEFT JOIN messages r ON r.id = m.reply_to LEFT JOIN stickers st ON st.id = m.sticker_id `
 
 func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
@@ -1009,9 +1025,10 @@ func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 	var edited, pinned sql.NullInt64
 	var replyTo, authorID sql.NullInt64
 	var replyAuthor, replyText, stickerName sql.NullString
+	var replyWebhook bool
 	var stickerID sql.NullInt64
 	if err := row.Scan(&m.ID, &m.ChannelID, &m.Author, &m.Verified, &authorID, &m.Text, &at, &edited, &pinned,
-		&replyTo, &replyAuthor, &replyText, &m.MentionAll, &m.NoPing, &stickerID, &stickerName, &m.Webhook); err != nil {
+		&replyTo, &replyAuthor, &replyText, &replyWebhook, &m.MentionAll, &m.NoPing, &stickerID, &stickerName, &m.Webhook); err != nil {
 		return Message{}, err
 	}
 	if authorID.Valid {
@@ -1019,7 +1036,7 @@ func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 		m.AuthorID = &id
 	}
 	if replyTo.Valid {
-		m.Reply = &Quote{ID: replyTo.Int64, Author: replyAuthor.String, Text: replyText.String}
+		m.Reply = &Quote{ID: replyTo.Int64, Author: replyAuthor.String, Text: replyText.String, Webhook: replyWebhook}
 	}
 	if stickerID.Valid {
 		m.Sticker = &MessageSticker{ID: stickerID.Int64, Name: stickerName.String}

@@ -144,7 +144,7 @@ func (h *Hub) threadFollowers(author mumble.Identity, ch chat, m store.Message) 
 	text := strings.ToLower(m.Text)
 	for user, name := range h.voice.Users() {
 		// Most users are not named: no pattern for them.
-		answered := m.Reply != nil && names.Key(m.Reply.Author) == names.Key(name)
+		answered := answers(m, names.Key(name))
 		if !answered && !strings.Contains(text, "@"+strings.ToLower(name)) {
 			continue
 		}

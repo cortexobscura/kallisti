@@ -23,8 +23,14 @@ func pings(m store.Message, direct bool, name string, user uint32) bool {
 	if byUser(mumble.Identity{Name: name, Registered: true, UserID: user}, m) || names.Key(m.Author) == key {
 		return false
 	}
-	repliesTo := m.Reply != nil && !m.NoPing && m.Reply.Author != "" && names.Key(m.Reply.Author) == key
-	return direct || m.MentionAll == "everyone" || repliesTo || mentionsName(m.Text, name)
+	return direct || m.MentionAll == "everyone" || answers(m, key) || mentionsName(m.Text, name)
+}
+
+// answers: m replies to the user (by name key), pinging. Not to a
+// webhook's post, whose name may be the user's.
+func answers(m store.Message, key string) bool {
+	r := m.Reply
+	return r != nil && !m.NoPing && !r.Webhook && r.Author != "" && names.Key(r.Author) == key
 }
 
 // pushTarget is a pinged user: connected, in do not disturb, banned, and

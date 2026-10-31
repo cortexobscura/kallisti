@@ -54,6 +54,14 @@ func TestWebhooks(t *testing.T) {
 	if list, _ := s.Webhooks(2); len(list) != 0 {
 		t.Errorf("after the channel: %+v", list)
 	}
+	// Also a configured channel no longer configured.
+	s.AddWebhook("hash4", Webhook{Channel: 1, Name: "x", Creator: "alice", CreatedAt: at}, 2)
+	if err := s.EnsureChannels([]string{"other"}); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := s.Webhooks(1); len(list) != 0 {
+		t.Errorf("after the configuration: %+v", list)
+	}
 }
 
 func TestWebhookMessages(t *testing.T) {
@@ -69,5 +77,13 @@ func TestWebhookMessages(t *testing.T) {
 	}
 	if hist, _ := s.History(1, 0, 10); hist[0].Webhook != w.ID {
 		t.Errorf("history: %+v", hist[0])
+	}
+	// A reply quotes it as a webhook's (its name may be a user's).
+	r, err := s.AddMessage(NewMessage{ChannelID: 1, Author: "bob", Text: "thanks", At: time.Now(), ReplyTo: m.ID})
+	if err != nil || r.Reply == nil || !r.Reply.Webhook {
+		t.Fatalf("reply: %+v %v", r.Reply, err)
+	}
+	if got, _ := s.MessageByID(r.ID); got.Reply == nil || !got.Reply.Webhook {
+		t.Errorf("stored reply: %+v", got.Reply)
 	}
 }

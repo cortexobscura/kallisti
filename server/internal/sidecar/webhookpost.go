@@ -33,6 +33,7 @@ import (
 const (
 	maxWebhookBody = 8 << 20 // with files, which are not read
 	maxPayloadJSON = 64 << 10
+	maxEmbeds      = 10 // as Discord
 	// Discord's limit per webhook: 5 posts per 2 seconds.
 	webhookRate  = rate.Limit(2.5)
 	webhookBurst = 5
@@ -69,7 +70,8 @@ func unmask(s string) string { return maskedLink.ReplaceAllString(s, "$1 ($2)") 
 
 // text is the message: content, then each embed as lines (its author, the
 // title in bold with its link, the description quoted, the fields, the
-// footer). No pings (see quiet).
+// footer), cut at MaxTextLength. No pings (see quiet: after the cut, so a
+// full content stays whole).
 func (p webhookPayload) text() string {
 	var lines []string
 	add := func(s string) {
@@ -77,11 +79,11 @@ func (p webhookPayload) text() string {
 			lines = append(lines, s)
 		}
 	}
-	add(p.Content)
+	add(unmask(p.Content))
 	if strings.TrimSpace(p.Content) == "" {
-		add(p.Text)
+		add(unmask(p.Text))
 	}
-	for _, e := range p.Embeds {
+	for _, e := range p.Embeds[:min(len(p.Embeds), maxEmbeds)] {
 		if e.Author != nil {
 			add(e.Author.Name)
 		}
@@ -96,13 +98,21 @@ func (p webhookPayload) text() string {
 			}
 		}
 		for _, f := range e.Fields {
-			add("**" + strings.TrimSpace(f.Name) + "**: " + unmask(f.Value))
+			if name := strings.TrimSpace(f.Name); name != "" {
+				add("**" + name + "**: " + unmask(f.Value))
+			} else {
+				add(unmask(f.Value))
+			}
 		}
 		if e.Footer != nil {
 			add(e.Footer.Text)
 		}
 	}
-	return quiet(strings.Join(lines, "\n"))
+	text := strings.Join(lines, "\n")
+	if utf8.RuneCountInString(text) > MaxTextLength {
+		text = shorten(text, MaxTextLength-1)
+	}
+	return quiet(text)
 }
 
 // webhookLimits: a rate limiter per webhook.
@@ -131,45 +141,70 @@ func (l *webhookLimits) wait(id int64, now time.Time) time.Duration {
 	return d
 }
 
-// webhookError answers as Discord does: {"message","code"}.
-func webhookError(w http.ResponseWriter, status, code int, message string) {
+func (l *webhookLimits) forget(id int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.by, id)
+}
+
+func webhookJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]any{"message": message, "code": code})
+	json.NewEncoder(w).Encode(v)
+}
+
+// webhookError answers as Discord does: {"message","code"}.
+func webhookError(w http.ResponseWriter, status, code int, message string) {
+	webhookJSON(w, status, map[string]any{"message": message, "code": code})
 }
 
 var errPayload = errors.New("cannot parse the body")
 
-// readPayload reads JSON or multipart's payload_json.
+// readPayload reads JSON, or multipart: payload_json, or the content and
+// username fields (files are skipped).
 func readPayload(r *http.Request) (webhookPayload, error) {
 	var p webhookPayload
+	decode := func(body io.Reader) (webhookPayload, error) {
+		if err := json.NewDecoder(io.LimitReader(body, maxPayloadJSON)).Decode(&p); err != nil {
+			return p, errPayload
+		}
+		return p, nil
+	}
 	ctype, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	var body io.Reader
 	switch ctype {
 	case "application/json":
-		body = r.Body
+		return decode(r.Body)
 	case "multipart/form-data":
 		mr, err := r.MultipartReader()
 		if err != nil {
 			return p, errPayload
 		}
+		fields := false
 		for {
 			part, err := mr.NextPart()
-			if err != nil {
+			if err == io.EOF && fields {
+				return p, nil
+			} else if err != nil {
 				return p, errPayload
 			}
-			if part.FormName() == "payload_json" {
-				body = io.LimitReader(part, maxPayloadJSON)
-				break
+			switch part.FormName() {
+			case "payload_json":
+				return decode(part)
+			case "content", "username":
+				b, err := io.ReadAll(io.LimitReader(part, maxPayloadJSON))
+				if err != nil {
+					return p, errPayload
+				}
+				if part.FormName() == "content" {
+					p.Content = string(b)
+				} else {
+					p.Username = string(b)
+				}
+				fields = true
 			}
 		}
-	default:
-		return p, errPayload
 	}
-	if err := json.NewDecoder(body).Decode(&p); err != nil {
-		return p, errPayload
-	}
-	return p, nil
+	return p, errPayload
 }
 
 // ServeWebhook answers posts to webhooks.
@@ -219,7 +254,7 @@ func (h *Hub) ServeWebhook(w http.ResponseWriter, r *http.Request) {
 		webhookError(w, http.StatusBadRequest, 50035, fmt.Sprintf("Invalid Form Body: content must be %d or fewer in length.", MaxTextLength))
 		return
 	}
-	text := shorten(p.text(), MaxTextLength-1) // embeds: cut at the limit
+	text := p.text()
 	if text == "" {
 		webhookError(w, http.StatusBadRequest, 50006, "Cannot send an empty message")
 		return
@@ -227,16 +262,15 @@ func (h *Hub) ServeWebhook(w http.ResponseWriter, r *http.Request) {
 	if d := h.webhookLimits.wait(hook.ID, h.now()); d > 0 {
 		secs := math.Ceil(d.Seconds()*1000) / 1000
 		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(d.Seconds()))))
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusTooManyRequests)
-		json.NewEncoder(w).Encode(map[string]any{"message": "You are being rate limited.", "retry_after": secs, "global": false})
+		webhookJSON(w, http.StatusTooManyRequests, map[string]any{"message": "You are being rate limited.", "retry_after": secs, "global": false})
 		return
 	}
-	ch, ok := h.chatOf(hook.Channel)
-	if !ok || ch.isVoice || ch.direct || ch.parent != 0 {
+	// A webhook's channel is a text channel (hidden ones lost theirs).
+	if !h.channelExists(hook.Channel) {
 		webhookError(w, http.StatusNotFound, 10003, "Unknown Channel")
 		return
 	}
+	ch := chat{id: hook.Channel}
 	m, err := h.store.AddMessage(store.NewMessage{ChannelID: hook.Channel, Author: name, Text: text, At: h.now(), Webhook: hook.ID})
 	if err != nil {
 		slog.Error("webhook post", "err", err)
@@ -248,8 +282,7 @@ func (h *Hub) ServeWebhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	webhookJSON(w, http.StatusOK, map[string]any{
 		"id": strconv.FormatInt(m.ID, 10), "channel_id": strconv.FormatInt(m.ChannelID, 10), "webhook_id": strconv.FormatInt(hook.ID, 10),
 		"content": m.Text, "timestamp": m.CreatedAt.UTC().Format(time.RFC3339Nano),
 		"author": map[string]any{"id": strconv.FormatInt(hook.ID, 10), "username": name, "bot": true},
