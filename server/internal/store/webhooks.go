@@ -19,7 +19,7 @@ type Webhook struct {
 }
 
 const webhooksTable = `CREATE TABLE IF NOT EXISTS webhooks (
-	id         INTEGER PRIMARY KEY,
+	id         INTEGER PRIMARY KEY AUTOINCREMENT, -- not used again (a stale delete)
 	token_hash TEXT NOT NULL UNIQUE,
 	channel    INTEGER NOT NULL, -- the text channel
 	name       TEXT NOT NULL,

@@ -47,6 +47,12 @@ func TestWebhooks(t *testing.T) {
 	if _, err := s.DeleteWebhook(w.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("deleted twice: %v", err)
 	}
+	// Ids are not used again (a stale delete must not hit a new one).
+	last, _ := s.Webhooks(2)
+	s.DeleteWebhook(last[0].ID)
+	if again, _ := s.AddWebhook("hash5", Webhook{Channel: 2, Name: "New", Creator: "alice", CreatedAt: at}, 2); again.ID <= last[0].ID {
+		t.Errorf("id %d used again", again.ID)
+	}
 	// A hidden (deleted) channel's webhooks go with it.
 	if err := s.HideChannel(2); err != nil {
 		t.Fatal(err)

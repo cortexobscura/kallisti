@@ -19,7 +19,8 @@ func TestWebhookText(t *testing.T) {
 	}{
 		{"content", `{"content":"build **green**"}`, "build **green**"},
 		{"slack", `{"text":"deployed"}`, "deployed"},
-		{"no pings", `{"content":"@everyone @carol"}`, "@​everyone @​carol"},
+		{"no pings", `{"content":"@everyone @carol (@bob)"}`, "@\u200beveryone @\u200bcarol (@\u200bbob)"},
+		{"URLs stay whole", `{"content":"https://x.org/@scope/pkg@1.0"}`, "https://x.org/@scope/pkg@1.0"},
 		{"embed", `{"content":"Push","embeds":[{"author":{"name":"lain"},"title":"[kallisti] 2 new commits","url":"https://git.example/c",
 			"description":"[abc123](https://git.example/abc) fix: grids\n[def456](https://git.example/def) docs","fields":[{"name":"Branch","value":"main"}],"footer":{"text":"Gitea"}}]}`,
 			"Push\nlain\n**[kallisti] 2 new commits** https://git.example/c\n> abc123 (https://git.example/abc) fix: grids\n> def456 (https://git.example/def) docs\n**Branch**: main\nGitea"},
@@ -94,8 +95,7 @@ func TestWebhookPosts(t *testing.T) {
 	next(t, carol)
 	next(t, staff)
 
-	// Discord takes form fields too; a full 2000 characters with "@" stay
-	// whole (no pings: a zero-width space after each "@").
+	// Discord takes form fields too; a full 2000 characters stay whole.
 	b.Reset()
 	mw = multipart.NewWriter(&b)
 	full := strings.Repeat("a", MaxTextLength-2) + "@b"
@@ -104,7 +104,7 @@ func TestWebhookPosts(t *testing.T) {
 	if res := postWebhook(h, url, mw.FormDataContentType(), b.String()); res.Code != 204 {
 		t.Fatalf("form: %d %s", res.Code, res.Body)
 	}
-	if m := next(t, carol)["message"].(map[string]any); m["text"] != quiet(full) {
+	if m := next(t, carol)["message"].(map[string]any); m["text"] != full {
 		t.Fatalf("form text: %.40q…", m["text"])
 	}
 	next(t, staff)
@@ -121,8 +121,10 @@ func TestWebhookPosts(t *testing.T) {
 		{url, "application/json", `{"content":` + fmt.Sprintf("%q", strings.Repeat("a", MaxTextLength+1)) + `}`, 400, 50035},
 		{url, "application/json", `{"content":"x","username":"` + strings.Repeat("a", maxWebhookName+1) + `"}`, 400, 50035},
 		{url, "application/json", `not json`, 400, 50109},
+		{url, "application/json", `{"content":"x"}not json`, 400, 50109},
 		{url, "text/plain", `hello`, 400, 50109},
 	} {
+		h.webhookLimits.forget(id) // a fixed clock: each case on its own
 		res := postWebhook(h, c.path, c.ctype, c.body)
 		var e struct {
 			Code int `json:"code"`
@@ -154,7 +156,8 @@ func TestWebhookRateLimit(t *testing.T) {
 			t.Fatalf("post %d: %d", i, res.Code)
 		}
 	}
-	res := postWebhook(h, url, "application/json", `{"content":"x"}`)
+	// Before the body is read: also a bad one counts as over the limit.
+	res := postWebhook(h, url, "application/json", `not json`)
 	if res.Code != 429 || res.Header().Get("Retry-After") == "" {
 		t.Fatalf("over the limit: %d %v", res.Code, res.Header())
 	}

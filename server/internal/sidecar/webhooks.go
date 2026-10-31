@@ -56,6 +56,9 @@ func (c *Conn) sendWebhooks(channel int64) {
 // channel), create-webhook, rename-webhook, delete-webhook.
 func (c *Conn) webhookRequest(id mumble.Identity, req request) {
 	h := c.hub
+	// As channel management: a channel deleted meanwhile gets no webhook.
+	h.manageMu.Lock()
+	defer h.manageMu.Unlock()
 	channel := req.Channel
 	if h.voice == nil || !h.voice.MayManage(id.Session) { // first: no hint which ids exist
 		c.manageError("only admins and moderators manage webhooks")
