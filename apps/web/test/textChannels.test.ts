@@ -1,3 +1,4 @@
+import { webhookPicture } from "../src/lib/webhooks";
 import { describe, expect, it } from "vitest";
 import {
   deleteMessageRequest,
@@ -718,6 +719,12 @@ describe("webhooks", () => {
     expect(JSON.parse(manageRequest({ deleteWebhook: 3 }))).toEqual({ type: "delete-webhook", webhook: 3 });
     expect(JSON.parse(manageRequest({ removeWebhookPicture: 3 }))).toEqual({ type: "remove-webhook-picture", webhook: 3 });
     expect(JSON.parse(webhookPictureTokenRequest(3))).toEqual({ type: "webhook-picture-token", webhook: 3 });
+  });
+  it("keeps a changed picture's version (its posts load it anew)", () => {
+    const ev = parseServerEvent(JSON.stringify({ type: "webhook-picture", webhook: 3, version: 9 }));
+    expect(reduceText(initialTextState, ev!).webhookPictures).toEqual({ 3: 9 });
+    expect(webhookPicture("https://s", 3, 9)).toBe("https://s/api/webhook-picture/3.png?v=9");
+    expect(webhookPicture("https://s", 3)).toBe("https://s/api/webhook-picture/3.png");
   });
   it("marks a webhook's message", () => {
     const ev = parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), webhook: 3 } }));

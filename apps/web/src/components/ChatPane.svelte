@@ -132,6 +132,7 @@
     onRemoveEmoji,
     previewOf,
     httpBase = "",
+    webhookPictures = {},
     cannotWrite = null,
     slow = null,
     loginToWrite = null,
@@ -223,6 +224,8 @@
     // Link previews of stored messages; images are on the server (httpBase).
     previewOf?: (id: number) => LinkPreview | null;
     httpBase?: string;
+    // Versions of changed webhook pictures (see lib/webhooks).
+    webhookPictures?: Readonly<Record<number, number>>;
     // Why we cannot write now (a time-out); the message box says it.
     cannotWrite?: string | null;
     // Slow mode here (see lib/slowMode): sending waits, the box counts down.
@@ -1474,7 +1477,7 @@
               name={group.actorName}
               size={40}
               registered={"verified" in m && m.verified === true}
-              src={(m as DisplayMessage).webhook ? webhookPicture(httpBase, (m as DisplayMessage).webhook!) : undefined}
+              src={(m as DisplayMessage).webhook ? webhookPicture(httpBase, (m as DisplayMessage).webhook!, webhookPictures[(m as DisplayMessage).webhook!]) : undefined}
             />
           {:else}
             <span class="system-avatar"></span>

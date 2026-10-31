@@ -1350,6 +1350,7 @@
 
   // What both chat panes (the open chat and an open thread) share.
   const chatCommon = $derived({
+    webhookPictures: text.webhookPictures,
     drafts,
     pendingFiles,
     loginToWrite,

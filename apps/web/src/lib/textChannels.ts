@@ -215,6 +215,8 @@ export type ServerEvent =
   // its maker, once: see lib/webhooks).
   | { type: "webhooks"; channel: number; webhooks: Webhook[] }
   | { type: "webhook-created"; channel: number; id: number; token: string }
+  // A webhook's picture changed (set or removed), for everyone.
+  | { type: "webhook-picture"; webhook: number; version: number }
   // The running time-outs changed.
   | { type: "timeouts"; timeouts: Timeout[]; channelTimeouts: ChannelTimeout[] }
   // Admins changed whether guests may only read.
@@ -318,6 +320,8 @@ export type TextState = {
   invites: Readonly<Record<number, Invite[]>>;
   // Webhooks of text channels (staff), once asked for.
   webhooks: Readonly<Record<number, Webhook[]>>;
+  // Versions of webhook pictures changed since the start (see lib/webhooks).
+  webhookPictures: Readonly<Record<number, number>>;
   timeouts: readonly Timeout[];
   channelTimeouts: readonly ChannelTimeout[];
   guestsReadOnly: boolean;
@@ -404,6 +408,7 @@ export const initialTextState: TextState = {
   inherited: {},
   invites: {},
   webhooks: {},
+  webhookPictures: {},
   timeouts: [],
   channelTimeouts: [],
   guestsReadOnly: false,
@@ -684,6 +689,8 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
       return isNum(v.channel) && Array.isArray(v.webhooks) && v.webhooks.every(isWebhook) ? { type: "webhooks", channel: v.channel, webhooks: v.webhooks } : null;
     case "webhook-created":
       return isNum(v.channel) && isNum(v.id) && isStr(v.token) ? { type: "webhook-created", channel: v.channel, id: v.id, token: v.token } : null;
+    case "webhook-picture":
+      return isNum(v.webhook) && isNum(v.version) ? { type: "webhook-picture", webhook: v.webhook, version: v.version } : null;
     case "invite-joined":
       if (!isNum(v.voice) || (v.channel !== undefined && !isNum(v.channel))) return null;
       return { type: "invite-joined", voice: v.voice, ...(v.channel !== undefined && { channel: v.channel }), ...(v.category === true && { category: true }) };
@@ -923,6 +930,8 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
       return { ...state, invites: { ...state.invites, [event.voice]: event.invites } };
     case "webhooks":
       return { ...state, webhooks: { ...state.webhooks, [event.channel]: event.webhooks } };
+    case "webhook-picture":
+      return { ...state, webhookPictures: { ...state.webhookPictures, [event.webhook]: event.version } };
     case "invite-created": // the client shows it once (lib/invites)
     case "invite-joined":
     case "webhook-created": // the same (lib/webhooks)

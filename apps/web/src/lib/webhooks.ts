@@ -7,8 +7,10 @@ export type Webhook = { id: number; name: string; creator: string; created: numb
 
 export const webhookUrl = (origin: string, id: number, token: string) => `${origin}/api/webhooks/${id}/${token}`;
 
-// Its picture (also for its posts; none: 404, initials then).
-export const webhookPicture = (origin: string, id: number) => `${origin}/api/webhook-picture/${id}.png`;
+// Its picture (also for its posts; none: 404, initials then); version: of
+// its last change seen (the server's "webhook-picture"), loaded anew.
+export const webhookPicture = (origin: string, id: number, version?: number) =>
+  `${origin}/api/webhook-picture/${id}.png${version ? `?v=${version}` : ""}`;
 
 export const isWebhook = (v: unknown): v is Webhook => {
   const o = v && typeof v === "object" ? (v as Record<string, unknown>) : null;
