@@ -12,6 +12,7 @@ import {
   reduceText,
   searchRequest,
   sendRequest,
+  webhookPictureTokenRequest,
   sendAnswer,
   toChatMessage,
   unreadTextIds,
@@ -715,6 +716,8 @@ describe("webhooks", () => {
     expect(JSON.parse(manageRequest({ createWebhook: 2, name: "CI" }))).toEqual({ type: "create-webhook", channel: 2, name: "CI" });
     expect(JSON.parse(manageRequest({ renameWebhook: 3, name: "Build" }))).toEqual({ type: "rename-webhook", webhook: 3, name: "Build" });
     expect(JSON.parse(manageRequest({ deleteWebhook: 3 }))).toEqual({ type: "delete-webhook", webhook: 3 });
+    expect(JSON.parse(manageRequest({ removeWebhookPicture: 3 }))).toEqual({ type: "remove-webhook-picture", webhook: 3 });
+    expect(JSON.parse(webhookPictureTokenRequest(3))).toEqual({ type: "webhook-picture-token", webhook: 3 });
   });
   it("marks a webhook's message", () => {
     const ev = parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), webhook: 3 } }));

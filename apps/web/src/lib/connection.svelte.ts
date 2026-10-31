@@ -38,6 +38,7 @@ import {
   editMessageRequest,
   emojiTokenRequest,
   logoTokenRequest,
+  webhookPictureTokenRequest,
   historyRequest,
   httpBase,
   markReadRequest,
@@ -562,6 +563,10 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
     // as an event.
     uploadLogo: async (file: File): Promise<void> => {
       await upload(logoTokenRequest(), "/api/logo", file, true);
+    },
+    // A webhook's picture (staff, see lib/webhooks).
+    uploadWebhookPicture: async (webhook: number, file: File): Promise<void> => {
+      await upload(webhookPictureTokenRequest(webhook), "/api/webhook-picture", file, true);
     },
     // Stickers (see lib/stickers): the list comes as an event.
     uploadSticker: async (fields: StickerFields, file: File): Promise<void> => {

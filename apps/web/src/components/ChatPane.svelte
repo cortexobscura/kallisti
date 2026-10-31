@@ -1,5 +1,6 @@
 <script lang="ts">
   import UserName from "./UserName.svelte";
+  import { webhookPicture } from "../lib/webhooks";
   import { autosize } from "../lib/autosize";
   import { afterImageError, asSpoiler, attachmentView, chatSrc, chatVideo, imageBox, lazyVideo, lightboxOf } from "../lib/media";
   import { emojiImages } from "../lib/emojiImages.svelte";
@@ -1469,7 +1470,12 @@
       {#if i === 0}
         <div class="gutter">
           {#if group.actorName}
-            <Avatar name={group.actorName} size={40} registered={"verified" in m && m.verified === true} />
+            <Avatar
+              name={group.actorName}
+              size={40}
+              registered={"verified" in m && m.verified === true}
+              src={(m as DisplayMessage).webhook ? webhookPicture(httpBase, (m as DisplayMessage).webhook!) : undefined}
+            />
           {:else}
             <span class="system-avatar"></span>
           {/if}

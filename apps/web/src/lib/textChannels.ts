@@ -1168,6 +1168,7 @@ export const uploadTokenRequest = (count = 1) => JSON.stringify(count > 1 ? { ty
 export const emojiTokenRequest = (name: string) => JSON.stringify({ type: "emoji-token", name });
 // The server's logo (admins): a token for one upload.
 export const logoTokenRequest = () => JSON.stringify({ type: "logo-token" });
+export const webhookPictureTokenRequest = (webhook: number) => JSON.stringify({ type: "webhook-picture-token", webhook });
 export const deleteEmojiRequest = (name: string) => JSON.stringify({ type: "delete-emoji", name });
 // Personal emoji (registered users): a token to upload a new one, one
 // from a message (":name:" or "<:name:id>") under our name, rename and
@@ -1206,6 +1207,7 @@ export type ManageAction =
   | { createWebhook: number; name: string }
   | { renameWebhook: number; name: string }
   | { deleteWebhook: number }
+  | { removeWebhookPicture: number }
   | { rename: number; name: string }
   | { remove: number }
   | { order: number[] }
@@ -1261,6 +1263,7 @@ const manageBody = (a: ManageAction) => {
   if ("createWebhook" in a) return { type: "create-webhook", channel: a.createWebhook, name: a.name };
   if ("renameWebhook" in a) return { type: "rename-webhook", webhook: a.renameWebhook, name: a.name };
   if ("deleteWebhook" in a) return { type: "delete-webhook", webhook: a.deleteWebhook };
+  if ("removeWebhookPicture" in a) return { type: "remove-webhook-picture", webhook: a.removeWebhookPicture };
   if ("rename" in a) return { type: "rename-channel", channel: a.rename, name: a.name };
   if ("remove" in a) return { type: "delete-channel", channel: a.remove };
   if ("moderator" in a) return { type: "set-moderator", user: a.moderator, moderator: a.on };

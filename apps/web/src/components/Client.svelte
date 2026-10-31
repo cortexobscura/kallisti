@@ -157,7 +157,7 @@
   import { railBadge, tabTitle, type RailBadge } from "../lib/title";
   import { inviteTarget, messageLink, parseMessageLink, plainLink, type ChannelLink } from "../lib/messageLink";
   import { inviteLink, inviteOf, invitePlace, parseInviteLink } from "../lib/invites";
-  import { webhookUrl } from "../lib/webhooks";
+  import { webhookPicture, webhookUrl } from "../lib/webhooks";
   import WebhooksDialog from "./WebhooksDialog.svelte";
   import UserPanel from "./UserPanel.svelte";
   import VoiceBar from "./VoiceBar.svelte";
@@ -1910,6 +1910,9 @@
     onCreate={(name) => connection.createWebhook(f.channel, name).then((made) => void (newWebhook = { channel: f.channel, ...made }))}
     onRename={(id, name) => connection.request({ renameWebhook: id, name })}
     onDelete={(id) => connection.request({ deleteWebhook: id })}
+    picture={(id) => webhookPicture(connection.httpBase, id)}
+    onPicture={(id, file) => connection.uploadWebhookPicture(id, file).then(() => connection.request({ webhooks: f.channel }))}
+    onRemovePicture={(id) => connection.request({ removeWebhookPicture: id })}
     onClose={() => ((webhooksOf = null), (newWebhook = null))}
   />
 {/if}

@@ -6,7 +6,8 @@
   import SaveStatus from "./SaveStatus.svelte";
 
   // A text channel's webhooks (staff, see lib/webhooks): the list, a new
-  // one (its URL shown once), rename, delete. Each change applies at once.
+  // one (its URL shown once), its picture, rename, delete. Each change
+  // applies at once.
   let {
     name,
     webhooks = null,
@@ -15,6 +16,9 @@
     onCreate,
     onRename,
     onDelete,
+    picture,
+    onPicture,
+    onRemovePicture,
     onClose,
   }: {
     name: string; // the channel's, as shown
@@ -24,6 +28,9 @@
     onCreate: (name: string) => Promise<void>;
     onRename: (id: number, name: string) => Promise<void>;
     onDelete: (id: number) => Promise<void>;
+    picture: (id: number) => string; // its address
+    onPicture: (id: number, file: File) => Promise<void>;
+    onRemovePicture: (id: number) => Promise<void>;
     onClose: () => void;
   } = $props();
 
@@ -51,6 +58,13 @@
     if (r?.name.trim()) changes.run(() => onRename(r.id, r.name.trim()).then(() => (renaming = null)));
   };
   const when = (at: number) => new Date(at).toLocaleDateString();
+  // A new picture under the same address: shown anew.
+  let version = $state(0);
+  const choosePicture = (id: number, el: HTMLInputElement) => {
+    const file = el.files?.[0];
+    el.value = ""; // the same file again is a new upload
+    if (file) changes.run(() => onPicture(id, file).then(() => void version++));
+  };
 </script>
 
 <dialog bind:this={dialog} onclose={onClose} aria-labelledby="webhooks-dialog-title">
@@ -89,6 +103,11 @@
               <button type="button" class="action" onclick={() => (renaming = null)}>Cancel</button>
             </form>
           {:else}
+            {#if w.picture}
+              <img class="picture" src="{picture(w.id)}?v={version}" alt="" />
+            {:else}
+              <span class="picture none" aria-hidden="true"></span>
+            {/if}
             <span class="what">
               <span class="ellipsis">{w.name}</span>
               <span class="sub">by {w.creator}, {when(w.created)}</span>
@@ -99,6 +118,19 @@
               </button>
               <button type="button" onclick={() => (deleting = null)}>Keep</button>
             {:else}
+              <label class="file">
+                Picture
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  aria-label="Picture of {w.name}"
+                  disabled={changes.busy}
+                  onchange={(e) => choosePicture(w.id, e.currentTarget)}
+                />
+              </label>
+              {#if w.picture}
+                <button type="button" aria-label="Remove the picture of {w.name}" onclick={() => changes.run(() => onRemovePicture(w.id))}>No picture</button>
+              {/if}
               <button type="button" onclick={() => ((renaming = { id: w.id, name: w.name }), (deleting = null))}>Rename</button>
               <button type="button" onclick={() => ((deleting = w.id), (renaming = null))} aria-label="Delete {w.name}">Delete</button>
             {/if}
@@ -214,5 +246,32 @@
   }
   li > .danger {
     color: var(--danger);
+  }
+  .picture {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    margin-right: 6px;
+    border-radius: 50%;
+  }
+  .picture.none {
+    background: var(--bg-active);
+  }
+  .file {
+    position: relative;
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .file:hover,
+  .file:focus-within {
+    color: var(--text);
+  }
+  .file input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
   }
 </style>

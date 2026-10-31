@@ -4,19 +4,21 @@
 
   // The status dot and speaking ring are cut out of the background behind
   // the avatar: set --avatar-cutout to that color (default: sidebar).
-  // status: the dot (none: no dot).
+  // status: the dot (none: no dot). src: this picture, not the user's by
+  // name (a webhook's post: the name may be anyone's).
   let {
     name,
     size = 32,
     speaking = false,
     status = null,
     registered = false,
-  }: { name: string; size?: number; speaking?: boolean; status?: Presence | null; registered?: boolean } = $props();
+    src,
+  }: { name: string; size?: number; speaking?: boolean; status?: Presence | null; registered?: boolean; src?: string } = $props();
   // The user's picture, if the client knows one (see setAvatarPictures).
   const lookup = pictureFor();
   // A picture that did not load (no saved one): initials.
   let failed = $state<string | null>(null);
-  const found = $derived(lookup(name, registered));
+  const found = $derived(src ?? lookup(name, registered));
   const picture = $derived(found === failed ? null : found);
 </script>
 
