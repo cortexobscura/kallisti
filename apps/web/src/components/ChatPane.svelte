@@ -852,11 +852,13 @@
   const pingText = (m: ChatMessage | DisplayMessage) => ("source" in m && m.source ? escapeHtml(m.source.text) : m.text);
   // Replies: the message we answer, and jumping to an original.
   // ping: the original's author gets a mention (the "@" switch).
-  let replying = $state<{ id: number; author: string; ping: boolean } | null>(null);
+  let replying = $state<{ id: number; author: string; ping: boolean; webhook?: boolean } | null>(null);
   let flashed = $state<number | null>(null);
   const startReply = (m: ChatMessage | DisplayMessage) => {
     if (!("source" in m) || !m.source) return;
-    replying = { id: m.source.id, author: m.actorName ?? "", ping: true };
+    // A webhook's post pings nobody (see lib/mentions replyPing).
+    const webhook = "webhook" in m && !!m.webhook;
+    replying = { id: m.source.id, author: m.actorName ?? "", ping: !webhook, webhook };
     messageInput?.focus();
   };
   const jumpTo = (id: number) => {
@@ -1251,14 +1253,14 @@
       {#if replying}
         <div class="replying">
           <span class="ellipsis">Replying to <strong>{replying.author}</strong></span>
-          <button
+          {#if !replying.webhook}<button
             type="button"
             class="ping"
             class:off={!replying.ping}
             aria-pressed={replying.ping}
             title={replying.ping ? "The author gets a mention" : "The author gets no mention"}
             onclick={() => replying && (replying.ping = !replying.ping)}>@ {replying.ping ? "On" : "Off"}</button
-          >
+          >{/if}
           <button type="button" aria-label="Cancel reply" onclick={() => (replying = null)}>×</button>
         </div>
       {/if}
@@ -1477,6 +1479,10 @@
             <span class="author">{#if group.actorName}<UserName name={group.actorName} />{:else}Server{/if}</span>
             {#if "verified" in m && m.verified}
               <span class="verified" title="Registered on the server">✓<span class="sr-only">registered</span></span>
+            {/if}
+            {#if "webhook" in m && m.webhook}
+              <!-- Posted from outside (see lib/webhooks): the name may be anyone's. -->
+              <span class="app-tag" title="Posted by a webhook">App</span>
             {/if}
             <time datetime={new Date(m.at).toISOString()}>{formatTimestamp(m.at, now, undefined, settings.value.timeFormat)}</time>
           </div>
@@ -2070,6 +2076,16 @@
     font-size: 16px;
     font-weight: 600;
     color: var(--text);
+  }
+  .app-tag {
+    align-self: center;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--accent-strong);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
   }
   .verified {
     color: var(--accent);

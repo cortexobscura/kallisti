@@ -131,6 +131,9 @@ describe("replies ping", () => {
     const quiet: TextMessage = { id: 3, channel: 1, author: "bob", text: "sure", at: 0, reply: { id: 2, author: "lain", text: "q" }, noPing: true };
     expect(replyPing(quiet)).toBeUndefined();
     expect(replyPing({ ...quiet, noPing: undefined })).toBe("lain");
+    // A webhook's post may carry a user's name: answering it pings nobody.
+    const hook: TextMessage = { ...quiet, noPing: undefined, reply: { id: 2, author: "lain", text: "q", webhook: true } };
+    expect(replyPing(hook)).toBeUndefined();
     expect(mentionCounts({ ...initialTextState, channels: [{ id: 1, name: "a" }], messages: { 1: [quiet] } }, {}, "lain")).toEqual({});
   });
 });

@@ -13,6 +13,7 @@ import { parseCustomEmoji, type CustomEmoji } from "./customEmoji";
 import { isMessageSticker, parseStickers, type MessageSticker, type Sticker } from "./stickers";
 import { parsePersonalEmoji, parseRemovedEmoji, type PersonalEmoji } from "./personalEmoji";
 import type { Invite } from "./invites";
+import { isWebhook, type Webhook } from "./webhooks";
 import type { Members, Online } from "./members";
 import { parseConnections, type Connection } from "./connections";
 import { isCaptchaLevel, type CaptchaLevel } from "./captcha";
@@ -69,10 +70,12 @@ export type TextMessage = {
   reactions?: Reaction[];
   mentionAll?: MentionAll;
   noPing?: boolean; // a reply that does not ping
+  webhook?: number; // posted by this webhook (see lib/webhooks)
   thread?: Thread; // the thread started from it (see lib/threads)
   poll?: Poll; // a poll message (text: the poll as text, see lib/polls)
 };
-export type Quote = { id: number; author: string; text: string };
+// webhook: the quoted post is a webhook's (see lib/mentions replyPing).
+export type Quote = { id: number; author: string; text: string; webhook?: boolean };
 // A chat line for display: a text channel message can carry an attachment
 // and a verified mark.
 // source: the stored message (id and plain text), for editing.
@@ -89,6 +92,7 @@ export type DisplayMessage = ChatMessage & {
   reactions?: Reaction[];
   mentionAll?: MentionAll;
   noPing?: boolean; // a reply that does not ping
+  webhook?: number; // see TextMessage
 };
 
 export type ListenOnlyChannel = { channel: number; speakers: Speaker[] };
@@ -207,6 +211,10 @@ export type ServerEvent =
   | { type: "invites"; voice: number; invites: Invite[] }
   | { type: "invite-created"; voice: number; token: string }
   | { type: "invite-joined"; voice: number; channel?: number; category?: boolean }
+  // A text channel's webhooks (for staff), and a new one's token (only to
+  // its maker, once: see lib/webhooks).
+  | { type: "webhooks"; channel: number; webhooks: Webhook[] }
+  | { type: "webhook-created"; channel: number; id: number; token: string }
   // The running time-outs changed.
   | { type: "timeouts"; timeouts: Timeout[]; channelTimeouts: ChannelTimeout[] }
   // Admins changed whether guests may only read.
@@ -308,6 +316,8 @@ export type TextState = {
   inherited: Readonly<Record<number, Speaker[]>>;
   // Invite links of private channels (staff), once asked for.
   invites: Readonly<Record<number, Invite[]>>;
+  // Webhooks of text channels (staff), once asked for.
+  webhooks: Readonly<Record<number, Webhook[]>>;
   timeouts: readonly Timeout[];
   channelTimeouts: readonly ChannelTimeout[];
   guestsReadOnly: boolean;
@@ -393,6 +403,7 @@ export const initialTextState: TextState = {
   private: {},
   inherited: {},
   invites: {},
+  webhooks: {},
   timeouts: [],
   channelTimeouts: [],
   guestsReadOnly: false,
@@ -564,7 +575,8 @@ const isMessage = (v: unknown): v is TextMessage =>
   (v.authorId === undefined || isNum(v.authorId)) &&
   (v.edited === undefined || isNum(v.edited)) &&
   (v.pinned === undefined || isNum(v.pinned)) &&
-  (v.reply === undefined || (isObj(v.reply) && isNum(v.reply.id) && isStr(v.reply.author) && isStr(v.reply.text))) &&
+  (v.reply === undefined ||
+    (isObj(v.reply) && isNum(v.reply.id) && isStr(v.reply.author) && isStr(v.reply.text) && (v.reply.webhook === undefined || typeof v.reply.webhook === "boolean"))) &&
   (v.upload === undefined || isAttachment(v.upload)) &&
   (v.uploads === undefined || (Array.isArray(v.uploads) && v.uploads.every(isAttachment))) &&
   (v.sticker === undefined || isMessageSticker(v.sticker)) &&
@@ -572,6 +584,7 @@ const isMessage = (v: unknown): v is TextMessage =>
   (v.reactions === undefined || isReactions(v.reactions)) &&
   (v.mentionAll === undefined || isMentionAll(v.mentionAll)) &&
   (v.noPing === undefined || typeof v.noPing === "boolean") &&
+  (v.webhook === undefined || isNum(v.webhook)) &&
   (v.thread === undefined || isThread(v.thread));
 
 // Network input: anything unexpected is dropped.
@@ -667,6 +680,10 @@ export const parseServerEvent = (raw: string): ServerEvent | null => {
       return isNum(v.voice) && Array.isArray(v.invites) && v.invites.every(isInvite) ? { type: "invites", voice: v.voice, invites: v.invites } : null;
     case "invite-created":
       return isNum(v.voice) && isStr(v.token) ? { type: "invite-created", voice: v.voice, token: v.token } : null;
+    case "webhooks":
+      return isNum(v.channel) && Array.isArray(v.webhooks) && v.webhooks.every(isWebhook) ? { type: "webhooks", channel: v.channel, webhooks: v.webhooks } : null;
+    case "webhook-created":
+      return isNum(v.channel) && isNum(v.id) && isStr(v.token) ? { type: "webhook-created", channel: v.channel, id: v.id, token: v.token } : null;
     case "invite-joined":
       if (!isNum(v.voice) || (v.channel !== undefined && !isNum(v.channel))) return null;
       return { type: "invite-joined", voice: v.voice, ...(v.channel !== undefined && { channel: v.channel }), ...(v.category === true && { category: true }) };
@@ -904,8 +921,11 @@ export const reduceText = (state: TextState, event: ServerEvent): TextState => {
       return { ...state, private: privateMap(event.channels), inherited: inheritedMap(event.channels) };
     case "invites":
       return { ...state, invites: { ...state.invites, [event.voice]: event.invites } };
+    case "webhooks":
+      return { ...state, webhooks: { ...state.webhooks, [event.channel]: event.webhooks } };
     case "invite-created": // the client shows it once (lib/invites)
     case "invite-joined":
+    case "webhook-created": // the same (lib/webhooks)
       return state;
     case "status": {
       const { type: _, session, ...v } = event;
@@ -1180,6 +1200,12 @@ export type ManageAction =
   | { createInvite: number; seconds: number; uses: number }
   | { deleteInvite: number }
   | { redeemInvite: string }
+  // A text channel's webhooks (staff, see lib/webhooks): list, make,
+  // rename, delete.
+  | { webhooks: number }
+  | { createWebhook: number; name: string }
+  | { renameWebhook: number; name: string }
+  | { deleteWebhook: number }
   | { rename: number; name: string }
   | { remove: number }
   | { order: number[] }
@@ -1231,6 +1257,10 @@ const manageBody = (a: ManageAction) => {
   if ("createInvite" in a) return { type: "create-invite", voice: a.createInvite, seconds: a.seconds, uses: a.uses };
   if ("deleteInvite" in a) return { type: "delete-invite", invite: a.deleteInvite };
   if ("redeemInvite" in a) return { type: "redeem-invite", token: a.redeemInvite };
+  if ("webhooks" in a) return { type: "webhooks", channel: a.webhooks };
+  if ("createWebhook" in a) return { type: "create-webhook", channel: a.createWebhook, name: a.name };
+  if ("renameWebhook" in a) return { type: "rename-webhook", webhook: a.renameWebhook, name: a.name };
+  if ("deleteWebhook" in a) return { type: "delete-webhook", webhook: a.deleteWebhook };
   if ("rename" in a) return { type: "rename-channel", channel: a.rename, name: a.name };
   if ("remove" in a) return { type: "delete-channel", channel: a.remove };
   if ("moderator" in a) return { type: "set-moderator", user: a.moderator, moderator: a.on };
@@ -1350,6 +1380,7 @@ export const toChatMessage = (m: TextMessage, base = "", channels?: ReadonlyMap<
       ...(m.reactions?.length && { reactions: m.reactions }),
       ...(m.mentionAll && { mentionAll: m.mentionAll }),
       ...(m.noPing && { noPing: true }),
+      ...(m.webhook && { webhook: m.webhook }),
       ...(uploads.length && { uploads: uploads.map(spoilerUpload) }),
       ...(m.sticker && { sticker: m.sticker }),
       ...(m.poll && { poll: m.poll }),

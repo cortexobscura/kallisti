@@ -412,6 +412,13 @@ export const connect = (url: string, credentials: Credentials, audio: AudioConte
       const confirms = (ev: ServerEvent) => ev.type === "invite-created" && ev.voice === voice && ((token = ev.token), true);
       return wait({ via: "text", confirms }, () => ws.send(manageRequest({ createInvite: voice, seconds, uses }))).then(() => token);
     },
+    // A text channel's new webhook: its id and token (shown once), from the
+    // answer to this request only.
+    createWebhook: (channel: number, name: string) => {
+      let made = { id: 0, token: "" };
+      const confirms = (ev: ServerEvent) => ev.type === "webhook-created" && ev.channel === channel && ((made = { id: ev.id, token: ev.token }), true);
+      return wait({ via: "text", confirms }, () => ws.send(manageRequest({ createWebhook: channel, name }))).then(() => made);
+    },
     // Other requests a control waits on: a text request (done on its
     // answer), Mumble messages (done once the state holds the change).
     ask: (body: string, confirms: (ev: ServerEvent) => boolean) => wait({ via: "text", confirms }, () => ws.send(body)),

@@ -13,12 +13,15 @@ const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Dat
 
 // Discord-style grouping: one header for a run of messages from one sender,
 // within 5 minutes and on the same day.
+const webhookOf = (m: ChatMessage | undefined) => (m && "webhook" in m ? m.webhook : undefined);
+
 export const groupMessages = (messages: readonly ChatMessage[]): MessageGroup[] => {
   const groups: MessageGroup[] = [];
   for (const m of messages) {
     const last = groups.at(-1);
     const prev = last?.messages.at(-1);
-    const sameAuthor = last?.actor === m.actor && last.actorName === m.actorName;
+    // A webhook's post may carry a user's name (see lib/webhooks).
+    const sameAuthor = last?.actor === m.actor && last.actorName === m.actorName && webhookOf(prev) === webhookOf(m);
     if (last && prev && sameAuthor && m.at - prev.at <= GROUP_WINDOW_MS && sameDay(prev.at, m.at)) {
       last.messages.push(m);
     } else {

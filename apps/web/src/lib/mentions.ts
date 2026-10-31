@@ -48,7 +48,9 @@ export const pingsMe = (html: string, author: string | null, replyTo: string | u
 
 // Whose message a reply pings: the original's author, unless sent
 // without a ping.
-export const replyPing = (m: { reply?: { author: string }; noPing?: boolean }) => (m.noPing ? undefined : m.reply?.author);
+// A webhook's post may carry a user's name: its answers ping nobody.
+export const replyPing = (m: { reply?: { author: string; webhook?: boolean }; noPing?: boolean }) =>
+  m.noPing || m.reply?.webhook ? undefined : m.reply?.author;
 
 // One pattern for many names (longest first, so "lain soy" wins over
 // "lain"), cached for the last list.

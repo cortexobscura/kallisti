@@ -100,6 +100,8 @@ describe("confirmsManage", () => {
   it("waits for the changed lists", () => {
     expect(confirmsManage({ channelModerator: 1, channel: 2, on: true })!(ev({ type: "roles", moderators: [], admins: [] }))).toBe(true);
     expect(confirmsManage({ deleteInvite: 1 })!(ev({ type: "invites", voice: 2, invites: [] }))).toBe(true);
+    expect(confirmsManage({ renameWebhook: 1, name: "x" })!(ev({ type: "webhooks", channel: 2, webhooks: [] }))).toBe(true);
+    expect(confirmsManage({ deleteWebhook: 1 })!(ev({ type: "webhooks", channel: 2, webhooks: [] }))).toBe(true);
     expect(confirmsManage({ rename: 1, name: "a" })!(ev({ type: "private", channels: [] }))).toBe(false);
   });
   it("has nothing to wait for where the server sends no answer of its own", () => {

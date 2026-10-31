@@ -23,6 +23,10 @@ describe("ownsMessage", () => {
     expect(ownsMessage(withId("lain", 9), user("lain", 4), 0)).toBe(false); // another lain before
   });
 
+  it("nobody owns a webhook's post, also of their name", () => {
+    expect(ownsMessage({ ...line("guest", false, 6000), webhook: 3 }, user("guest", null), 5000)).toBe(false);
+  });
+
   it("nobody owns others' messages", () => {
     expect(ownsMessage(line("bob", true), user("lain", 4), 0)).toBe(false);
     expect(ownsMessage(line("bob", true), undefined, 0)).toBe(false);

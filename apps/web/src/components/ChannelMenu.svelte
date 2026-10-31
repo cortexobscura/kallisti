@@ -29,6 +29,7 @@
     onMembers,
     onViewMembers,
     onModerators,
+    onWebhooks,
     direct,
     thread,
     own,
@@ -72,6 +73,7 @@
     onDelete?: () => void;
     onMembers?: () => void;
     onModerators?: () => void;
+    onWebhooks?: () => void; // a text channel's webhooks (staff)
     // A direct chat (see lib/directList).
     direct?: { pinned: boolean; onProfile: () => void; onRead?: () => void; onPin: () => void; onHide: () => void };
     // A thread (see lib/threads): follow it, archive it (or open it again;
@@ -164,6 +166,7 @@
     {#if canCreateSub && onCreateSub}<button onclick={act(onCreateSub)}>Create subchannel</button>{/if}
     {#if canMembers && onMembers}<button onclick={act(onMembers)}>Members…</button>{/if}
     {#if canModerators && onModerators}<button onclick={act(onModerators)}>Moderators…</button>{/if}
+    {#if onWebhooks}<button onclick={act(onWebhooks)}>Webhooks…</button>{/if}
     {#if canMoveUp}<button onclick={act(() => onMove?.(-1))}>Move up</button>{/if}
     {#if canMoveDown}<button onclick={act(() => onMove?.(1))}>Move down</button>{/if}
     {#if canDelete && onDelete}

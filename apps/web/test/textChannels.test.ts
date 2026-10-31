@@ -699,3 +699,28 @@ describe("attachments", () => {
     expect(ev?.type === "message" ? ev.message.uploads?.[0]?.previewType : null).toBe("video/mp4");
   });
 });
+
+describe("webhooks", () => {
+  const hook = { id: 3, name: "CI", creator: "mod", created: 5 };
+  it("keeps a channel's webhooks; the token of a new one is not state", () => {
+    const list = parseServerEvent(JSON.stringify({ type: "webhooks", channel: 2, webhooks: [hook] }));
+    expect(reduceText(initialTextState, list!).webhooks).toEqual({ 2: [hook] });
+    expect(parseServerEvent(JSON.stringify({ type: "webhooks", channel: 2, webhooks: [{ ...hook, created: "x" }] }))).toBeNull();
+    const made = parseServerEvent(JSON.stringify({ type: "webhook-created", channel: 2, id: 3, token: "t" }));
+    expect(made).toEqual({ type: "webhook-created", channel: 2, id: 3, token: "t" });
+    expect(reduceText(initialTextState, made!)).toBe(initialTextState);
+  });
+  it("asks for, makes, renames and deletes them", () => {
+    expect(JSON.parse(manageRequest({ webhooks: 2 }))).toEqual({ type: "webhooks", channel: 2 });
+    expect(JSON.parse(manageRequest({ createWebhook: 2, name: "CI" }))).toEqual({ type: "create-webhook", channel: 2, name: "CI" });
+    expect(JSON.parse(manageRequest({ renameWebhook: 3, name: "Build" }))).toEqual({ type: "rename-webhook", webhook: 3, name: "Build" });
+    expect(JSON.parse(manageRequest({ deleteWebhook: 3 }))).toEqual({ type: "delete-webhook", webhook: 3 });
+  });
+  it("marks a webhook's message", () => {
+    const ev = parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), webhook: 3 } }));
+    expect(ev?.type === "message" && ev.message.webhook).toBe(3);
+    expect(toChatMessage({ ...msg(1), webhook: 3 }, "http://srv").webhook).toBe(3);
+    expect(toChatMessage(msg(2), "http://srv")).not.toHaveProperty("webhook");
+    expect(parseServerEvent(JSON.stringify({ type: "message", message: { ...msg(1), webhook: "3" } }))).toBeNull();
+  });
+});

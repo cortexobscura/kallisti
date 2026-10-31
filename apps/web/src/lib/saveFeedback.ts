@@ -79,6 +79,8 @@ export const confirmsManage = (a: ManageAction): ((ev: ServerEvent) => boolean) 
   if ("createPrivateVoice" in a) return is("private");
   if ("invites" in a || "deleteInvite" in a) return is("invites");
   if ("createInvite" in a) return is("invite-created");
+  if ("webhooks" in a || "renameWebhook" in a || "deleteWebhook" in a) return is("webhooks");
+  if ("createWebhook" in a) return is("webhook-created");
   if ("redeemInvite" in a) return is("invite-joined");
   if ("moderator" in a || "admin" in a || "channelModerator" in a) return is("roles");
   if ("listenOnly" in a) return is("listen-only");

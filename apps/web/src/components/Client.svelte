@@ -157,6 +157,8 @@
   import { railBadge, tabTitle, type RailBadge } from "../lib/title";
   import { inviteTarget, messageLink, parseMessageLink, plainLink, type ChannelLink } from "../lib/messageLink";
   import { inviteLink, inviteOf, invitePlace, parseInviteLink } from "../lib/invites";
+  import { webhookUrl } from "../lib/webhooks";
+  import WebhooksDialog from "./WebhooksDialog.svelte";
   import UserPanel from "./UserPanel.svelte";
   import VoiceBar from "./VoiceBar.svelte";
   import ObsDialog from "./ObsDialog.svelte";
@@ -877,6 +879,9 @@
   // A link made in the members dialog: shown there once. A redeemed link
   // to a voice channel asks to join it (see askJoin).
   let newInvite = $state<{ voice: number; token: string } | null>(null);
+  // The webhooks dialog's channel, and a new webhook (its token shown once).
+  let webhooksOf = $state<{ channel: number; name: string } | null>(null);
+  let newWebhook = $state<{ channel: number; id: number; token: string } | null>(null);
   $effect(() =>
     connection.onTextEvent((ev) => {
       if (ev.type !== "invite-joined") return;
@@ -1802,6 +1807,7 @@
     onRecord={(on) => connection.manage({ record: m.id, on })}
     onMembers={() => channels.startMembers(m.kind, m.id)}
     onModerators={() => channels.startModerators(m.kind, m.id)}
+    onWebhooks={m.kind === "text" && canManageText(server, text) ? () => (webhooksOf = { channel: m.id, name: m.name }) : undefined}
     notify={m.kind === "text" ? { pref: prefOf(channelPrefs.value, connection.httpBase, m.id), desktop: prefs.notifications } : undefined}
     onNotify={(patch) => channelPrefs.set(connection.httpBase, m.id, patch)}
     own={ownMenu(m.kind, m.id)}
@@ -1892,6 +1898,20 @@
   {#key channels.form}
     <ChannelDialog form={channels.form.form} onSubmit={channels.submit} onClose={channels.closeForm} />
   {/key}
+{/if}
+
+{#if webhooksOf}
+  {@const f = webhooksOf}
+  <WebhooksDialog
+    name="#{f.name}"
+    webhooks={text.webhooks[f.channel] ?? null}
+    created={newWebhook?.channel === f.channel ? { id: newWebhook.id, url: webhookUrl(connection.httpBase, newWebhook.id, newWebhook.token) } : null}
+    onLoad={() => connection.manage({ webhooks: f.channel })}
+    onCreate={(name) => connection.createWebhook(f.channel, name).then((made) => void (newWebhook = { channel: f.channel, ...made }))}
+    onRename={(id, name) => connection.request({ renameWebhook: id, name })}
+    onDelete={(id) => connection.request({ deleteWebhook: id })}
+    onClose={() => ((webhooksOf = null), (newWebhook = null))}
+  />
 {/if}
 
 {#if channels.members}

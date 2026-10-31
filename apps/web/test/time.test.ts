@@ -1,6 +1,7 @@
 import type { ChatMessage } from "@kallisti/protocol";
 import { describe, expect, it } from "vitest";
 import { chatItems, formatDay, formatTime, formatTimestamp, groupMessages } from "../src/lib/chat";
+import type { DisplayMessage } from "../src/lib/textChannels";
 
 const at = (y: number, m: number, d: number, h = 12, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 const now = at(2026, 10, 14, 16, 0);
@@ -53,6 +54,11 @@ describe("groupMessages across midnight", () => {
   it("starts a new group on a new day", () => {
     const groups = groupMessages([msg(1, at(2026, 10, 13, 23, 59)), msg(1, at(2026, 10, 14, 0, 1))]);
     expect(groups).toHaveLength(2);
+  });
+  it("keeps a webhook's post apart from a user of its name", () => {
+    const t = at(2026, 10, 14, 12, 0);
+    const hook = (t: number): DisplayMessage => ({ ...msg(1, t), webhook: 3 });
+    expect(groupMessages([msg(1, t), hook(t + 1000), hook(t + 2000)])).toHaveLength(2);
   });
 });
 
