@@ -3,6 +3,7 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -85,7 +86,7 @@ func TestQRLoginOffer(t *testing.T) {
 	if v := wait(claim, nil); v["state"] != "expired" {
 		t.Fatalf("taken twice: %v", v)
 	}
-	if v := wait(owner, alice); v["state"] != "expired" {
+	if v := wait(owner, alice); v["state"] != "done" || v["device"] != "Kallisti app on iPhone" {
 		t.Fatalf("owner after: %v", v)
 	}
 }
@@ -153,6 +154,25 @@ func TestQRLoginRefusals(t *testing.T) {
 		t.Fatalf("refused: %v", v)
 	}
 
+	// A logged-in device does not change accounts by an offer; the code
+	// stays for the device it is meant for.
+	_, v = post(t, srv, "/api/qr/start", map[string]string{"device": "laptop"}, alice)
+	if resp, _ := post(t, srv, "/api/qr/scan", map[string]string{"token": v["token"].(string), "device": "phone"}, bob); resp.StatusCode != http.StatusConflict {
+		t.Fatalf("offer to a logged-in device: %d", resp.StatusCode)
+	}
+	if resp, _ := post(t, srv, "/api/qr/scan", map[string]string{"token": v["token"].(string), "device": "phone"}, nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("code used up: %d", resp.StatusCode)
+	}
+
+	// An owner logged out meanwhile answers nothing.
+	_, v = post(t, srv, "/api/qr/start", map[string]string{"device": "laptop"}, alice)
+	owner2 := v["owner"].(string)
+	post(t, srv, "/api/qr/scan", map[string]string{"token": v["token"].(string), "device": "phone"}, nil)
+	post(t, srv, "/api/logout-all", map[string]string{}, alice)
+	if resp, _ := post(t, srv, "/api/qr/answer", map[string]any{"secret": owner2, "yes": true}, alice); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("logged out owner: %d", resp.StatusCode)
+	}
+
 	// Guests neither show nor confirm.
 	if resp, _ := post(t, srv, "/api/qr/start", map[string]string{"device": "x"}, guest); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("guest shows: %d", resp.StatusCode)
@@ -171,10 +191,30 @@ func TestQRLoginRefusals(t *testing.T) {
 	}
 	a.Now = old
 	long := strings.Repeat("a", maxDeviceName+1)
-	if resp, _ := post(t, srv, "/api/qr/start", map[string]string{"device": long}, alice); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("long name: %d", resp.StatusCode)
+	for _, bad := range []string{long, "\u202eenohp", "a\u200bb", " "} {
+		if resp, _ := post(t, srv, "/api/qr/start", map[string]string{"device": bad}, nil); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("name %q: %d", bad, resp.StatusCode)
+		}
 	}
 	if _, v := post(t, srv, "/api/qr/wait", map[string]string{"secret": "nope"}, nil); v["state"] != "expired" {
 		t.Fatalf("unknown: %v", v)
+	}
+}
+
+// At most maxQRPending codes at once; expired ones make room.
+func TestQRGrantLimit(t *testing.T) {
+	var q qrGrants
+	now := time.Now()
+	for i := range maxQRPending {
+		if !q.add(&qrGrant{token: fmt.Sprint("t", i), owner: fmt.Sprint("o", i), expires: now.Add(time.Minute)}, now) {
+			t.Fatalf("full at %d", i)
+		}
+	}
+	if q.add(&qrGrant{token: "t", owner: "o", expires: now.Add(time.Minute)}, now) {
+		t.Fatal("over the limit")
+	}
+	later := now.Add(2 * time.Minute)
+	if !q.add(&qrGrant{token: "t", owner: "o", expires: later.Add(time.Minute)}, later) {
+		t.Fatal("expired ones kept their room")
 	}
 }

@@ -3,7 +3,7 @@
   import Login from "./components/Login.svelte";
   import Authorize from "./components/Authorize.svelte";
   import QrLinkDialog from "./components/QrLinkDialog.svelte";
-  import { deviceLabel, parseQrLink } from "./lib/qrLogin";
+  import { parseQrLink, thisDevice } from "./lib/qrLogin";
   import { canScan, scanCode } from "./lib/qrScan";
   import Connect from "./components/Connect.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
@@ -76,7 +76,7 @@
   const qrLogin = (): QrLogin => ({
     api,
     origin: api.base || location.origin,
-    device: deviceLabel(navigator.userAgent, isDesktop()),
+    device: thisDevice(),
     ...(canScan() && { scan: () => void scanQr() }),
   });
   // The phone apps' scanner: a code of this server, or of the first one

@@ -1,4 +1,6 @@
 import { encode } from "uqr";
+import type { QrState } from "./accounts";
+import { isDesktop } from "./desktop";
 
 // Log in with a QR code (see the server's auth/qr.go): the code is a link
 // <server>/qr/<token>; a phone's camera opens it in the browser, the
@@ -21,11 +23,12 @@ export const parseQrLink = (url: string): { origin: string; token: string } | nu
   return m && (u.protocol === "https:" || (u.protocol === "http:" && local)) ? { origin: u.origin, token: m[1]! } : null;
 };
 
-// "Firefox on Linux", "Kallisti app on iPhone": from the user agent.
-export const deviceLabel = (ua: string, app: boolean): string => {
+// "Firefox on Linux", "Kallisti app on iPhone": from the user agent
+// (touch: its touch points; iPadOS says "Macintosh").
+export const deviceLabel = (ua: string, app: boolean, touch = 0): string => {
   const system = /iPhone/.test(ua)
     ? "iPhone"
-    : /iPad/.test(ua)
+    : /iPad/.test(ua) || (/Macintosh/.test(ua) && touch > 1)
       ? "iPad"
       : /Android/.test(ua)
         ? "Android"
@@ -57,4 +60,30 @@ export const qrPath = (text: string): { size: number; path: string } => {
   const cells: string[] = [];
   data.forEach((row, y) => row.forEach((dark, x) => dark && cells.push(`M${x} ${y}h1v1h-1z`)));
   return { size, path: cells.join("") };
+};
+
+// This device, as the other one sees it.
+export const thisDevice = () => deviceLabel(navigator.userAgent, isDesktop(), navigator.maxTouchPoints);
+
+// Asks a code's state every ms until onState says to stop (false); a
+// failed ask is asked again (a lost request). Returns the way out.
+export const pollState = (wait: () => Promise<QrState>, onState: (s: QrState) => boolean, ms = 1500): (() => void) => {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tick = () => {
+    timer = setTimeout(async () => {
+      let st: QrState;
+      try {
+        st = await wait();
+      } catch {
+        return stopped || tick();
+      }
+      if (!stopped && onState(st)) tick();
+    }, ms);
+  };
+  tick();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+  };
 };

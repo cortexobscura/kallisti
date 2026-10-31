@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import QrShowDialog from "./QrShowDialog.svelte";
-  import { deviceLabel } from "../lib/qrLogin";
+  import { thisDevice } from "../lib/qrLogin";
   import { parseInviteLink } from "../lib/invites";
   import UserName from "./UserName.svelte";
   import { serverOrigin } from "../lib/serverList";
@@ -446,7 +446,7 @@
   <QrShowDialog
     {api}
     origin={api.base || location.origin}
-    device={deviceLabel(navigator.userAgent, isDesktop())}
+    device={thisDevice()}
     onLoggedIn={qrDone}
     onClose={() => (qrShown = false)}
   />

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { deviceLabel, parseQrLink, qrLink, qrPath } from "../src/lib/qrLogin";
+import { describe, expect, it, vi } from "vitest";
+import type { QrState } from "../src/lib/accounts";
+import { deviceLabel, parseQrLink, pollState, qrLink, qrPath } from "../src/lib/qrLogin";
 
 const token = "ab".repeat(32);
 
@@ -32,6 +33,10 @@ describe("deviceLabel", () => {
     );
     expect(deviceLabel("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)", true)).toBe("Kallisti app on macOS");
     expect(deviceLabel("", false)).toBe("A browser");
+    // iPadOS says "Macintosh"; its touch screen tells.
+    const ipad = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15";
+    expect(deviceLabel(ipad, false, 5)).toBe("Safari on iPad");
+    expect(deviceLabel(ipad, false, 0)).toBe("Safari on macOS");
   });
 });
 
@@ -41,5 +46,30 @@ describe("qrPath", () => {
     expect(size).toBeGreaterThan(29); // a long link: version 4 and up, plus the border
     expect(path.startsWith("M")).toBe(true);
     expect(path).not.toContain("M0 0"); // the border is light
+  });
+});
+
+describe("pollState", () => {
+  it("asks until told to stop; a failed ask is asked again; stop ends it", async () => {
+    vi.useFakeTimers();
+    const answers: (QrState | Error)[] = [{ state: "waiting" }, new Error("lost"), { state: "scanned" }, { state: "done" }];
+    const wait = vi.fn(async () => {
+      const a = answers.shift()!;
+      if (a instanceof Error) throw a;
+      return a;
+    });
+    const seen: string[] = [];
+    pollState(wait, (s) => (seen.push(s.state), s.state !== "done"), 100);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(seen).toEqual(["waiting", "scanned", "done"]);
+    expect(wait).toHaveBeenCalledTimes(4);
+
+    const again = vi.fn(async (): Promise<QrState> => ({ state: "waiting" }));
+    const stop = pollState(again, () => true, 100);
+    await vi.advanceTimersByTimeAsync(250);
+    stop();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(again).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });

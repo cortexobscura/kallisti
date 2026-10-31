@@ -15,7 +15,7 @@ import (
 // Log in with a QR code (see the web app's lib/qrLogin): one device shows
 // a code (a link with the token), another scans it, the logged-in one of
 // the two confirms, and the other gets a session.
-//   - An offer: a logged-in device shows it; a logged-out one scans it
+//   - An offer: a logged-in device shows it; a logged-out one (only) scans it
 //     (gets a claim secret), the owner confirms (owner secret, its
 //     session), the scanner takes its session (wait with the claim).
 //   - A request: a logged-out device shows it; a logged-in one scans and
@@ -38,33 +38,35 @@ type qrGrant struct {
 	claim   string        // an offer's scanner's secret
 	device  string        // the showing device's name
 	scanner string        // the scanning device's name
-	state   string        // waiting, scanned, approved, refused
+	state   string        // waiting, scanned, approved, refused, done (an offer's, for its owner)
 	expires time.Time
 }
 
-// qrGrants keeps grants by each of their keys (token, owner, claim).
+// qrGrants keeps grants by each of their keys (token, owner, claim), at
+// most maxQRPending at once.
 type qrGrants struct {
-	mu sync.Mutex
-	by map[string]*qrGrant
+	mu  sync.Mutex
+	by  map[string]*qrGrant
+	all map[*qrGrant]bool
 }
 
 func (q *qrGrants) add(g *qrGrant, now time.Time) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.by == nil {
-		q.by = map[string]*qrGrant{}
+		q.by, q.all = map[string]*qrGrant{}, map[*qrGrant]bool{}
 	}
-	if len(q.by) >= maxQRPending {
-		for k, e := range q.by {
+	if len(q.all) >= maxQRPending {
+		for e := range q.all {
 			if !now.Before(e.expires) {
-				delete(q.by, k)
+				q.forget(e)
 			}
 		}
-		if len(q.by) >= maxQRPending {
+		if len(q.all) >= maxQRPending {
 			return false
 		}
 	}
-	q.by[g.token], q.by[g.owner] = g, g
+	q.by[g.token], q.by[g.owner], q.all[g] = g, g, true
 	return true
 }
 
@@ -81,23 +83,27 @@ func (q *qrGrants) with(key string, now time.Time, fn func(g *qrGrant)) bool {
 	return true
 }
 
-// drop forgets a grant (its session was taken). With the lock held.
-func (q *qrGrants) drop(g *qrGrant) {
+// forget drops a grant. With the lock held.
+func (q *qrGrants) forget(g *qrGrant) {
 	for _, k := range []string{g.token, g.owner, g.claim} {
 		delete(q.by, k)
 	}
+	delete(q.all, g)
 }
 
 // deviceName is a device's name as kept (false: empty, too long, or with
-// control characters).
+// control or format characters).
 func deviceName(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	n := utf8.RuneCountInString(s)
-	return s, n > 0 && n <= maxDeviceName && !strings.ContainsFunc(s, unicode.IsControl)
+	// No format characters either (bidi overrides, zero widths): the name
+	// is what the other device's question shows.
+	return s, n > 0 && n <= maxDeviceName && !strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) })
 }
 
+// readJSON reads a request's body (limited in ServeHTTP).
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(v); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return false
 	}
@@ -109,16 +115,16 @@ func (a *Service) qrStart(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Device string `json:"device"`
 	}
-	if !a.allow(r) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
-		return
-	}
 	if !readJSON(w, r, &req) {
 		return
 	}
 	device, ok := deviceName(req.Device)
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "a device name has 1 to 64 characters"})
+		return
+	}
+	if !a.allow(r) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts, try again later"})
 		return
 	}
 	acc, logged := a.AccountFor(r)
@@ -162,6 +168,11 @@ func (a *Service) qrScan(w http.ResponseWriter, r *http.Request) {
 	a.qr.with(req.Token, a.Now(), func(g *qrGrant) {
 		switch {
 		case req.Token != g.token || g.state != "waiting":
+		case g.offer && logged:
+			// A logged-in device does not change accounts by a code (a
+			// stranger's code would move it into the stranger's account);
+			// the code stays for the device it is meant for.
+			status, answer = http.StatusConflict, map[string]any{"error": "this code logs in a device without an account open: log out here first"}
 		case g.offer:
 			g.claim, g.scanner, g.state = randomHex(32), device, "scanned"
 			a.qr.by[g.claim] = g
@@ -238,11 +249,18 @@ func (a *Service) qrWait(w http.ResponseWriter, r *http.Request) {
 		if claim {
 			answer["device"] = g.device
 		}
-		// Whose session: the scanner's of an offer, the owner's of a request.
+		// Whose session: the scanner's of an offer (its owner then sees it
+		// done), the owner's of a request.
 		if g.state == "approved" && (claim || owner && !g.offer) {
 			acc := g.account
 			take = &acc
-			a.qr.drop(g)
+			if claim {
+				g.state = "done"
+				delete(a.qr.by, g.claim)
+				delete(a.qr.by, g.token)
+			} else {
+				a.qr.forget(g)
+			}
 		}
 	})
 	if take == nil {
