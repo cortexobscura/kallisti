@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"kallisti.chat/server/internal/avatarimg"
 	"kallisti.chat/server/internal/store"
@@ -50,16 +51,18 @@ func (h *Handler) uploadWebhookPicture(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{})
 }
 
-// serveWebhookPicture serves one (GET /api/webhook-picture/<id>.png),
-// checked again each time: it can change under the same address.
+// serveWebhookPicture serves one (GET /api/webhook-picture/<id>.png; the
+// clients add ?v=<version>, see the sidecar's WebhookPictureChanged),
+// checked again each time.
 func (h *Handler) serveWebhookPicture(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/webhook-picture/"), ".png"), 10, 64)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	data, at, err := h.Store.WebhookPicture(id)
+	data, _, err := h.Store.WebhookPicture(id)
 	if errors.Is(err, store.ErrNotFound) {
+		w.Header().Set("Cache-Control", "no-cache") // it may come
 		http.NotFound(w, r)
 		return
 	}
@@ -67,5 +70,6 @@ func (h *Handler) serveWebhookPicture(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot read the picture", http.StatusInternalServerError)
 		return
 	}
-	serveImage(w, r, "image/png", data, at, "no-cache")
+	// No date: one replaced within the second would revalidate as the same.
+	serveImage(w, r, "image/png", data, time.Time{}, "no-cache")
 }

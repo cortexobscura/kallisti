@@ -1179,11 +1179,13 @@ func (h *Hub) mumbleLive(m store.Message) string {
 
 // authorLabel is the author as Mumble users see it: a webhook's name is
 // marked (it may be anyone's).
-func authorLabel(m store.Message) string {
-	if m.Webhook != 0 {
-		return m.Author + " (webhook)"
+func authorLabel(m store.Message) string { return webhookLabel(m.Author, m.Webhook != 0) }
+
+func webhookLabel(name string, webhook bool) string {
+	if webhook {
+		return name + " (webhook)"
 	}
-	return m.Author
+	return name
 }
 
 // attachments are a send's uploads for the store: the sender's own, each
@@ -1224,7 +1226,7 @@ func (h *Hub) mumbleText(m store.Message) string {
 	}
 	// Mumble clients have no replies: a short quote first.
 	if r := m.Reply; r != nil && r.Author != "" {
-		text = "> " + r.Author + ": " + shorten(emoji.RefsAsNames(r.Text), 60) + " — " + text
+		text = "> " + webhookLabel(r.Author, r.Webhook) + ": " + shorten(emoji.RefsAsNames(r.Text), 60) + " — " + text
 	}
 	return text
 }

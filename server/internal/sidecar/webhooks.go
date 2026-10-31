@@ -117,6 +117,7 @@ func (c *Conn) webhookRequest(id mumble.Identity, req request) {
 			c.manageError("no such webhook")
 			return
 		}
+		h.WebhookPictureChanged(req.Webhook)
 	}
 	c.sendWebhooks(channel)
 }
@@ -129,4 +130,10 @@ func (h *Hub) RedeemWebhookPictureToken(token string) (webhook int64, ok bool) {
 		return 0, false
 	}
 	return t.webhook, true
+}
+
+// WebhookPictureChanged tells everyone a webhook's picture changed (set or
+// removed): its posts' avatars load it anew (the version in the address).
+func (h *Hub) WebhookPictureChanged(webhook int64) {
+	h.broadcast(map[string]any{"type": "webhook-picture", "webhook": webhook, "version": h.now().UnixMilli()})
 }

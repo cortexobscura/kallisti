@@ -84,6 +84,12 @@ func TestWebhookMessages(t *testing.T) {
 	if hist, _ := s.History(1, 0, 10); hist[0].Webhook != w.ID {
 		t.Errorf("history: %+v", hist[0])
 	}
+	// A deleted webhook posts nothing (checked with the insert).
+	gone, _ := s.AddWebhook("gone", Webhook{Channel: 1, Name: "Old", Creator: "alice", CreatedAt: time.Now()}, 10)
+	s.DeleteWebhook(gone.ID)
+	if _, err := s.AddMessage(NewMessage{ChannelID: 1, Author: "Old", Text: "late", At: time.Now(), Webhook: gone.ID}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deleted webhook: %v", err)
+	}
 	// A reply quotes it as a webhook's (its name may be a user's).
 	r, err := s.AddMessage(NewMessage{ChannelID: 1, Author: "bob", Text: "thanks", At: time.Now(), ReplyTo: m.ID})
 	if err != nil || r.Reply == nil || !r.Reply.Webhook {

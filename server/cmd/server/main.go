@@ -125,6 +125,7 @@ func run() error {
 		OnSticker:            hub.StickersChanged,
 		RedeemLogo:           hub.RedeemLogoToken,
 		RedeemWebhookPicture: hub.RedeemWebhookPictureToken,
+		OnWebhookPicture:     hub.WebhookPictureChanged,
 		OnLogo:               hub.LogoChanged,
 		OnPreview:            hub.UploadPreview,
 	}

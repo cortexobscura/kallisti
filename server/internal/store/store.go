@@ -780,6 +780,13 @@ func (s *Store) AddMessage(n NewMessage) (Message, error) {
 	defer tx.Rollback()
 	// A deleted thread keeps its channel row: the thread itself is checked
 	// here, as it may be gone since the caller found it.
+	// A webhook deleted (or its channel hidden) meanwhile posts nothing.
+	if n.Webhook != 0 {
+		var live int
+		if err := tx.QueryRow(`SELECT count(*) FROM webhooks WHERE id = ? AND channel = ?`, n.Webhook, n.ChannelID).Scan(&live); err != nil || live == 0 {
+			return Message{}, cmpErr(err, ErrNotFound)
+		}
+	}
 	if n.Thread {
 		var live int
 		if err := tx.QueryRow(`SELECT count(*) FROM threads WHERE channel_id = ?`, n.ChannelID).Scan(&live); err != nil || live == 0 {

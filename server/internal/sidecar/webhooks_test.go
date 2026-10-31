@@ -129,7 +129,17 @@ func TestWebhookPictureRequests(t *testing.T) {
 		t.Error("redeemed twice")
 	}
 	h.store.SetWebhookPicture(id, []byte("png"), clock)
+	// Everyone hears of a change (their avatars load it anew).
+	h.WebhookPictureChanged(id)
+	if m := next(t, carol); m["type"] != "webhook-picture" || m["webhook"] != float64(id) || m["version"] == nil {
+		t.Fatalf("carol: %v", m)
+	}
+	next(t, staff)
 	staff.Handle([]byte(fmt.Sprintf(`{"type":"remove-webhook-picture","webhook":%d}`, id)))
+	if m := next(t, staff); m["type"] != "webhook-picture" {
+		t.Fatalf("removed: %v", m)
+	}
+	next(t, carol)
 	if w := webhooksOf(t, staff, ci)[0].(map[string]any); w["picture"] != nil {
 		t.Fatalf("still has one: %v", w)
 	}

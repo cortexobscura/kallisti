@@ -121,8 +121,20 @@ func (p webhookPayload) text() string {
 // clients): an "@" elsewhere (in a URL, an address) pings nobody.
 var mentionStart = regexp.MustCompile(`(^|[\s\v\p{Z}\x{FEFF}(\[{,:])@`)
 
-// quietMentions is quiet for the "@"s that could mention: URLs stay whole.
-func quietMentions(s string) string { return mentionStart.ReplaceAllString(s, "${1}@\u200b") }
+// quietMentions is quiet for the "@"s that could mention, outside URLs
+// (which stay whole: the clients link them as they are).
+func quietMentions(s string) string {
+	quiet := func(t string) string { return mentionStart.ReplaceAllString(t, "${1}@\u200b") }
+	var b strings.Builder
+	last := 0
+	for _, u := range webURL.FindAllStringIndex(s, -1) {
+		b.WriteString(quiet(s[last:u[0]]) + s[u[0]:u[1]])
+		last = u[1]
+	}
+	return b.String() + quiet(s[last:])
+}
+
+var webURL = regexp.MustCompile(`https?://\S+`)
 
 // webhookLimits: a rate limiter per webhook.
 type webhookLimits struct {
@@ -173,9 +185,10 @@ var errPayload = errors.New("cannot parse the body")
 // username fields (files are skipped).
 func readPayload(r *http.Request) (webhookPayload, error) {
 	var p webhookPayload
+	// One JSON value of at most maxPayloadJSON bytes.
 	decode := func(body io.Reader) (webhookPayload, error) {
-		d := json.NewDecoder(io.LimitReader(body, maxPayloadJSON))
-		if d.Decode(&p) != nil || d.Decode(&struct{}{}) != io.EOF { // one value only
+		b, err := io.ReadAll(io.LimitReader(body, maxPayloadJSON+1))
+		if err != nil || len(b) > maxPayloadJSON || json.Unmarshal(b, &p) != nil {
 			return p, errPayload
 		}
 		return p, nil
@@ -219,6 +232,10 @@ func readPayload(r *http.Request) (webhookPayload, error) {
 
 // ServeWebhook answers posts to webhooks.
 func (h *Hub) ServeWebhook(w http.ResponseWriter, r *http.Request) {
+	// A slow body holds nothing for long: also not one answered early (the
+	// server reads it before answering), nor a post past its webhook's
+	// deletion (checked again when storing).
+	http.NewResponseController(w).SetReadDeadline(time.Now().Add(webhookReadTime))
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		webhookError(w, http.StatusMethodNotAllowed, 0, "405: Method Not Allowed")
@@ -253,9 +270,6 @@ func (h *Hub) ServeWebhook(w http.ResponseWriter, r *http.Request) {
 		webhookJSON(w, http.StatusTooManyRequests, map[string]any{"message": "You are being rate limited.", "retry_after": secs, "global": false})
 		return
 	}
-	// A slow body cannot hold a post past its webhook's deletion for long
-	// (checked again before storing, too).
-	http.NewResponseController(w).SetReadDeadline(time.Now().Add(webhookReadTime))
 	r.Body = http.MaxBytesReader(w, r.Body, maxWebhookBody)
 	p, err := readPayload(r)
 	if err != nil {
@@ -284,12 +298,11 @@ func (h *Hub) ServeWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ch := chat{id: hook.Channel}
-	if _, err := h.store.WebhookByToken(hook.ID, inviteHash(parts[1])); err != nil { // deleted meanwhile
+	m, err := h.store.AddMessage(store.NewMessage{ChannelID: hook.Channel, Author: name, Text: text, At: h.now(), Webhook: hook.ID})
+	if errors.Is(err, store.ErrNotFound) { // deleted meanwhile
 		webhookError(w, http.StatusNotFound, 10015, "Unknown Webhook")
 		return
-	}
-	m, err := h.store.AddMessage(store.NewMessage{ChannelID: hook.Channel, Author: name, Text: text, At: h.now(), Webhook: hook.ID})
-	if err != nil {
+	} else if err != nil {
 		slog.Error("webhook post", "err", err)
 		webhookError(w, http.StatusInternalServerError, 0, "Internal Server Error")
 		return

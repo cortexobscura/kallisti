@@ -32,8 +32,8 @@ func TestWebhookPictures(t *testing.T) {
 		data, _ := io.ReadAll(resp.Body)
 		return resp, data
 	}
-	if resp, _ := get(); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("none yet: %d", resp.StatusCode)
+	if resp, _ := get(); resp.StatusCode != http.StatusNotFound || resp.Header.Get("Cache-Control") != "no-cache" {
+		t.Fatalf("none yet: %d %v", resp.StatusCode, resp.Header)
 	}
 	if resp, _ := postEmoji(t, srv, "/api/webhook-picture", "bad", pngBytes(t)); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("a bad token: %d", resp.StatusCode)
@@ -48,6 +48,12 @@ func TestWebhookPictures(t *testing.T) {
 	img, err := png.Decode(bytes.NewReader(data))
 	if resp.StatusCode != 200 || err != nil || img.Bounds().Dx() != WebhookPictureSize || resp.Header.Get("Cache-Control") != "no-cache" {
 		t.Fatalf("served: %d %v %v", resp.StatusCode, err, resp.Header)
+	}
+	// No date to revalidate by (a picture replaced within the second).
+	req, _ := http.NewRequest("GET", srv.URL+picture, nil)
+	req.Header.Set("If-Modified-Since", time.Now().Add(time.Hour).UTC().Format(http.TimeFormat))
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 200 || resp.Header.Get("Last-Modified") != "" {
+		t.Errorf("revalidated by date: %v %v", resp.StatusCode, resp.Header)
 	}
 	for _, bad := range []string{"/api/webhook-picture/x.png", "/api/webhook-picture/99.png"} {
 		if resp, err := http.Get(srv.URL + bad); err != nil || resp.StatusCode != http.StatusNotFound {

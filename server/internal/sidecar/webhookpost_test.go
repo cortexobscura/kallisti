@@ -20,7 +20,7 @@ func TestWebhookText(t *testing.T) {
 		{"content", `{"content":"build **green**"}`, "build **green**"},
 		{"slack", `{"text":"deployed"}`, "deployed"},
 		{"no pings", `{"content":"@everyone @carol (@bob)"}`, "@\u200beveryone @\u200bcarol (@\u200bbob)"},
-		{"URLs stay whole", `{"content":"https://x.org/@scope/pkg@1.0"}`, "https://x.org/@scope/pkg@1.0"},
+		{"URLs stay whole", `{"content":"https://x.org/@scope/pkg@1.0 https://x.org/s?q=foo,@alice @bob"}`, "https://x.org/@scope/pkg@1.0 https://x.org/s?q=foo,@alice @\u200bbob"},
 		{"embed", `{"content":"Push","embeds":[{"author":{"name":"lain"},"title":"[kallisti] 2 new commits","url":"https://git.example/c",
 			"description":"[abc123](https://git.example/abc) fix: grids\n[def456](https://git.example/def) docs","fields":[{"name":"Branch","value":"main"}],"footer":{"text":"Gitea"}}]}`,
 			"Push\nlain\n**[kallisti] 2 new commits** https://git.example/c\n> abc123 (https://git.example/abc) fix: grids\n> def456 (https://git.example/def) docs\n**Branch**: main\nGitea"},
@@ -77,6 +77,10 @@ func TestWebhookPosts(t *testing.T) {
 	if got := h.historyLines([]store.Message{stored}); !strings.Contains(got, "<b>CI bot (webhook)</b>") || strings.Count(got, "CI bot") != 1 {
 		t.Errorf("history: %q", got)
 	}
+	reply := store.Message{Author: "carol", Text: "thanks", Reply: &store.Quote{Author: "CI bot", Text: "build green", Webhook: true}}
+	if got := h.mumbleText(reply); !strings.HasPrefix(got, "> CI bot (webhook): ") {
+		t.Errorf("reply: %q", got)
+	}
 
 	// ?wait=true: the message; no username: the webhook's name; multipart
 	// with payload_json (files ignored).
@@ -122,6 +126,7 @@ func TestWebhookPosts(t *testing.T) {
 		{url, "application/json", `{"content":"x","username":"` + strings.Repeat("a", maxWebhookName+1) + `"}`, 400, 50035},
 		{url, "application/json", `not json`, 400, 50109},
 		{url, "application/json", `{"content":"x"}not json`, 400, 50109},
+		{url, "application/json", `{"content":"x"}` + strings.Repeat(" ", maxPayloadJSON) + `{}`, 400, 50109},
 		{url, "text/plain", `hello`, 400, 50109},
 	} {
 		h.webhookLimits.forget(id) // a fixed clock: each case on its own
