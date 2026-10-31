@@ -33,6 +33,7 @@ func (h *Hub) readyFor(id mumble.Identity) map[string]any {
 	if id.Registered {
 		ready["reads"], ready["summary"] = h.readState(id)
 		ready["follows"] = h.followsOf(id)
+		ready["channelList"] = h.channelListOf(id.UserID)
 		if h.voice != nil {
 			ready["directs"] = h.directs(id)
 		}
