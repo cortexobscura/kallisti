@@ -8,8 +8,8 @@
   create (name, at most 80 characters; at most 10 per channel), rename,
   delete. The token goes once to its creator (the URL cannot be shown
   again: a new webhook if it is lost).
-- messages.webhook: the webhook a message came from (its name may be
-  another per post); on the wire as `webhook: true`.
+- messages.webhook_id: the webhook a message came from (its name may be
+  another per post); on the wire as `webhook: <id>` (for its picture).
 
 ## Acceptance Criteria
 

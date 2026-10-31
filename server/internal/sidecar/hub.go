@@ -461,6 +461,7 @@ type wireMessage struct {
 	Reactions  []wireReaction  `json:"reactions,omitempty"`
 	MentionAll string          `json:"mentionAll,omitempty"` // "here" or "everyone"
 	NoPing     bool            `json:"noPing,omitempty"`     // a reply that does not ping
+	Webhook    int64           `json:"webhook,omitempty"`    // posted by this webhook (see webhooks.go)
 	Thread     *wireThread     `json:"thread,omitempty"`     // the thread started from it
 	Poll       *wirePoll       `json:"poll,omitempty"`       // a poll message (text: the poll as text)
 }
@@ -551,7 +552,7 @@ func toWire(m store.Message) wireMessage { return toWireFor(m, nil) }
 
 // toWireFor: for one reader (see toWirePoll).
 func toWireFor(m store.Message, viewer *uint32) wireMessage {
-	w := wireMessage{ID: m.ID, Channel: m.ChannelID, Author: m.Author, Text: m.Text, At: m.CreatedAt.UnixMilli(), Verified: m.Verified, AuthorID: m.AuthorID}
+	w := wireMessage{ID: m.ID, Channel: m.ChannelID, Author: m.Author, Text: m.Text, At: m.CreatedAt.UnixMilli(), Verified: m.Verified, AuthorID: m.AuthorID, Webhook: m.Webhook}
 	if !m.EditedAt.IsZero() {
 		w.Edited = m.EditedAt.UnixMilli()
 	}
@@ -629,6 +630,7 @@ type request struct {
 	List        *channelList     `json:"list"`        // set-channel-list
 	Uses        int              `json:"uses"`        // create-invite (0: unlimited; seconds 0: for ever)
 	Invite      int64            `json:"invite"`      // delete-invite
+	Webhook     int64            `json:"webhook"`     // rename-webhook, delete-webhook
 	Token       string           `json:"token"`       // redeem-invite
 	Rules       *msgrules.Rules  `json:"rules"`       // set-message-rules
 	Homes       *homes.Rules     `json:"homes"`       // set-home-servers
@@ -831,6 +833,9 @@ func (c *Conn) Handle(raw []byte) {
 		return
 	case "redeem-invite":
 		c.redeemInvite(*id, req.Token)
+		return
+	case "webhooks", "create-webhook", "rename-webhook", "delete-webhook":
+		c.webhookRequest(*id, req)
 		return
 	case "set-guests-read-only":
 		// The voice server reports the change (GuestsReadOnlyChanged).
