@@ -27,3 +27,4 @@
 - [ ] [Remove the fallback for plain-named session cookies (after 2026-11-28)](issues/remove-plain-cookie-fallback.md)
 - [ ] [Log in with a QR code](issues/qr-login.md)
   - [ ] [QR login: the apps' scanner](issues/qr-login-apps.md)
+- [ ] [Settings in categories](issues/settings-categories.md)
