@@ -57,8 +57,11 @@ describe("fediverse account API", () => {
   });
 
   it("reads the sign-up and creates the account", async () => {
-    const api = createAccountsApi("http://srv", fakeFetch(200, { name: "alice", handle: "@alice@social.example", remote: "alice@social.example" }, []));
-    expect(await api.fediSignup()).toEqual({ name: "alice", handle: "@alice@social.example", remote: "alice@social.example" });
+    const api = createAccountsApi(
+      "http://srv",
+      fakeFetch(200, { name: "alice", handle: "@alice@social.example", host: "api.social.example", remote: "alice@social.example" }, []),
+    );
+    expect(await api.fediSignup()).toEqual({ name: "alice", handle: "@alice@social.example", host: "api.social.example", remote: "alice@social.example" });
     expect(await createAccountsApi("http://srv", fakeFetch(404, { error: "expired" }, [])).fediSignup()).toBeNull();
     const calls: Call[] = [];
     const create = createAccountsApi("http://srv", fakeFetch(201, { name: "alice" }, calls));

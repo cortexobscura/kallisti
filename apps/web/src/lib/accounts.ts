@@ -187,9 +187,10 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     // After a login with an unlinked fediverse account: the suggested name
     // and the handle; null: none (expired).
     // remote: the name the account gets (name@home), unless it is taken.
-    fediSignup: async (): Promise<{ name: string; handle: string; remote: string } | null> => {
-      const data = (await call("/api/fedi/signup").catch(() => null)) as (Answer & { remote?: string }) | null;
-      return data ? { name: data.name ?? "", handle: data.handle ?? "", remote: data.remote ?? "" } : null;
+    // host: the server it logs in with.
+    fediSignup: async (): Promise<{ name: string; handle: string; host: string; remote: string } | null> => {
+      const data = (await call("/api/fedi/signup").catch(() => null)) as (Answer & { remote?: string; host?: string }) | null;
+      return data ? { name: data.name ?? "", handle: data.handle ?? "", host: data.host ?? "", remote: data.remote ?? "" } : null;
     },
     // A fresh login with the linked account, for the first password.
     fediReauth: async (instance: string) => {
@@ -203,9 +204,9 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       return { name: data.name ?? name, handoff: data.handoff === true };
     },
     // A handoff's token, once, for its origin (see Connect); or first its
-    // question (ask), then the token with allow: the origin asked about.
+    // question (ask: its key), then the token with allow: that key.
     fediHandoff: async (allow?: string) =>
-      (await call("/api/fedi/handoff", allow ? { allow } : {})) as { name: string; origin: string } & ({ ask: true } | { token: string }),
+      (await call("/api/fedi/handoff", allow ? { allow } : {})) as { name: string; origin: string } & ({ ask: string } | { token: string }),
     fediUnlink: async () => {
       await call("/api/fedi/unlink", {});
     },

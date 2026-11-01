@@ -13,8 +13,17 @@
 
   let error = $state<string | null>(null);
   let done = $state(false);
-  // The question: this account, for this page (the server's word).
-  let ask = $state<{ name: string; origin: string } | null>(null);
+  // The question: this account, for this page (the server's word). Allow
+  // works after a moment only (no double click lands on it, the opener
+  // decides when the popup shows).
+  let ask = $state<{ key: string; name: string; origin: string } | null>(null);
+  let ready = $state(false);
+  $effect(() => {
+    if (!ask) return;
+    ready = false;
+    const t = setTimeout(() => (ready = true), 600);
+    return () => clearTimeout(t);
+  });
   const hostOf = (origin: string) => {
     try {
       return new URL(origin).host;
@@ -29,16 +38,16 @@
     window.close();
   };
   const allow = () => {
-    if (!ask) return;
-    const origin = ask.origin;
+    if (!ask || !ready) return;
+    const key = ask.key;
     ask = null;
-    api.fediHandoff(origin).then((h) => ("token" in h ? deliver(h) : failed("The login did not finish. Please try again.")), failed);
+    api.fediHandoff(key).then((h) => ("token" in h ? deliver(h) : failed("The login did not finish. Please try again.")), failed);
   };
   $effect(() => {
     if (phase === "start")
       api.fediStart(via ?? home, undefined, via ? { to: home } : {}).then((url) => location.assign(url), failed);
     else if (phase === "deliver" && !window.opener) error = "The page that asked for this login is gone. Please try again there.";
-    else if (phase === "deliver") api.fediHandoff().then((h) => ("token" in h ? deliver(h) : (ask = { name: h.name, origin: h.origin })), failed);
+    else if (phase === "deliver") api.fediHandoff().then((h) => ("token" in h ? deliver(h) : (ask = { key: h.ask, name: h.name, origin: h.origin })), failed);
     else error = phase.error;
   });
 </script>
@@ -55,12 +64,12 @@
         <strong>{hostOf(ask.origin)}</strong> wants to use your account <strong>{ask.name}</strong> on {location.host}. It can then read and write here
         as you.
       </p>
-      <button class="primary" onclick={allow}>Allow</button>
+      <button class="primary" disabled={!ready} onclick={allow}>Allow</button>
       <button class="link" onclick={() => window.close()}>Cancel</button>
     {:else if done}
       <p class="sub">Done. You can close this window.</p>
     {:else}
-      <p class="sub" aria-busy="true">Logging in with your account at {hostOf(via ?? home)}…</p>
+      <p class="sub" aria-busy="true">{phase === "start" ? `Logging in with your account at ${hostOf(via ?? home)}…` : "Logging in…"}</p>
     {/if}
   </div>
 </div>
