@@ -2554,3 +2554,10 @@ One device logs another in by a code, so nobody types a password on a phone. The
 ## TestFlight 0.11.0 (0.11.0.6)
 
 Main of 2026-11-01: webhooks, QR login with the camera scanner (tauri-plugin-barcode-scanner; NSCameraUsageDescription in the Info.plist), the picture grid fix. The Android APK of the same commit came from GitHub Actions (android.yml builds every push to main that touches the apps).
+
+## Settings in categories
+
+The settings were one long page. The user chose layout A of three HTML mockups (ops/mockups/settings.html): on desktop a side menu (User settings: Profile, Account; App settings: Voice & video, Notifications, Appearance; Log out at its foot) beside the open category; on phones a list (with "Edit profile ›" on top), each category its own page with "‹ Settings" (Escape goes back to the list first). Empty categories do not show (no account: no Account); the reopen after a fediverse confirmation and a guest's "keep this account" open at Account. The markup blocks moved unchanged; drafts that are dialog state (bio, password fields) survive a category change.
+
+- app.css gives dialog headers a sticky -24 px margin (for padded dialogs) and modals a safe-area inset: this dialog has no padding and fills a phone's screen, so it sets both back (inset 0, its own safe-area padding).
+- Review fixes: the push-to-talk key recording ends with the Voice category (as the echo test), focus moves to a phone page's title and back to its list item, phone pages show their title, guests log out on Account only (where the warning is), a category that goes (Profile while reconnecting) falls back to the first.

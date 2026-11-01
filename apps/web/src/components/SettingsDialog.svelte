@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack, type ComponentProps } from "svelte";
+  import { tick, untrack, type ComponentProps } from "svelte";
   import { GROUP_TITLES, sectionsFor, startSection, type SectionId } from "../lib/settingsSections";
   import ProfilePicture from "./ProfilePicture.svelte";
   import EmojiList from "./EmojiList.svelte";
@@ -77,9 +77,22 @@
     (["user", "app"] as const).map((g) => ({ id: g, title: GROUP_TITLES[g], sections: sections.filter((s) => s.group === g) })).filter((g) => g.sections.length),
   );
   let section = $state<SectionId | null>(untrack(() => startSection(start, sections, phone)));
-  // A wider screen shows a category beside the menu.
+  // A wider screen shows a category beside the menu (also when the open
+  // one went, as Profile while reconnecting).
   $effect(() => {
-    if (!phone && section === null) section = untrack(() => sections[0]?.id ?? null);
+    if (!phone && !sections.some((s) => s.id === section)) section = untrack(() => sections[0]?.id ?? null);
+  });
+  // Phones: focus to the page's title as it opens, back to its list item
+  // after (the button that had it is gone).
+  let lastPage: SectionId | null = null;
+  $effect(() => {
+    if (!phone) return;
+    const opened = section;
+    void tick().then(() => {
+      const to = opened ? dialog?.querySelector<HTMLElement>(".content .title") : dialog?.querySelector<HTMLElement>(`[data-section="${lastPage}"]`);
+      to?.focus();
+      lastPage = opened ?? lastPage;
+    });
   });
   const current = $derived(sections.find((s) => s.id === section) ?? null);
 
@@ -120,9 +133,9 @@
   $effect(() => {
     onEcho?.(echo);
   });
-  // The echo test ends with its category.
+  // The echo test and a key being recorded end with their category.
   $effect(() => {
-    if (section !== "voice") echo = false;
+    if (section !== "voice") echo = recordingKey = false;
   });
   $effect(() => () => onEcho?.(false)); // off when the settings close
   let devices = $state<MediaDeviceInfo[]>([]);
@@ -223,13 +236,14 @@
           {#if !phone}<p class="group">{g.title}</p>{/if}
           {#each g.sections as s (s.id)}
             {#if !(phone && s.id === "profile" && profile)}
-              <button class="item" aria-current={s.id === section ? "page" : undefined} onclick={() => (section = s.id)}>
+              <button class="item" data-section={s.id} aria-current={s.id === section ? "page" : undefined} onclick={() => (section = s.id)}>
                 {s.title}{#if phone}<span aria-hidden="true">›</span>{/if}
               </button>
             {/if}
           {/each}
         {/each}
-        {#if account}
+        <!-- Guests log out on Account, where it says that this ends the account. -->
+        {#if account && !account.temporary}
           <div class="sep"></div>
           <button class="item logout-item" onclick={account.logout}>Log out</button>
         {/if}
@@ -240,7 +254,7 @@
     {/if}
     {#if current}
       <div class="content">
-        {#if !phone}<h3 class="title">{current.title}</h3>{/if}
+        <h3 class="title" tabindex="-1">{current.title}</h3>
         {#if section === "profile"}
   {#if profile}<ProfilePicture {...profile} />{/if}
 
@@ -254,7 +268,7 @@
 
   {#if emoji}
     <section class="my-emoji" aria-labelledby="my-emoji-title">
-      <h3 id="my-emoji-title">My emoji</h3>
+      <h4 id="my-emoji-title">My emoji</h4>
       <p class="hint">
         Type :name: to use one. Everyone sees them in your messages and reactions; Mumble apps show :name:. To add one from a
         message, click it.
@@ -622,7 +636,10 @@
     display: flex;
     flex-direction: column;
   }
+  /* The whole screen: not app.css's safe-area inset of modals (the
+     padding keeps clear of the notch instead). */
   dialog.phone {
+    inset: 0;
     width: 100vw;
     max-width: none;
     height: 100dvh;
@@ -727,6 +744,9 @@
   .title {
     margin: 0 0 18px;
     font-size: 19px;
+  }
+  .title:focus {
+    outline: none;
   }
   .back {
     padding: 0;
@@ -921,7 +941,7 @@
     flex-direction: column;
     gap: 6px;
   }
-  .my-emoji h3 {
+  .my-emoji h4 {
     margin: 0;
     font-size: 14px;
   }

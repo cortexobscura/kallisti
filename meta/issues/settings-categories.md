@@ -22,6 +22,6 @@ a back arrow.
 
 ## Acceptance Criteria
 
-- Vitest for the pure parts (which categories, where it starts).
-- Playwright: desktop and phone sizes, each category opens, back works,
+- [x] Vitest for the pure parts (which categories, where it starts).
+- [x] Playwright: desktop and phone sizes, each category opens, back works,
   the account start.
