@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { tick, untrack, type ComponentProps } from "svelte";
-  import { GROUP_TITLES, sectionsFor, startSection, type SectionId } from "../lib/settingsSections";
+  import type { ComponentProps } from "svelte";
+  import { GROUP_TITLES, sectionsFor, type SectionId } from "../lib/settingsSections";
+  import CategoryDialog from "./CategoryDialog.svelte";
   import ProfilePicture from "./ProfilePicture.svelte";
   import EmojiList from "./EmojiList.svelte";
   import { BIO_MAX, bioToSave } from "../lib/bio";
@@ -71,30 +72,9 @@
     start?: SectionId;
   } = $props();
 
-  // The categories, and the one open (null: the list, on phones).
+  // The categories (see CategoryDialog), and the one open.
   const sections = $derived(sectionsFor({ profile: !!(profile || bio || emoji), account: !!account }));
-  const groups = $derived(
-    (["user", "app"] as const).map((g) => ({ id: g, title: GROUP_TITLES[g], sections: sections.filter((s) => s.group === g) })).filter((g) => g.sections.length),
-  );
-  let section = $state<SectionId | null>(untrack(() => startSection(start, sections, phone)));
-  // A wider screen shows a category beside the menu (also when the open
-  // one went, as Profile while reconnecting).
-  $effect(() => {
-    if (!phone && !sections.some((s) => s.id === section)) section = untrack(() => sections[0]?.id ?? null);
-  });
-  // Phones: focus to the page's title as it opens, back to its list item
-  // after (the button that had it is gone).
-  let lastPage: SectionId | null = null;
-  $effect(() => {
-    if (!phone) return;
-    const opened = section;
-    void tick().then(() => {
-      const to = opened ? dialog?.querySelector<HTMLElement>(".content .title") : dialog?.querySelector<HTMLElement>(`[data-section="${lastPage}"]`);
-      to?.focus();
-      lastPage = opened ?? lastPage;
-    });
-  });
-  const current = $derived(sections.find((s) => s.id === section) ?? null);
+  let section = $state<SectionId | null>(null);
 
   // Saved when the field loses focus or the settings close. The draft
   // follows changes of the text only (not of the rest of our state), and
@@ -155,7 +135,6 @@
       .catch((err) => console.warn("cannot list devices", err));
 
   $effect(() => {
-    dialog?.showModal();
     void loadDevices();
     navigator.mediaDevices.addEventListener("devicechange", loadDevices);
     return () => navigator.mediaDevices.removeEventListener("devicechange", loadDevices);
@@ -202,60 +181,40 @@
 
 <svelte:window onkeydowncapture={recordKey} />
 
-<dialog
-  bind:this={dialog}
-  class:phone
-  onclose={() => {
+<CategoryDialog
+  title="Settings"
+  categories={sections}
+  groupTitles={GROUP_TITLES}
+  {start}
+  {phone}
+  hideOnPhone={profile ? ["profile"] : []}
+  bind:section
+  bind:dialog
+  onClose={() => {
     saveBio();
     onClose();
   }}
-  oncancel={(e) => {
-    // Phones: Escape (or back) goes from a category to the list.
-    if (phone && section !== null) (e.preventDefault(), (section = null));
-  }}
-  aria-labelledby="settings-title">
-  <header>
-    {#if phone && current}
-      <button class="back" onclick={() => (section = null)}>‹ Settings</button>
-      <h2 id="settings-title" class="sr-only">Settings: {current.title}</h2>
-    {:else}
-      <h2 id="settings-title">Settings</h2>
-    {/if}
-    <button class="close" onclick={() => dialog?.close()} aria-label="Close">×</button>
-  </header>
-  <div class="layout">
-    {#if !phone || !current}
-      <nav class="menu" aria-label="Settings categories">
-        {#if phone && profile}
-          <button class="me" onclick={() => (section = "profile")}>
+>
+  {#snippet menuTop(open: (id: SectionId) => void)}
+    {#if phone && profile}
+          <button class="me" onclick={() => open("profile")}>
             <span class="me-name">{profile.name}</span>
             <span class="me-edit">Edit profile ›</span>
           </button>
-        {/if}
-        {#each groups as g (g.id)}
-          {#if !phone}<p class="group">{g.title}</p>{/if}
-          {#each g.sections as s (s.id)}
-            {#if !(phone && s.id === "profile" && profile)}
-              <button class="item" data-section={s.id} aria-current={s.id === section ? "page" : undefined} onclick={() => (section = s.id)}>
-                {s.title}{#if phone}<span aria-hidden="true">›</span>{/if}
-              </button>
-            {/if}
-          {/each}
-        {/each}
-        <!-- Guests log out on Account, where it says that this ends the account. -->
-        {#if account && !account.temporary}
-          <div class="sep"></div>
-          <button class="item logout-item" onclick={account.logout}>Log out</button>
-        {/if}
-        <footer class="hint">
+    {/if}
+  {/snippet}
+  {#snippet menuEnd()}
+    <!-- Guests log out on Account, where it says that this ends the account. -->
+    {#if account && !account.temporary}
+      {#if !phone}<div class="sep"></div>{/if}
+      <button class="item danger" onclick={account.logout}>Log out</button>
+    {/if}
+        <footer class="hint menu-footer">
           Kallisti: a Mumble server and client. <a href="https://kallisti.chat" target="_blank" rel="noreferrer">kallisti.chat</a>
         </footer>
-      </nav>
-    {/if}
-    {#if current}
-      <div class="content">
-        <h3 class="title" tabindex="-1">{current.title}</h3>
-        {#if section === "profile"}
+  {/snippet}
+  {#snippet content(id: SectionId)}
+        {#if id === "profile"}
   {#if profile}<ProfilePicture {...profile} />{/if}
 
   {#if bio}
@@ -276,7 +235,7 @@
       <EmojiList {...emoji} />
     </section>
   {/if}
-        {:else if section === "account" && account}
+        {:else if id === "account" && account}
     <form class="account" onsubmit={changePassword}>
       {#if account.temporary}
         <span class="label">Keep this account</span>
@@ -341,7 +300,7 @@
       </div>
     </div>
   
-        {:else if section === "voice"}
+        {:else if id === "voice"}
   {#if voiceError}
     <p class="hint warn voice-error" role="status">{voiceError}</p>
   {/if}
@@ -542,7 +501,7 @@
     <span>Show a preview of my screen share and camera</span>
     <span class="hint">People who are not watching see a small picture, updated every few seconds.</span>
   </label>
-        {:else if section === "notifications"}
+        {:else if id === "notifications"}
   <label class="check">
     <input
       type="checkbox"
@@ -593,7 +552,7 @@
       />
     </label>
   {/if}
-        {:else if section === "appearance"}
+        {:else if id === "appearance"}
   <label>
     Theme
     <select value={settings.theme} onchange={(e) => onChange({ theme: e.currentTarget.value as ThemeSetting })}>
@@ -612,95 +571,13 @@
     </select>
   </label>
         {/if}
-      </div>
-    {/if}
-  </div>
+  {/snippet}
+</CategoryDialog>
   {#if qrShown && account?.qr}
     <QrShowDialog api={account.qr.api} origin={account.qr.origin} device={account.qr.device} onClose={() => (qrShown = false)} />
   {/if}
-</dialog>
 
 <style>
-  /* Desktop: the menu beside the open category; phones: the whole
-     screen, the list or one category (see lib/settingsSections). */
-  dialog {
-    width: min(860px, 94vw);
-    height: min(660px, 90vh);
-    padding: 0;
-    border: none;
-    border-radius: 8px;
-    background: var(--bg-main);
-    color: var(--text);
-  }
-  dialog[open] {
-    display: flex;
-    flex-direction: column;
-  }
-  /* The whole screen: not app.css's safe-area inset of modals (the
-     padding keeps clear of the notch instead). */
-  dialog.phone {
-    inset: 0;
-    width: 100vw;
-    max-width: none;
-    height: 100dvh;
-    max-height: none;
-    margin: 0;
-    border-radius: 0;
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  .layout {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-  }
-  .menu {
-    display: flex;
-    flex-direction: column;
-    width: 220px;
-    flex: none;
-    padding: 4px 10px 16px;
-    overflow-y: auto;
-    background: var(--bg-sidebar);
-  }
-  .phone .menu {
-    width: 100%;
-    padding: 0;
-    background: none;
-  }
-  .group {
-    margin: 14px 10px 6px;
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: var(--text-muted);
-  }
-  .item {
-    display: flex;
-    justify-content: space-between;
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 15px;
-    text-align: left;
-    color: var(--text-muted);
-  }
-  .item:hover,
-  .item[aria-current="page"] {
-    background: var(--bg-hover);
-    color: var(--text);
-  }
-  .item[aria-current="page"] {
-    background: var(--bg-active);
-  }
-  .phone .item {
-    padding: 15px 20px;
-    border-bottom: 1px solid var(--border);
-    border-radius: 0;
-    color: var(--text);
-  }
-  .phone .item[aria-current="page"] {
-    background: none;
-  }
   .me {
     display: flex;
     flex-direction: column;
@@ -717,64 +594,14 @@
     font-size: 13px;
     color: var(--accent);
   }
+  .menu-footer {
+    margin-top: auto;
+    padding: 16px 10px 0;
+  }
   .sep {
     height: 1px;
     margin: 10px;
     background: var(--border-subtle);
-  }
-  .phone .sep {
-    display: none;
-  }
-  .item.logout-item {
-    color: var(--danger);
-  }
-  .menu footer {
-    margin-top: auto;
-    padding: 16px 10px 0;
-  }
-  .content {
-    flex: 1;
-    min-width: 0;
-    padding: 20px 28px 28px;
-    overflow-y: auto;
-  }
-  .phone .content {
-    padding: 16px 20px 28px;
-  }
-  .title {
-    margin: 0 0 18px;
-    font-size: 19px;
-  }
-  .title:focus {
-    outline: none;
-  }
-  .back {
-    padding: 0;
-    font-size: 16px;
-    color: var(--accent);
-  }
-  dialog::backdrop {
-    background: rgb(0 0 0 / 0.6);
-  }
-  /* Not the other dialogs' sticky header (app.css): this dialog has no
-     padding, and its parts scroll on their own. */
-  header {
-    position: static;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 0;
-    padding: 14px 20px;
-    border-bottom: 1px solid var(--border);
-  }
-  h2 {
-    margin: 0;
-    font-size: 18px;
-  }
-  .close {
-    font-size: 24px;
-    line-height: 1;
-    color: var(--text-muted);
   }
   label,
   .row,
