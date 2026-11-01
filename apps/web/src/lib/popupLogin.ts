@@ -1,4 +1,4 @@
-import type { FediResult } from "./fedi";
+import type { FediLink, FediResult } from "./fedi";
 
 // The popup in which a Kallisti page adds this server (see Connect): the
 // home server that asked (?kallisti-connect=, kept in the tab as mark over
@@ -26,3 +26,18 @@ export const popupLogin = (s: { asked: string | null; mark: string | null; back:
               : null;
   return { home, resumed, phase };
 };
+
+// How the popup on another server can log in (see Connect): through the
+// home server, unless the account is named after its fediverse home (the
+// home server logs only its own accounts in elsewhere); with the linked
+// fediverse account, if its server is known (that server asks the user
+// before it gives the home's page the login).
+export const connectWays = (account: { name: string; fedi?: FediLink | null }) => ({
+  home: !account.name.includes("@"),
+  fedi: account.fedi?.host ? { handle: account.fedi.handle, host: account.fedi.host } : null,
+});
+
+// The popup's address: the home server's page that asks, and the
+// fediverse server to log in with (none: the home server).
+export const connectUrl = (origin: string, home: string, via?: string) =>
+  `${origin}/?kallisti-connect=${encodeURIComponent(home)}${via ? `&kallisti-via=${encodeURIComponent(via)}` : ""}`;

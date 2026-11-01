@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import type { Account, AccountsApi } from "../lib/accounts";
   import { isKallisti } from "../lib/desktop";
+  import { connectUrl, type connectWays } from "../lib/popupLogin";
   import { serverOrigin } from "../lib/serverList";
   import { iconHref } from "../lib/serverLogo";
   import { initials } from "../lib/avatar";
@@ -14,6 +15,7 @@
   let {
     home,
     homeCookie = true,
+    ways = { home: true, fedi: null },
     taken,
     server,
     address: startAddress = "",
@@ -24,6 +26,9 @@
     home: string;
     // The home login is a cookie (the web app): see serverOrigin.
     homeCookie?: boolean;
+    // How the home account can log in there without typing (see
+    // lib/popupLogin's connectWays).
+    ways?: ReturnType<typeof connectWays>;
     // Origins already in the rail.
     taken: readonly string[];
     // A server of the list without a login on this device: straight to its
@@ -107,15 +112,16 @@
   };
 
   // With the home account, no typing (web only): the server's page in a
-  // popup logs in through the home server and posts the token back (see
-  // Connect there). Only that popup, from that server's origin, counts.
-  const viaHome = () => {
+  // popup logs in through the home server (or with the linked fediverse
+  // account: via, its server) and posts the token back (see Connect
+  // there). Only that popup, from that server's origin, counts.
+  const viaHome = (via?: string) => {
     if (!found) return;
     const origin = found.origin;
     cancel();
     const mine = attempt;
     error = null;
-    const popup = window.open(`${origin}/?kallisti-connect=${encodeURIComponent(home)}`, "kallisti-connect", "popup,width=480,height=720");
+    const popup = window.open(connectUrl(origin, home, via), "kallisti-connect", "popup,width=480,height=720");
     if (!popup) return void (error = "The browser blocked the login window. Allow pop-ups for this site, or log in with a password.");
     busy = true;
     let result = false;
@@ -221,9 +227,17 @@
       </div>
       <!-- The home account first (an account there is made if needed); a
            password there only when asked for (and in the desktop app). -->
-      {#if homeCookie}
+      {#if homeCookie && ways.home}
         <p class="hint">You join {new URL(found.origin).host} with your account at {new URL(home).host}. No account there yet? One is made for you.</p>
-        <button type="button" class="primary" disabled={busy} onclick={viaHome}>Continue with your account at {new URL(home).host}</button>
+        <button type="button" class="primary" disabled={busy} onclick={() => viaHome()}>Continue with your account at {new URL(home).host}</button>
+        {#if ways.fedi}
+          {@const via = ways.fedi.host}
+          <button type="button" class="link" disabled={busy} onclick={() => viaHome(via)}>Continue as {ways.fedi.handle} instead</button>
+        {/if}
+      {:else if homeCookie && ways.fedi}
+        {@const via = ways.fedi.host}
+        <p class="hint">You join {new URL(found.origin).host} with your fediverse account. No account there yet? One is made for you.</p>
+        <button type="button" class="primary" disabled={busy} onclick={() => viaHome(via)}>Continue as {ways.fedi.handle}</button>
       {/if}
       {#if withPassword}
         <label>

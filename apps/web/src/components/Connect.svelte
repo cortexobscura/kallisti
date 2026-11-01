@@ -2,37 +2,43 @@
   import type { AccountsApi } from "../lib/accounts";
 
   // The popup in which a Kallisti page adds this server (see the server's
-  // fediHandoff): it logs in through the user's home server (home), then
-  // gives the token to the page that opened it: only the home server's
-  // origin, as the server says, gets it (the browser delivers nothing to
-  // another opener). No session here.
-  let { api, home, phase }: { api: AccountsApi; home: string; phase: "start" | "deliver" | { error: string } } = $props();
+  // fediHandoff): it logs in through the user's home server (home), or
+  // with their fediverse account (via: its server), then gives the token
+  // to the page that opened it: only the origin the server names gets it
+  // (the browser delivers nothing to another opener). No session here. A
+  // login with the fediverse account asks first: any site can open this
+  // popup.
+  let { api, home, via = null, phase }: { api: AccountsApi; home: string; via?: string | null; phase: "start" | "deliver" | { error: string } } =
+    $props();
 
   let error = $state<string | null>(null);
   let done = $state(false);
-  const homeHost = (() => {
+  // The question: this account, for this page (the server's word).
+  let ask = $state<{ name: string; origin: string } | null>(null);
+  const hostOf = (origin: string) => {
     try {
-      return new URL(home).host;
+      return new URL(origin).host;
     } catch {
-      return home;
+      return origin;
     }
-  })();
+  };
+  const failed = (err: unknown) => (error = err instanceof Error ? err.message : String(err));
+  const deliver = ({ token, name, origin }: { token: string; name: string; origin: string }) => {
+    window.opener?.postMessage({ type: "kallisti-login", token, name }, origin);
+    done = true;
+    window.close();
+  };
+  const allow = () => {
+    if (!ask) return;
+    const origin = ask.origin;
+    ask = null;
+    api.fediHandoff(origin).then((h) => ("token" in h ? deliver(h) : failed("The login did not finish. Please try again.")), failed);
+  };
   $effect(() => {
     if (phase === "start")
-      api.fediStart(home, undefined, true).then(
-        (url) => location.assign(url),
-        (err) => (error = err instanceof Error ? err.message : String(err)),
-      );
+      api.fediStart(via ?? home, undefined, via ? { to: home } : {}).then((url) => location.assign(url), failed);
     else if (phase === "deliver" && !window.opener) error = "The page that asked for this login is gone. Please try again there.";
-    else if (phase === "deliver")
-      api.fediHandoff().then(
-        ({ token, name, origin }) => {
-          window.opener?.postMessage({ type: "kallisti-login", token, name }, origin);
-          done = true;
-          window.close();
-        },
-        (err) => (error = err instanceof Error ? err.message : String(err)),
-      );
+    else if (phase === "deliver") api.fediHandoff().then((h) => ("token" in h ? deliver(h) : (ask = { name: h.name, origin: h.origin })), failed);
     else error = phase.error;
   });
 </script>
@@ -43,10 +49,18 @@
       <h1>Could not log in</h1>
       <p class="error" role="alert">{error}</p>
       <button class="link" onclick={() => window.close()}>Close</button>
+    {:else if ask}
+      <h1>Allow {hostOf(ask.origin)}?</h1>
+      <p class="sub">
+        <strong>{hostOf(ask.origin)}</strong> wants to use your account <strong>{ask.name}</strong> on {location.host}. It can then read and write here
+        as you.
+      </p>
+      <button class="primary" onclick={allow}>Allow</button>
+      <button class="link" onclick={() => window.close()}>Cancel</button>
     {:else if done}
       <p class="sub">Done. You can close this window.</p>
     {:else}
-      <p class="sub" aria-busy="true">Logging in with your account at {homeHost}…</p>
+      <p class="sub" aria-busy="true">Logging in with your account at {hostOf(via ?? home)}…</p>
     {/if}
   </div>
 </div>
@@ -86,5 +100,12 @@
   .link {
     background: none;
     color: var(--text-muted);
+  }
+  .primary {
+    padding: 10px;
+    border-radius: 4px;
+    background: var(--accent-strong);
+    color: white;
+    font-weight: 600;
   }
 </style>

@@ -173,12 +173,13 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     // Fediverse logins (see lib/fedi): on for this server?
     fediEnabled: async () => (await call("/api/fedi").catch(() => ({}) as Answer & { enabled?: boolean })).enabled === true,
     // The instance's page to go to, for a login (or a link: with the
-    // account's password, "" for one without).
-    fediStart: async (instance: string, linkPassword?: string, handoff = false) => {
+    // account's password, "" for one without). handoff: for the popup (see
+    // Connect), to: its page's origin (none: the instance's).
+    fediStart: async (instance: string, linkPassword?: string, handoff?: { to?: string }) => {
       const { url } = await call("/api/fedi/start", {
         instance,
         ...(linkPassword !== undefined && { link: true, password: linkPassword }),
-        ...(handoff && { handoff: true }),
+        ...(handoff && { handoff: true, ...(handoff.to && { to: handoff.to }) }),
       });
       if (!url) throw new Error("No answer from the server. Please try again.");
       return url;
@@ -201,8 +202,10 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       const data = (await call("/api/fedi/signup", { name, ...proof })) as Answer & { handoff?: boolean };
       return { name: data.name ?? name, handoff: data.handoff === true };
     },
-    // A handoff's token, once: for the provider's origin (see Connect).
-    fediHandoff: async () => (await call("/api/fedi/handoff", {})) as { token: string; name: string; origin: string },
+    // A handoff's token, once, for its origin (see Connect); or first its
+    // question (ask), then the token with allow: the origin asked about.
+    fediHandoff: async (allow?: string) =>
+      (await call("/api/fedi/handoff", allow ? { allow } : {})) as { name: string; origin: string } & ({ ask: true } | { token: string }),
     fediUnlink: async () => {
       await call("/api/fedi/unlink", {});
     },
