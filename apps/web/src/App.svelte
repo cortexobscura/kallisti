@@ -32,7 +32,7 @@
   import { httpBase } from "./lib/textChannels";
   import { serverOrigin } from "./lib/serverList";
   import { localStore, safeGet, safeSet, tabStorage } from "./lib/storage";
-  import { popupLogin, type ConnectPhase } from "./lib/popupLogin";
+  import { connectWays, popupLogin, type ConnectPhase } from "./lib/popupLogin";
   import { proxyUrl } from "./lib/status";
   import { loggedOut } from "./lib/reconnect";
   import { untrack, type ComponentProps, type Snippet } from "svelte";
@@ -154,6 +154,9 @@
     return popupLogin({ asked, mark: safeGet(tab, "kallisti-connect") || null, back: fediBack, kept });
   })();
   const connectHome = popup.home;
+  // The fediverse server to log in with (none: the home server); needed
+  // only to start.
+  const connectVia = popup.phase === "start" ? new URLSearchParams(location.search).get("kallisti-via") : null;
   let connectPhase = $state<ConnectPhase>(popup.phase);
   // Delivered or failed: a later login in this tab is a normal one.
   $effect(() => {
@@ -730,7 +733,7 @@
 {/snippet}
 
 {#if connectHome && connectPhase}
-  <Connect {api} home={connectHome} phase={connectPhase} />
+  <Connect {api} home={connectHome} via={connectVia} phase={connectPhase} />
 {:else if authorizeQuery && account && !checking}
   <Authorize {api} query={authorizeQuery} serverName={location.host} />
 {:else if checking}
@@ -839,6 +842,7 @@
   <AddServerDialog
     home={homeOrigin()}
     homeCookie={!desktop}
+    ways={account ? connectWays(account) : undefined}
     taken={hub.servers.map((a) => a.origin)}
     apiFor={dialogApi}
     server={addingFor?.server}

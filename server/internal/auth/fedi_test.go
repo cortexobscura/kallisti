@@ -113,7 +113,7 @@ func TestFediRegisterAndLogIn(t *testing.T) {
 	}
 	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": inst}, "Alice"), home+"?fedi=register")
 	resp, v := b.do("GET", "/api/fedi/signup", nil)
-	if resp.StatusCode != 200 || v["name"] != "Alice" || v["handle"] != "@Alice@"+host {
+	if resp.StatusCode != 200 || v["name"] != "Alice" || v["handle"] != "@Alice@"+host || v["host"] != host {
 		t.Fatalf("signup: %d %v", resp.StatusCode, v)
 	}
 	if resp, _ := b.do("POST", "/api/fedi/signup", map[string]any{"name": "a b"}); resp.StatusCode != http.StatusBadRequest {
@@ -695,6 +695,80 @@ func TestFediHandoff(t *testing.T) {
 	// Not with a link or a reauth.
 	if resp, _ := b.do("POST", "/api/fedi/start", map[string]any{"instance": host, "handoff": true, "link": true}); resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("handoff and link: %d", resp.StatusCode)
+	}
+}
+
+// A handoff to a page other than the login's server (the home server of
+// an account named after its fediverse home adds this one): the token
+// only after a yes on this server's page, for that page's exact origin.
+func TestFediHandoffToAnotherPage(t *testing.T) {
+	f := &fedifake.Instance{}
+	_, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	to := "https://home.example"
+	b := newBrowser(t, srv)
+	start := map[string]any{"instance": host, "handoff": true, "to": to}
+	wantRedirect(t, b.fediFlow(f, start, "Alice"), home+"?fedi=register")
+	if resp, v := b.do("POST", "/api/fedi/signup", map[string]any{"name": "alice"}); resp.StatusCode != http.StatusCreated || v["handoff"] != true {
+		t.Fatalf("signup: %d %v", resp.StatusCode, v)
+	}
+	// The question first: no token.
+	resp, v := b.do("POST", "/api/fedi/handoff", map[string]any{})
+	if resp.StatusCode != http.StatusOK || v["ask"] == nil || v["ask"] == "" || v["name"] != "alice" || v["origin"] != to || v["token"] != nil {
+		t.Fatalf("handoff without a yes: %d %v", resp.StatusCode, v)
+	}
+	ask := v["ask"]
+	// A yes to another question: nothing.
+	if resp, v := b.do("POST", "/api/fedi/handoff", map[string]any{"allow": "x"}); resp.StatusCode != http.StatusForbidden || v["token"] != nil {
+		t.Fatalf("a yes to another question: %d %v", resp.StatusCode, v)
+	}
+	resp, v = b.do("POST", "/api/fedi/handoff", map[string]any{"allow": ask})
+	if resp.StatusCode != http.StatusOK || v["name"] != "alice" || v["origin"] != to || v["token"] == "" {
+		t.Fatalf("handoff with a yes: %d %v", resp.StatusCode, v)
+	}
+	if resp, _ := b.do("POST", "/api/fedi/handoff", map[string]any{"allow": ask}); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("a second handoff: %d", resp.StatusCode)
+	}
+	// A known account asks too; a yes counts for the question shown, not
+	// for a login that replaced it meanwhile.
+	wantRedirect(t, b.fediFlow(f, start, "Alice"), home+"?fedi=connect")
+	_, v = b.do("POST", "/api/fedi/handoff", map[string]any{})
+	if v["ask"] == nil || v["token"] != nil {
+		t.Fatalf("known account without a yes: %v", v)
+	}
+	shown := v["ask"]
+	wantRedirect(t, b.fediFlow(f, start, "Bob"), home+"?fedi=register")
+	b.do("POST", "/api/fedi/signup", map[string]any{"name": "bob"})
+	if resp, v := b.do("POST", "/api/fedi/handoff", map[string]any{"allow": shown}); resp.StatusCode != http.StatusForbidden || v["token"] != nil {
+		t.Fatalf("a yes for a replaced login: %d %v", resp.StatusCode, v)
+	}
+	// The login's own server asks nothing (as without "to").
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host, "handoff": true, "to": inst}, "Alice"), home+"?fedi=connect")
+	if _, v := b.do("POST", "/api/fedi/handoff", map[string]any{}); v["ask"] != nil || v["token"] == "" || v["origin"] != inst {
+		t.Fatalf("handoff to the login's server: %v", v)
+	}
+}
+
+// A handoff's page: only an origin (on any port), and only with a handoff.
+func TestFediHandoffPageIsAnOrigin(t *testing.T) {
+	f := &fedifake.Instance{}
+	_, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	to := "https://home.example"
+	b := newBrowser(t, srv)
+	for _, bad := range []map[string]any{
+		{"instance": host, "handoff": true, "to": to + "/path"},
+		{"instance": host, "handoff": true, "to": "home.example"},
+		{"instance": host, "handoff": true, "to": "https://user@home.example"},
+		{"instance": host, "handoff": true, "to": "ftp://home.example"},
+		{"instance": host, "to": to},
+	} {
+		if resp, _ := b.do("POST", "/api/fedi/start", bad); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("start %v: %d", bad, resp.StatusCode)
+		}
+	}
+	if resp, v := b.do("POST", "/api/fedi/start", map[string]any{"instance": host, "handoff": true, "to": "https://home.example:8443"}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("a home on another port: %d %v", resp.StatusCode, v)
 	}
 }
 

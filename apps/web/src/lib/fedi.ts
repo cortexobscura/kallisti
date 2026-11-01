@@ -47,8 +47,9 @@ export const withoutFediResult = (pathAndQuery: string): string => {
 // The server of a handle (@user@host).
 export const handleHost = (handle: string) => handle.slice(handle.lastIndexOf("@") + 1);
 
-// A linked fediverse account, as /api/me tells it.
-export type FediLink = { handle: string; public: boolean };
+// A linked fediverse account, as /api/me tells it (host: the server it
+// logs in with; none from older servers).
+export type FediLink = { handle: string; public: boolean; host?: string };
 
 // A user's verified fediverse handle, if they show it ("": none, or no
 // answer). Public: no session needed.

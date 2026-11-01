@@ -216,7 +216,7 @@
   };
   // A new account from another server: named as at home (name@home), made
   // at once; only a taken name asks for one (the server suggests it).
-  let signup = $state<{ name: string; handle: string; remote: string } | null | undefined>(undefined);
+  let signup = $state<{ name: string; handle: string; host: string; remote: string } | null | undefined>(undefined);
   let chooseName = $state(false);
   $effect(() => {
     if (fediSignup && signup === undefined)
@@ -235,7 +235,7 @@
     try {
       const { name: made, handoff } = await api.fediCreate(name, await prove());
       if (handoff) return void onHandoff?.();
-      onAccountChange({ name: made, temporary: false, password: false, fedi: { handle: signup.handle, public: false } });
+      onAccountChange({ name: made, temporary: false, password: false, fedi: { handle: signup.handle, public: false, host: signup.host } });
       onFediSignupDone?.();
       connectAs(made, true);
     } catch (err) {

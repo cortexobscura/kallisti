@@ -13,7 +13,6 @@
   - [ ] [Kallisti as a login provider](issues/kallisti-login-provider.md)
   - [ ] [The server list on the home account](issues/home-server-list.md)
   - [ ] [Tokens without typing](issues/seamless-tokens.md)
-  - [ ] [Add a server with the linked fediverse account](issues/add-server-via-fediverse.md)
 - [ ] [Streams: temporal layers for slow viewers](issues/stream-temporal-layers.md)
 - [ ] [Streams from OBS: simulcast](issues/whip-simulcast.md)
 - [ ] [Request ids for manage requests](issues/request-ids.md)

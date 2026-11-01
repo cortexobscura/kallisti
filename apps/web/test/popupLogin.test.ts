@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { popupLogin } from "../src/lib/popupLogin";
+import { connectUrl, connectWays, popupLogin } from "../src/lib/popupLogin";
 
 const HOME = "https://home.example";
 
@@ -25,5 +25,30 @@ describe("the popup in which a Kallisti page adds this server", () => {
     expect(popupLogin({ asked: null, mark: HOME, back: { kind: "linked", text: "x" }, kept: true }).home).toBeNull();
     // Asked, with another kind's result in the address: no error from it.
     expect(popupLogin({ asked: HOME, mark: HOME, back: { kind: "linked", text: "x" }, kept: true }).phase).toBeNull();
+  });
+});
+
+describe("connectWays", () => {
+  const fedi = { handle: "@Lars@shitposter.world", public: false, host: "shitposter.world" };
+  it("a local account goes through its home server", () => {
+    expect(connectWays({ name: "lars" })).toEqual({ home: true, fedi: null });
+  });
+  it("a linked local account may also use its fediverse account", () => {
+    expect(connectWays({ name: "lars", fedi })).toEqual({ home: true, fedi: { handle: "@Lars@shitposter.world", host: "shitposter.world" } });
+  });
+  it("an account named after its fediverse home only with that account", () => {
+    expect(connectWays({ name: "Lars@shitposter.world", fedi })).toEqual({ home: false, fedi: { handle: "@Lars@shitposter.world", host: "shitposter.world" } });
+  });
+  it("no host from an older server: no fediverse way", () => {
+    expect(connectWays({ name: "lars", fedi: { handle: "@lars@x.example", public: false } })).toEqual({ home: true, fedi: null });
+  });
+});
+
+describe("connectUrl", () => {
+  it("names the home server, and the fediverse server to log in with", () => {
+    expect(connectUrl("https://b.example", "https://a.example")).toBe("https://b.example/?kallisti-connect=https%3A%2F%2Fa.example");
+    expect(connectUrl("https://b.example", "https://a.example", "shitposter.world")).toBe(
+      "https://b.example/?kallisti-connect=https%3A%2F%2Fa.example&kallisti-via=shitposter.world",
+    );
   });
 });
