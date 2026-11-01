@@ -1,6 +1,6 @@
-import { startCategory, type Category } from "./dialogCategories";
+import type { Category } from "./dialogCategories";
 
-// The user settings' categories (see SettingsDialog, lib/categories).
+// The user settings' categories (see SettingsDialog, lib/dialogCategories).
 
 export type SectionId = "profile" | "account" | "voice" | "notifications" | "appearance";
 export type Section = Category<SectionId, "user" | "app">;
@@ -18,5 +18,3 @@ export const GROUP_TITLES = { user: "User settings", app: "App settings" } as co
 // The categories there is something for (no account: no Account).
 export const sectionsFor = (has: { profile: boolean; account: boolean }): Section[] =>
   ALL.filter((s) => (s.id === "profile" ? has.profile : s.id === "account" ? has.account : true));
-
-export const startSection = startCategory<SectionId>;

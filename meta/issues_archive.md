@@ -339,3 +339,4 @@
 - [x] [QR login: server grants](issues/qr-login-server.md)
 - [x] [QR login: web](issues/qr-login-web.md)
 - [x] [Settings in categories](issues/settings-categories.md)
+- [x] [Server settings in categories](issues/server-settings-categories.md)

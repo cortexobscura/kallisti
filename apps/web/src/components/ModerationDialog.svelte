@@ -138,7 +138,6 @@
     phone?: boolean;
   } = $props();
 
-  let dialog: HTMLDialogElement | undefined = $state();
   // The categories this user may see (see CategoryDialog), and the one open.
   const sections = $derived(
     serverSections({
@@ -264,9 +263,9 @@
   title="Server settings"
   categories={sections}
   groupTitles={SERVER_GROUP_TITLES}
+  start={onServerName ? undefined : "bans"}
   {phone}
   bind:section
-  bind:dialog
   {onClose}
 >
   {#snippet content(id: ServerSectionId)}
@@ -322,7 +321,7 @@
         </p>
       {/if}
       {#if onLoadHomeServers}
-        <h3>Accounts from other servers</h3>
+        <h4>Accounts from other servers</h4>
         {#if homeServers === null}
           <p class="note">Loading…</p>
         {:else}

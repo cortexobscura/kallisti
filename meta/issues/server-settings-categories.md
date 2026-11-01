@@ -19,6 +19,6 @@ on phones. Both dialogs share one frame component.
 
 ## Acceptance Criteria
 
-- Vitest for the shared pure parts.
-- Playwright: both dialogs at desktop and phone sizes; each server
+- [x] Vitest for the shared pure parts.
+- [x] Playwright: both dialogs at desktop and phone sizes; each server
   category opens; the user settings checks still pass.

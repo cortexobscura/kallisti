@@ -2561,3 +2561,7 @@ The settings were one long page. The user chose layout A of three HTML mockups (
 
 - app.css gives dialog headers a sticky -24 px margin (for padded dialogs) and modals a safe-area inset: this dialog has no padding and fills a phone's screen, so it sets both back (inset 0, its own safe-area padding).
 - Review fixes: the push-to-talk key recording ends with the Voice category (as the echo test), focus moves to a phone page's title and back to its list item, phone pages show their title, guests log out on Account only (where the warning is), a category that goes (Profile while reconnecting) falls back to the first.
+
+## Server settings in categories
+
+The server settings had ten tabs in a row. Now they use the user settings' layout: Server (Overview: name and logo; Emoji; Stickers; Threads; Message rules), Members (Registered users; Bans; Guests), Monitoring (Connections; Recordings), each only for who may use it, as the tabs were. The frame (header, menu, phone pages, back and Escape, focus, the full-screen phone dialog, app.css's dialog rules undone) is one generic component, CategoryDialog (lib/dialogCategories.ts; lib/categories.ts is the text channels' groups); both settings dialogs fill its content, menuTop and menuEnd snippets. Phones show the group headings too (ten items in one list were hard to scan).

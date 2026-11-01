@@ -2,7 +2,7 @@
   import { tick, untrack, type Snippet } from "svelte";
   import { groupsOf, startCategory, type Category } from "../lib/dialogCategories";
 
-  // A dialog in categories (see lib/categories): on desktop the menu
+  // A dialog in categories (see lib/dialogCategories): on desktop the menu
   // beside the open one; on phones the whole screen, a list where each
   // category opens as its own page ("‹ <title>"; Escape goes back to the
   // list first). The parts are the caller's: content (the open category),
