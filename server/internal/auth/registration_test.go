@@ -174,3 +174,30 @@ func TestInviteOnlyExistingAccountQRLogin(t *testing.T) {
 		t.Fatal("no QR session")
 	}
 }
+
+func TestInviteOnlyExistingGuestCanBecomePermanent(t *testing.T) {
+	a, srv := setup(t)
+	a.GuestAccounts = true
+	resp, _ := post(t, srv, "/api/guest", map[string]string{"name": "existingguest"}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatal(resp.StatusCode)
+	}
+	cookie := sessionCookie(resp)
+	if err := a.Store.SetInviteOnly(true); err != nil {
+		t.Fatal(err)
+	}
+	resp, v := post(t, srv, "/api/password", map[string]string{"new": "longpassword"}, cookie)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("make permanent: %d %v", resp.StatusCode, v)
+	}
+	if acc, ok := a.AccountFor(requestWith(cookie)); !ok || acc.Temporary {
+		t.Fatal("existing session did not become permanent")
+	}
+	resp, _ = post(t, srv, "/api/login", map[string]string{"name": "existingguest", "password": "longpassword"}, nil)
+	if resp.StatusCode != http.StatusOK || sessionCookie(resp) == nil {
+		t.Fatalf("permanent account login: %d", resp.StatusCode)
+	}
+	if resp, _ := post(t, srv, "/api/guest", map[string]string{"name": "newguest"}, nil); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("new guest: %d", resp.StatusCode)
+	}
+}

@@ -86,4 +86,24 @@ describe("invite-only user interface", () => {
     checkbox.click();
     await vi.waitFor(() => expect(onSet).toHaveBeenCalledWith(true));
   });
+
+  it("restores the saved policy and shows an error when disabling is refused", async () => {
+    let refuse!: (reason: Error) => void;
+    const onSet = vi.fn(() => new Promise<void>((_, reject) => { refuse = reject; }));
+    mounted.push(mount(RegistrationSettings, { target: document.body, props: {
+      on: true, invites: [], onSet, onLoad: async () => {}, onCreate: async () => "", onDelete: async () => {},
+    } }));
+    flushSync();
+    const checkbox = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    checkbox.click();
+    flushSync();
+    expect(onSet).toHaveBeenCalledWith(false);
+    expect(checkbox.disabled).toBe(true);
+    refuse(new Error("Admin permission was revoked"));
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("Admin permission was revoked");
+      expect(checkbox.checked).toBe(true);
+      expect(checkbox.disabled).toBe(false);
+    });
+  });
 });

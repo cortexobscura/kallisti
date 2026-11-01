@@ -74,12 +74,15 @@ behavior, mobile packaging or live CI results.
 
 ## Local validation (2026-11-01)
 
-- `pnpm test`: passed; 143 protocol tests, 1299 web tests and all Go
+- `pnpm test`: passed; 143 protocol tests, 1300 web tests and all Go
   packages. This includes mounted Svelte component tests for invitation
   signup, federated signup and the admin controls.
 - `pnpm typecheck`: passed, including Go vet; Svelte reports no errors or
   warnings.
 - `cd server && go test -race ./...`: passed for all packages.
+- Additional regression checks cover invitation state across restart,
+  existing temporary accounts becoming permanent while registration is
+  closed, and restoring the saved toggle after a refused policy change.
 - Final targeted race tests passed after adding explicit QR-login and
   native-password-login checks in invite-only mode.
 - Reconciled with main at `825fc5c126b82054258463a444128215c1c155c2`;
@@ -91,6 +94,7 @@ behavior, mobile packaging or live CI results.
 - `git diff --check`: passed.
 
 See [the local test guide](../../docs/testing-invite-only.md) for a disposable
-Docker setup and manual acceptance checks. Compose configuration was
-validated; the Docker deployment and manual browser checks have not been run.
-No live server configuration has been changed.
+Docker setup and manual acceptance checks. The Docker image was built and
+started successfully; the login page was verified in a browser and the
+invite-only toggle was manually exercised. The remaining manual acceptance
+checks are documented in the guide. No production configuration was changed.

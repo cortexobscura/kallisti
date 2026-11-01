@@ -180,3 +180,54 @@ func TestRegistrationFederationRollbackAndLatePolicyCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRegistrationInviteStateSurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if s != nil {
+			s.Close()
+		}
+	})
+	now := time.Now()
+	if err := s.SetInviteOnly(true); err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"used", "revoked", "unused"} {
+		if err := s.AddRegistrationInvite(token, RegistrationInvite{Creator: "admin", Created: now.UnixMilli(), Expires: now.Add(time.Hour).UnixMilli(), MaxUses: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.CreateAccountWithInvite(registrationAccount("existing"), now, "used"); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.RegistrationInvites()
+	if err != nil || len(list) != 3 {
+		t.Fatalf("invitations: %v %v", list, err)
+	}
+	if err := s.DeleteRegistrationInvite(list[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"", "used", "revoked"} {
+		if _, err := s.CreateAccountWithInvite(registrationAccount("blocked"), now, token); !errors.Is(err, ErrRegistrationInvite) {
+			t.Fatalf("after restart %q: %v", token, err)
+		}
+	}
+	if _, err := s.AccountByName("existing"); err != nil {
+		t.Fatalf("invited account lost: %v", err)
+	}
+	if _, err := s.CreateAccountWithInvite(registrationAccount("new"), now, "unused"); err != nil {
+		t.Fatalf("unused invitation: %v", err)
+	}
+	if err := s.CheckRegistration("unused", false, now); !errors.Is(err, ErrRegistrationInvite) {
+		t.Fatalf("single-use limit after restart: %v", err)
+	}
+}
