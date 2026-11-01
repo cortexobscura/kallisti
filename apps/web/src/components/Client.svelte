@@ -2120,6 +2120,7 @@
     onLoadRecordings={staffRecords ? () => connection.manage({ recordings: true }) : undefined}
     onDownloadRecording={connection.downloadRecording}
     onClose={() => (showModeration = false)}
+    {phone}
   />
 {/if}
 

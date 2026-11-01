@@ -58,7 +58,7 @@
     if (!phone) return;
     const opened = section;
     void tick().then(() => {
-      const to = opened ? dialog?.querySelector<HTMLElement>(".content > .title") : dialog?.querySelector<HTMLElement>(`[data-category="${lastPage}"]`);
+      const to = opened ? dialog?.querySelector<HTMLElement>(".layout > .content > .title") : dialog?.querySelector<HTMLElement>(`[data-category="${lastPage}"]`);
       to?.focus();
       lastPage = opened ?? lastPage;
     });
@@ -89,7 +89,7 @@
       <nav class="menu" aria-label="{title} categories">
         {@render menuTop?.(open)}
         {#each groups as g (g.id)}
-          {#if !phone}<p class="group">{g.title}</p>{/if}
+          <p class="group">{g.title}</p>
           {#each g.categories as c (c.id)}
             {#if !(phone && hideOnPhone.includes(c.id))}
               <button class="item" data-category={c.id} aria-current={c.id === section ? "page" : undefined} onclick={() => open(c.id)}>
@@ -192,6 +192,11 @@
     font-weight: 700;
     text-transform: uppercase;
     color: var(--text-muted);
+  }
+  .phone .group {
+    margin: 0;
+    padding: 18px 20px 6px;
+    border-bottom: 1px solid var(--border);
   }
   /* Also the caller's extra items (menuTop, menuEnd). */
   .menu :global(.item) {
