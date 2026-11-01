@@ -340,3 +340,4 @@
 - [x] [QR login: web](issues/qr-login-web.md)
 - [x] [Settings in categories](issues/settings-categories.md)
 - [x] [Server settings in categories](issues/server-settings-categories.md)
+- [x] [Add a server with the linked fediverse account](issues/add-server-via-fediverse.md)
