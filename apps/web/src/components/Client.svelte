@@ -147,6 +147,7 @@
   import Icon from "./Icon.svelte";
   import ServerRail from "./ServerRail.svelte";
   import SettingsDialog from "./SettingsDialog.svelte";
+  import type { SectionId } from "../lib/settingsSections";
   import Toast from "./Toast.svelte";
   import UserMenu from "./UserMenu.svelte";
   import UserActionDialog from "./UserActionDialog.svelte";
@@ -305,6 +306,10 @@
   $effect(() => capture?.setMuted((me?.selfMute ?? false) || !voiceOn));
 
   let showSettings = $state(untrack(() => openSettings));
+  // The category the settings open at: the account's after a fresh login
+  // for the first password, or for a guest keeping the account.
+  let settingsStart = $state<SectionId | undefined>(untrack(() => (openSettings ? "account" : undefined)));
+  const openSettingsAt = (start?: SectionId) => ((settingsStart = start), (showSettings = true));
   if (untrack(() => openSettings)) untrack(() => onSettingsOpened)?.(); // once, on mount
   let showSwitcher = $state(false);
   let showHidden = $state(false);
@@ -1293,7 +1298,7 @@
   const mayAddEmoji = $derived(text.available && me?.userId != null && !guestAccount);
   const readOnly = $derived(!mayWrite(server, text, guestAccount));
   const loginToWrite = $derived(
-    readOnly ? { note: readOnlyNote(guestAccount), action: loginAction(guestAccount), onAction: guestAccount ? () => (showSettings = true) : onLogIn } : null,
+    readOnly ? { note: readOnlyNote(guestAccount), action: loginAction(guestAccount), onAction: guestAccount ? () => openSettingsAt("account") : onLogIn } : null,
   );
 
   // Unread direct messages per sender name, marked read while open.
@@ -1984,7 +1989,7 @@
     onBlock={() => blockedUsers.toggle(menuUser.name)}
     onMessage={readOnly ? undefined : () => show({ kind: "dm", session: menuUser.session, name: menuUser.name, userId: menuUser.userId })}
     friend={friends && befriendable(menuUser.userId, text.members) ? { is: friends.has(menuUser.userId), onToggle: () => friends.toggle(menuUser.userId!, menuUser.name) } : undefined}
-    onSettings={() => (showSettings = true)}
+    onSettings={() => openSettingsAt()}
     fediHandle={menuUser.userId === null ? undefined : (name) => fetchFediHandle(connection.httpBase, name)}
     role={roleOf(text.roles, menuUser.userId)}
     status={statusOf(menuUser.session)}
@@ -2156,6 +2161,8 @@
           empty: "You have no emoji of your own yet.",
         }
       : undefined}
+    {phone}
+    start={settingsStart}
     onClose={() => (showSettings = false)}
   />
 {/if}
@@ -2279,7 +2286,7 @@
         noVoice={!capture && !!noVoice}
         onSelfState={away ? away.setSelf : updateSelf}
         voiceKey={away ? away.key : site}
-        onSettings={() => (showSettings = true)}
+        onSettings={() => openSettingsAt()}
         presence={statusOf(me.session).presence}
         own={text.ownStatus}
         now={statusNow}

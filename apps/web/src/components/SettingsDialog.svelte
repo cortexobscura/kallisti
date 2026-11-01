@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { ComponentProps } from "svelte";
+  import { untrack, type ComponentProps } from "svelte";
+  import { GROUP_TITLES, sectionsFor, startSection, type SectionId } from "../lib/settingsSections";
   import ProfilePicture from "./ProfilePicture.svelte";
   import EmojiList from "./EmojiList.svelte";
   import { BIO_MAX, bioToSave } from "../lib/bio";
@@ -36,6 +37,8 @@
     profile,
     bio,
     emoji,
+    phone = false,
+    start,
   }: {
     settings: Settings;
     level: number;
@@ -62,7 +65,23 @@
     bio?: { text: string; loading: boolean; onSave: (text: string) => void };
     // Our personal emoji (registered users but guests).
     emoji?: ComponentProps<typeof EmojiList>;
+    // Phones: a list of categories, each its own page (see lib/settingsSections).
+    phone?: boolean;
+    // The category to open at (for example the account's, to set a password).
+    start?: SectionId;
   } = $props();
+
+  // The categories, and the one open (null: the list, on phones).
+  const sections = $derived(sectionsFor({ profile: !!(profile || bio || emoji), account: !!account }));
+  const groups = $derived(
+    (["user", "app"] as const).map((g) => ({ id: g, title: GROUP_TITLES[g], sections: sections.filter((s) => s.group === g) })).filter((g) => g.sections.length),
+  );
+  let section = $state<SectionId | null>(untrack(() => startSection(start, sections, phone)));
+  // A wider screen shows a category beside the menu.
+  $effect(() => {
+    if (!phone && section === null) section = untrack(() => sections[0]?.id ?? null);
+  });
+  const current = $derived(sections.find((s) => s.id === section) ?? null);
 
   // Saved when the field loses focus or the settings close. The draft
   // follows changes of the text only (not of the rest of our state), and
@@ -100,6 +119,10 @@
   let echo = $state(false);
   $effect(() => {
     onEcho?.(echo);
+  });
+  // The echo test ends with its category.
+  $effect(() => {
+    if (section !== "voice") echo = false;
   });
   $effect(() => () => onEcho?.(false)); // off when the settings close
   let devices = $state<MediaDeviceInfo[]>([]);
@@ -168,19 +191,57 @@
 
 <dialog
   bind:this={dialog}
+  class:phone
   onclose={() => {
     saveBio();
     onClose();
   }}
+  oncancel={(e) => {
+    // Phones: Escape (or back) goes from a category to the list.
+    if (phone && section !== null) (e.preventDefault(), (section = null));
+  }}
   aria-labelledby="settings-title">
   <header>
-    <h2 id="settings-title">Settings</h2>
+    {#if phone && current}
+      <button class="back" onclick={() => (section = null)}>‹ Settings</button>
+      <h2 id="settings-title" class="sr-only">Settings: {current.title}</h2>
+    {:else}
+      <h2 id="settings-title">Settings</h2>
+    {/if}
     <button class="close" onclick={() => dialog?.close()} aria-label="Close">×</button>
   </header>
-  {#if voiceError}
-    <p class="hint warn voice-error" role="status">{voiceError}</p>
-  {/if}
-
+  <div class="layout">
+    {#if !phone || !current}
+      <nav class="menu" aria-label="Settings categories">
+        {#if phone && profile}
+          <button class="me" onclick={() => (section = "profile")}>
+            <span class="me-name">{profile.name}</span>
+            <span class="me-edit">Edit profile ›</span>
+          </button>
+        {/if}
+        {#each groups as g (g.id)}
+          {#if !phone}<p class="group">{g.title}</p>{/if}
+          {#each g.sections as s (s.id)}
+            {#if !(phone && s.id === "profile" && profile)}
+              <button class="item" aria-current={s.id === section ? "page" : undefined} onclick={() => (section = s.id)}>
+                {s.title}{#if phone}<span aria-hidden="true">›</span>{/if}
+              </button>
+            {/if}
+          {/each}
+        {/each}
+        {#if account}
+          <div class="sep"></div>
+          <button class="item logout-item" onclick={account.logout}>Log out</button>
+        {/if}
+        <footer class="hint">
+          Kallisti: a Mumble server and client. <a href="https://kallisti.chat" target="_blank" rel="noreferrer">kallisti.chat</a>
+        </footer>
+      </nav>
+    {/if}
+    {#if current}
+      <div class="content">
+        {#if !phone}<h3 class="title">{current.title}</h3>{/if}
+        {#if section === "profile"}
   {#if profile}<ProfilePicture {...profile} />{/if}
 
   {#if bio}
@@ -201,25 +262,75 @@
       <EmojiList {...emoji} />
     </section>
   {/if}
-
-  <label>
-    Theme
-    <select value={settings.theme} onchange={(e) => onChange({ theme: e.currentTarget.value as ThemeSetting })}>
-      <option value="dark">Dark</option>
-      <option value="light">Light</option>
-      <option value="system">As the system</option>
-    </select>
-  </label>
-
-  <label>
-    Time format
-    <select value={settings.timeFormat} onchange={(e) => onChange({ timeFormat: e.currentTarget.value as TimeFormat })}>
-      <option value="auto">As the language</option>
-      <option value="24">24-hour (19:05)</option>
-      <option value="12">12-hour (7:05 PM)</option>
-    </select>
-  </label>
-
+        {:else if section === "account" && account}
+    <form class="account" onsubmit={changePassword}>
+      {#if account.temporary}
+        <span class="label">Keep this account</span>
+        <p class="hint">
+          This is a guest account: it is deleted a day after your last visit. With a password it stays, and you can log
+          in on other devices.
+        </p>
+      {:else if !account.hasPassword}
+        <span class="label">Set a password</span>
+        <p class="hint">You log in with your fediverse account. A password also works in Mumble apps, with your name. First you confirm with your fediverse server.</p>
+      {:else}
+        <span class="label">Change password</span>
+        <input type="password" bind:value={oldPassword} placeholder="Current password" autocomplete="current-password" required />
+      {/if}
+      <input type="password" bind:value={newPassword} placeholder="New password (8 or more characters)" autocomplete="new-password" minlength="8" required />
+      {#if passwordNote}<p class="hint" role="status">{passwordNote}</p>{/if}
+      <div class="buttons">
+        <button type="submit" class="secondary" disabled={passwordSave.busy}>
+          {busyLabel(passwordSave.state, account.temporary || !account.hasPassword ? "Set password" : "Change password")}
+        </button>
+        <SaveStatus save={passwordSave.state} done="" />
+      </div>
+      <!-- The first password: confirm with the fediverse account first (again
+           after a refusal: the confirmation lasts a few minutes, once). Not
+           in the desktop app, which cannot come back from the instance. -->
+      {#if (reauth || (!account.hasPassword && !account.temporary)) && account.fedi && !isDesktop()}
+        <div class="buttons">
+          <button type="button" class="secondary" disabled={reauthSave.busy} onclick={() => reauthSave.run(account.fediReauth)}>
+            Confirm with {handleHost(account.fedi.handle)}
+          </button>
+          <SaveStatus save={reauthSave.state} done="" />
+        </div>
+      {/if}
+    </form>
+    <FediAccount {account} />
+    {#if account.sites && !account.temporary}<AllowedSites sites={account.sites} />{/if}
+    {#if account.qr && !account.temporary}
+      <div class="account">
+        <span class="label">Log in on another device</span>
+        <p class="hint">
+          Show a code here and scan it with your phone: no password to type there.{#if account.qr.scan}
+            Or scan the code another device shows on its login screen.{/if}
+        </p>
+        <div class="buttons">
+          <button type="button" class="secondary" onclick={() => (qrShown = true)}>Show a login code</button>
+          {#if account.qr.scan}<button type="button" class="secondary" onclick={account.qr.scan}>Scan a code</button>{/if}
+        </div>
+      </div>
+    {/if}
+    <div class="account">
+      <span class="label">Log out</span>
+      {#if account.temporary}
+        <p class="hint">Logging out ends this guest account (set a password above to keep it).</p>
+      {:else}
+        <p class="hint">"Everywhere" also logs out your other browsers and devices, for example after you used a shared computer.</p>
+      {/if}
+      <div class="buttons">
+        <button type="button" class="logout" onclick={account.logout}>Log out</button>
+        {#if !account.temporary}
+          <button type="button" class="logout" onclick={account.logoutAll}>Log out everywhere</button>
+        {/if}
+      </div>
+    </div>
+  
+        {:else if section === "voice"}
+  {#if voiceError}
+    <p class="hint warn voice-error" role="status">{voiceError}</p>
+  {/if}
   <label>
     Input device
     <select
@@ -324,26 +435,6 @@
       always gets at least 500 ms.
     </span>
   </label>
-  <label class="check">
-    <input type="checkbox" checked={settings.sounds} onchange={(e) => onChange({ sounds: e.currentTarget.checked })} />
-    <span>Sounds</span>
-    <span class="hint">When you mute or deafen yourself, and undeafen.</span>
-  </label>
-  {#if settings.sounds}
-    <label>
-      Sound volume
-      <input
-        type="range"
-        min="0"
-        max="1"
-        step="0.05"
-        value={settings.soundVolume}
-        oninput={(e) => onChange({ soundVolume: Number(e.currentTarget.value) })}
-        aria-valuetext="{Math.round(settings.soundVolume * 100)}%"
-      />
-    </label>
-  {/if}
-
   <fieldset>
     <legend>Input mode</legend>
     <label class="radio">
@@ -437,6 +528,7 @@
     <span>Show a preview of my screen share and camera</span>
     <span class="hint">People who are not watching see a small picture, updated every few seconds.</span>
   </label>
+        {:else if section === "notifications"}
   <label class="check">
     <input
       type="checkbox"
@@ -468,96 +560,192 @@
       (iOS 16.4 or later).
     </p>
   {/if}
-  {#if account}
-    <form class="account" onsubmit={changePassword}>
-      {#if account.temporary}
-        <span class="label">Keep this account</span>
-        <p class="hint">
-          This is a guest account: it is deleted a day after your last visit. With a password it stays, and you can log
-          in on other devices.
-        </p>
-      {:else if !account.hasPassword}
-        <span class="label">Set a password</span>
-        <p class="hint">You log in with your fediverse account. A password also works in Mumble apps, with your name. First you confirm with your fediverse server.</p>
-      {:else}
-        <span class="label">Change password</span>
-        <input type="password" bind:value={oldPassword} placeholder="Current password" autocomplete="current-password" required />
-      {/if}
-      <input type="password" bind:value={newPassword} placeholder="New password (8 or more characters)" autocomplete="new-password" minlength="8" required />
-      {#if passwordNote}<p class="hint" role="status">{passwordNote}</p>{/if}
-      <div class="buttons">
-        <button type="submit" class="secondary" disabled={passwordSave.busy}>
-          {busyLabel(passwordSave.state, account.temporary || !account.hasPassword ? "Set password" : "Change password")}
-        </button>
-        <SaveStatus save={passwordSave.state} done="" />
-      </div>
-      <!-- The first password: confirm with the fediverse account first (again
-           after a refusal: the confirmation lasts a few minutes, once). Not
-           in the desktop app, which cannot come back from the instance. -->
-      {#if (reauth || (!account.hasPassword && !account.temporary)) && account.fedi && !isDesktop()}
-        <div class="buttons">
-          <button type="button" class="secondary" disabled={reauthSave.busy} onclick={() => reauthSave.run(account.fediReauth)}>
-            Confirm with {handleHost(account.fedi.handle)}
-          </button>
-          <SaveStatus save={reauthSave.state} done="" />
-        </div>
-      {/if}
-    </form>
-    <FediAccount {account} />
-    {#if account.sites && !account.temporary}<AllowedSites sites={account.sites} />{/if}
-    {#if account.qr && !account.temporary}
-      <div class="account">
-        <span class="label">Log in on another device</span>
-        <p class="hint">
-          Show a code here and scan it with your phone: no password to type there.{#if account.qr.scan}
-            Or scan the code another device shows on its login screen.{/if}
-        </p>
-        <div class="buttons">
-          <button type="button" class="secondary" onclick={() => (qrShown = true)}>Show a login code</button>
-          {#if account.qr.scan}<button type="button" class="secondary" onclick={account.qr.scan}>Scan a code</button>{/if}
-        </div>
-      </div>
-    {/if}
-    <div class="account">
-      <span class="label">Log out</span>
-      {#if account.temporary}
-        <p class="hint">Logging out ends this guest account (set a password above to keep it).</p>
-      {:else}
-        <p class="hint">"Everywhere" also logs out your other browsers and devices, for example after you used a shared computer.</p>
-      {/if}
-      <div class="buttons">
-        <button type="button" class="logout" onclick={account.logout}>Log out</button>
-        {#if !account.temporary}
-          <button type="button" class="logout" onclick={account.logoutAll}>Log out everywhere</button>
+  <label class="check">
+    <input type="checkbox" checked={settings.sounds} onchange={(e) => onChange({ sounds: e.currentTarget.checked })} />
+    <span>Sounds</span>
+    <span class="hint">When you mute or deafen yourself, and undeafen.</span>
+  </label>
+  {#if settings.sounds}
+    <label>
+      Sound volume
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        value={settings.soundVolume}
+        oninput={(e) => onChange({ soundVolume: Number(e.currentTarget.value) })}
+        aria-valuetext="{Math.round(settings.soundVolume * 100)}%"
+      />
+    </label>
+  {/if}
+        {:else if section === "appearance"}
+  <label>
+    Theme
+    <select value={settings.theme} onchange={(e) => onChange({ theme: e.currentTarget.value as ThemeSetting })}>
+      <option value="dark">Dark</option>
+      <option value="light">Light</option>
+      <option value="system">As the system</option>
+    </select>
+  </label>
+
+  <label>
+    Time format
+    <select value={settings.timeFormat} onchange={(e) => onChange({ timeFormat: e.currentTarget.value as TimeFormat })}>
+      <option value="auto">As the language</option>
+      <option value="24">24-hour (19:05)</option>
+      <option value="12">12-hour (7:05 PM)</option>
+    </select>
+  </label>
         {/if}
       </div>
-    </div>
-  {/if}
+    {/if}
+  </div>
   {#if qrShown && account?.qr}
     <QrShowDialog api={account.qr.api} origin={account.qr.origin} device={account.qr.device} onClose={() => (qrShown = false)} />
   {/if}
-  <footer class="hint">
-    Kallisti: a Mumble server and client. <a href="https://kallisti.chat" target="_blank" rel="noreferrer">kallisti.chat</a>
-  </footer>
 </dialog>
 
 <style>
+  /* Desktop: the menu beside the open category; phones: the whole
+     screen, the list or one category (see lib/settingsSections). */
   dialog {
-    width: min(440px, 92vw);
-    padding: 24px;
+    width: min(860px, 94vw);
+    height: min(660px, 90vh);
+    padding: 0;
     border: none;
     border-radius: 8px;
     background: var(--bg-main);
     color: var(--text);
   }
+  dialog[open] {
+    display: flex;
+    flex-direction: column;
+  }
+  dialog.phone {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .layout {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+  }
+  .menu {
+    display: flex;
+    flex-direction: column;
+    width: 220px;
+    flex: none;
+    padding: 4px 10px 16px;
+    overflow-y: auto;
+    background: var(--bg-sidebar);
+  }
+  .phone .menu {
+    width: 100%;
+    padding: 0;
+    background: none;
+  }
+  .group {
+    margin: 14px 10px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .item {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 15px;
+    text-align: left;
+    color: var(--text-muted);
+  }
+  .item:hover,
+  .item[aria-current="page"] {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+  .item[aria-current="page"] {
+    background: var(--bg-active);
+  }
+  .phone .item {
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    color: var(--text);
+  }
+  .phone .item[aria-current="page"] {
+    background: none;
+  }
+  .me {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+  }
+  .me-name {
+    font-weight: 700;
+    color: var(--text);
+  }
+  .me-edit {
+    font-size: 13px;
+    color: var(--accent);
+  }
+  .sep {
+    height: 1px;
+    margin: 10px;
+    background: var(--border-subtle);
+  }
+  .phone .sep {
+    display: none;
+  }
+  .item.logout-item {
+    color: var(--danger);
+  }
+  .menu footer {
+    margin-top: auto;
+    padding: 16px 10px 0;
+  }
+  .content {
+    flex: 1;
+    min-width: 0;
+    padding: 20px 28px 28px;
+    overflow-y: auto;
+  }
+  .phone .content {
+    padding: 16px 20px 28px;
+  }
+  .title {
+    margin: 0 0 18px;
+    font-size: 19px;
+  }
+  .back {
+    padding: 0;
+    font-size: 16px;
+    color: var(--accent);
+  }
   dialog::backdrop {
     background: rgb(0 0 0 / 0.6);
   }
+  /* Not the other dialogs' sticky header (app.css): this dialog has no
+     padding, and its parts scroll on their own. */
   header {
+    position: static;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-bottom: 16px;
+    margin: 0;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
   }
   h2 {
     margin: 0;
