@@ -13,6 +13,7 @@
   - [ ] [Kallisti as a login provider](issues/kallisti-login-provider.md)
   - [ ] [The server list on the home account](issues/home-server-list.md)
   - [ ] [Tokens without typing](issues/seamless-tokens.md)
+  - [ ] [Add a server with the linked fediverse account](issues/add-server-via-fediverse.md)
 - [ ] [Streams: temporal layers for slow viewers](issues/stream-temporal-layers.md)
 - [ ] [Streams from OBS: simulcast](issues/whip-simulcast.md)
 - [ ] [Request ids for manage requests](issues/request-ids.md)
@@ -27,3 +28,4 @@
 - [ ] [Remove the fallback for plain-named session cookies (after 2026-11-28)](issues/remove-plain-cookie-fallback.md)
 - [ ] [Log in with a QR code](issues/qr-login.md)
   - [ ] [QR login: the apps' scanner](issues/qr-login-apps.md)
+- [ ] [A fixed handle and a display name](issues/handle-and-display-name.md)
