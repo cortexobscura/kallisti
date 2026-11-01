@@ -2550,3 +2550,7 @@ One device logs another in by a code, so nobody types a password on a phone. The
 - The second Astra round found: no byte limit on the QR bodies (ServeHTTP only sets a deadline), "done" shown before the session existed (now a hidden "taking" state, then done or refused), a hung poll outliving the deadline (raced against it), dialogs closed during their first request still starting (guarded), a QR login finishing after a server change (guarded as the normal login).
 - Left on purpose: a poll in flight when its dialog closes can still install its session (the user would have to log in otherwise within that second).
 - Checked with Playwright in Chromium, two browsers: both directions, and no account switch for a logged-in device. Reviews: Claude, Astra (two rounds).
+
+## TestFlight 0.11.0 (0.11.0.6)
+
+Main of 2026-11-01: webhooks, QR login with the camera scanner (tauri-plugin-barcode-scanner; NSCameraUsageDescription in the Info.plist), the picture grid fix. The Android APK of the same commit came from GitHub Actions (android.yml builds every push to main that touches the apps).
