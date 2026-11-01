@@ -18,6 +18,7 @@
   import SaveStatus from "./SaveStatus.svelte";
   import FediAccount from "./FediAccount.svelte";
   import AllowedSites from "./AllowedSites.svelte";
+  import QrShowDialog from "./QrShowDialog.svelte";
 
   let {
     settings,
@@ -128,6 +129,8 @@
   let newPassword = $state("");
   let passwordNote = $state<string | null>(null); // what changed (errors: passwordSave)
   const passwordSave = createSave();
+  // A login code for another device (see lib/qrLogin).
+  let qrShown = $state(false);
   // The first password of a fediverse-only account needs a fresh login.
   let reauth = $state(false);
   const reauthSave = createSave();
@@ -502,6 +505,19 @@
     </form>
     <FediAccount {account} />
     {#if account.sites && !account.temporary}<AllowedSites sites={account.sites} />{/if}
+    {#if account.qr && !account.temporary}
+      <div class="account">
+        <span class="label">Log in on another device</span>
+        <p class="hint">
+          Show a code here and scan it with your phone: no password to type there.{#if account.qr.scan}
+            Or scan the code another device shows on its login screen.{/if}
+        </p>
+        <div class="buttons">
+          <button type="button" class="secondary" onclick={() => (qrShown = true)}>Show a login code</button>
+          {#if account.qr.scan}<button type="button" class="secondary" onclick={account.qr.scan}>Scan a code</button>{/if}
+        </div>
+      </div>
+    {/if}
     <div class="account">
       <span class="label">Log out</span>
       {#if account.temporary}
@@ -516,6 +532,9 @@
         {/if}
       </div>
     </div>
+  {/if}
+  {#if qrShown && account?.qr}
+    <QrShowDialog api={account.qr.api} origin={account.qr.origin} device={account.qr.device} onClose={() => (qrShown = false)} />
   {/if}
   <footer class="hint">
     Kallisti: a Mumble server and client. <a href="https://kallisti.chat" target="_blank" rel="noreferrer">kallisti.chat</a>

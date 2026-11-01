@@ -96,6 +96,9 @@ pub fn run() {
     // Push-to-talk while the app is in the background.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    // Phones: scanning login codes.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
     builder
         // System notifications (the web view's own: none on macOS, refused
         // on Linux).

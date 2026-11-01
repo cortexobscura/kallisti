@@ -2,13 +2,16 @@
   import Client from "./components/Client.svelte";
   import Login from "./components/Login.svelte";
   import Authorize from "./components/Authorize.svelte";
+  import QrLinkDialog from "./components/QrLinkDialog.svelte";
+  import { parseQrLink, thisDevice } from "./lib/qrLogin";
+  import { canScan, scanCode } from "./lib/qrScan";
   import Connect from "./components/Connect.svelte";
   import AddServerDialog from "./components/AddServerDialog.svelte";
   import { createFriends } from "./lib/friends.svelte";
   import { friendPresence, isFriend, type FriendServer } from "./lib/friends";
   import { dmLink } from "./lib/messageLink";
   import ServerRail, { type RailServer } from "./components/ServerRail.svelte";
-  import { apiWithToken, createAccountsApi, memoryStore, type Account, type AccountActions } from "./lib/accounts";
+  import { apiWithToken, createAccountsApi, memoryStore, type Account, type AccountActions, type QrLogin } from "./lib/accounts";
   import { connect, type Connection, type Credentials } from "./lib/connection.svelte";
   import { createServerSession, type ServerSession, type Target } from "./lib/serverSession.svelte";
   import { createServerHub } from "./lib/serverHub.svelte";
@@ -69,6 +72,31 @@
   // The account API lives on the Kallisti server (same host as the bridge).
   // The desktop app's server is chosen on the login screen (see below).
   let api = $state.raw(createAccountsApi(httpBase(PROXY_URL)));
+  // QR login with the home server (see lib/qrLogin).
+  const qrLogin = (): QrLogin => ({
+    api,
+    origin: api.base || location.origin,
+    device: thisDevice(),
+    ...(canScan() && { scan: () => void scanQr() }),
+  });
+  // The phone apps' scanner: a code of this server, or of the first one
+  // (the app has none yet: that server is chosen first).
+  const scanQr = async () => {
+    try {
+      const text = await scanCode();
+      if (text === null) return;
+      const link = parseQrLink(text);
+      if (!link) return void (loginNote = "This is not a Kallisti login code.");
+      if (link.origin !== kallisti) {
+        if (account) return void (loginNote = `This code is for ${new URL(link.origin).host}, not for this server.`);
+        await chooseServer(link.origin);
+        if (kallisti !== link.origin) return;
+      }
+      qrToken = link.token;
+    } catch (err) {
+      loginNote = err instanceof Error ? err.message : String(err);
+    }
+  };
   let account = $state<Account | null>(null);
   // Until the server says whether a session is saved: no login screen (it
   // would flash). A saved session connects at once; logging out is the way
@@ -143,6 +171,11 @@
   if (restore) history.replaceState(history.state, "", restore);
   else if (fediBack) history.replaceState(history.state, "", withoutFediResult(location.pathname + location.search + location.hash));
   const authorizeQuery = isDesktop() ? null : new URLSearchParams(location.search).get("authorize");
+  // A login code opened (a phone's camera, see lib/qrLogin): answered over
+  // whatever shows, the address cleaned.
+  const openedCode = isDesktop() ? null : (parseQrLink(location.href)?.token ?? null);
+  if (openedCode) history.replaceState(history.state, "", "/");
+  let qrToken = $state(openedCode);
   let fediSignup = $state(fediBack?.kind === "register" || popup.resumed);
   let fediNotice = $state<string | null>(null);
   // Back from a fresh login for the first password: to the settings again.
@@ -266,6 +299,9 @@
     removeStreamKey: () => api.removeStreamKey(),
     // Only on the own site (not the desktop app: see the server's consentSite).
     sites: isDesktop() ? undefined : { list: () => api.allowedSites(), revoke: (redirect) => api.revokeSite(redirect) },
+    get qr() {
+      return qrLogin();
+    },
   };
 
   // The desktop app: a Kallisti server works as in the web app (with a
@@ -765,6 +801,7 @@
           ownerKnown = true;
         }}
         onConnect={start}
+        onScan={qrLogin().scan}
         {fediSignup}
         onFediSignupDone={() => (connectHome ? window.close() : (fediSignup = false))}
         onHandoff={() => (connectPhase = "deliver")}
@@ -783,6 +820,18 @@
 <div class="status-bar" aria-hidden="true"></div>
 
 {#if fediNotice}<Toast text={fediNotice} />{/if}
+
+{#if qrToken}
+  {@const qr = qrLogin()}
+  <QrLinkDialog
+    api={qr.api}
+    token={qrToken}
+    device={qr.device}
+    me={account?.name ?? null}
+    onLoggedIn={() => location.replace("/")}
+    onClose={() => (qrToken = null)}
+  />
+{/if}
 {#key friendsNotice}{#if friendsNotice}<Toast text={friendsNotice} />{/if}{/key}
 {#key hub.error}{#if hub.error}<Toast text={hub.error} />{/if}{/key}
 

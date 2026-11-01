@@ -1,5 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import QrShowDialog from "./QrShowDialog.svelte";
+  import { thisDevice } from "../lib/qrLogin";
   import { parseInviteLink } from "../lib/invites";
   import UserName from "./UserName.svelte";
   import { serverOrigin } from "../lib/serverList";
@@ -16,6 +18,7 @@
     account,
     onAccountChange,
     onConnect,
+    onScan,
     fediSignup = false,
     onFediSignupDone,
     onHandoff,
@@ -40,6 +43,8 @@
     account: Account | null;
     onAccountChange: (account: Account | null) => void;
     onConnect: (c: Credentials) => void;
+    // The phone apps: scan a login code (see lib/qrScan).
+    onScan?: () => void;
     // Back from a fediverse login without an account here: choose a name
     // (see lib/fedi). onFediSignupDone: made, or given up.
     fediSignup?: boolean;
@@ -94,6 +99,17 @@
     } finally {
       checking = false;
     }
+  };
+
+  // Log in with a QR code (see lib/qrLogin): the phone confirmed.
+  let qrShown = $state(false);
+  const qrDone = async (name: string) => {
+    qrShown = false;
+    const used = api;
+    const account = (await used.me()) ?? { name, temporary: false };
+    if (used !== api) return; // another server chosen meanwhile
+    onAccountChange(account);
+    connectAs(account.name, true);
   };
 
   const connectAs = (name: string, isAccount: boolean, pw = serverPassword) => {
@@ -332,6 +348,10 @@
       {#if desktop.bridge !== null}<p class="hint">{serverHint(desktop.bridge)}</p>{/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <button class="primary" type="submit" disabled={busy}>{busy ? "Looking…" : "Continue"}</button>
+      {#if onScan}
+        <p class="hint">Or scan a login code from a device where you are logged in (its Settings): the code knows the server.</p>
+        <button class="secondary" type="button" onclick={onScan}>Scan a QR code</button>
+      {/if}
     </form>
     {:else}
     <form class="card" onsubmit={submit}>
@@ -389,6 +409,16 @@
         {mumbleOnly ? "Connect" : mode === "guest" ? "Join as guest" : mode === "login" ? "Log in" : "Create account"}
       </button>
     </form>
+    {#if !mumbleOnly}
+      <div class="card fedi">
+        <p class="hint">Logged in on another device already? No password needed.</p>
+        {#if onScan}
+          <button class="secondary" type="button" onclick={onScan}>Scan a QR code</button>
+        {:else}
+          <button class="secondary" type="button" onclick={() => (qrShown = true)}>Log in with a QR code</button>
+        {/if}
+      </div>
+    {/if}
     {/if}
     {#if invite}
       <form class="card fedi" onsubmit={openAtHome}>
@@ -413,6 +443,16 @@
     {/if}
   {/if}
 </div>
+
+{#if qrShown}
+  <QrShowDialog
+    {api}
+    origin={api.base || location.origin}
+    device={thisDevice()}
+    onLoggedIn={qrDone}
+    onClose={() => (qrShown = false)}
+  />
+{/if}
 
 <!-- Desktop: the chosen server, with a way back to the address step. -->
 {#snippet serverLine()}

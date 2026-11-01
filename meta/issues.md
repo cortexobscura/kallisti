@@ -25,3 +25,5 @@
 - [ ] [Shorten long links in messages](issues/shorten-long-links.md)
 - [ ] [Rethink the split of text and voice channels](issues/text-voice-split.md)
 - [ ] [Remove the fallback for plain-named session cookies (after 2026-11-28)](issues/remove-plain-cookie-fallback.md)
+- [ ] [Log in with a QR code](issues/qr-login.md)
+  - [ ] [QR login: the apps' scanner](issues/qr-login-apps.md)

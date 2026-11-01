@@ -25,13 +25,21 @@ class ApiError extends Error {
   }
 }
 
+// QR login answers: a new code (offer: this logged-in device shows it;
+// request: this logged-out one), a scan (offer: wait with the claim;
+// request: confirm), a state.
+// (code: not "token", which the API keeps as the session.)
+export type QrStart = { kind: "offer" | "request"; code: string; owner: string; expires: number };
+export type QrScan = { kind: "offer"; claim: string; device: string } | { kind: "request"; device: string };
+export type QrState = { state: "waiting" | "scanned" | "approved" | "refused" | "expired" | "done"; device?: string; name?: string };
+
 export type SessionStore = { get: () => string | null; set: (token: string | null) => void };
 
 // A token kept in memory only.
 export const memoryStore = (token: string | null = null): SessionStore => ({ get: () => token, set: (t) => void (token = t) });
 
 export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, session?: SessionStore) => {
-  type Answer = { name?: string; mumble?: boolean; temporary?: boolean; token?: string } & Partial<Challenge> &
+  type Answer = Partial<QrStart> & { state?: string; claim?: string; device?: string } & { name?: string; mumble?: boolean; temporary?: boolean; token?: string } & Partial<Challenge> &
     Partial<StreamKey> & { key?: string; url?: string; handle?: string; password?: boolean; fedi?: FediLink; session?: string };
   const clearIf = (token: string | null | undefined) => {
     if (session && session.get() === token) session.set(null);
@@ -69,6 +77,12 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
   return {
     // The server's address (for pictures from it: see lib/serverLogo).
     base,
+    // Log in with a QR code (see lib/qrLogin and the server's auth/qr.go).
+    qrStart: (device: string) => call("/api/qr/start", { device }) as Promise<QrStart>,
+    qrScan: (token: string, device: string) => call("/api/qr/scan", { token, device }) as Promise<QrScan>,
+    qrAnswer: async (secret: string, yes: boolean) => void (await call("/api/qr/answer", { secret, yes })),
+    // done: this device is logged in now (the cookie, or the token kept).
+    qrWait: (secret: string) => call("/api/qr/wait", { secret }) as Promise<QrState>,
     // mumble: a Mumble registration (built-in server), not a web account. It
     // has no session: connect with the name and password.
     login: async (name: string, password: string) => {
@@ -210,6 +224,8 @@ export type AccountsApi = ReturnType<typeof createAccountsApi>;
 
 // The server wants a fresh fediverse login before the first password.
 export const needsReauth = (err: unknown) => err instanceof ApiError && err.code === "reauth";
+// An API error's HTTP status (undefined: not one).
+export const apiStatus = (err: unknown) => (err instanceof ApiError ? err.status : undefined);
 
 export type StreamKey = { enabled: boolean; exists: boolean };
 
@@ -253,6 +269,17 @@ export type AccountActions = {
   // The sites allowed to log in with this account (undefined: not here,
   // only on its home server's own site).
   sites?: { list: () => Promise<AllowedSite[]>; revoke: (redirect: string) => Promise<void> };
+  // Log in on another device with a QR code (see lib/qrLogin): the API,
+  // the server's address (in the code), this device's name.
+  qr?: QrLogin;
+};
+
+export type QrLogin = {
+  api: Pick<ReturnType<typeof createAccountsApi>, "qrStart" | "qrScan" | "qrAnswer" | "qrWait">;
+  origin: string;
+  device: string;
+  // The phone apps: scan a code with the camera (see lib/qrScan).
+  scan?: () => void;
 };
 
 // The API of another server, with this login's own token (not the cookie).

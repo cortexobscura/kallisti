@@ -98,6 +98,7 @@ type Service struct {
 	SetAvatar func(acc store.Account, avatar []byte, onlyIfNone bool)
 
 	logins, guests limiter
+	qr             qrGrants // see qr.go
 	failures       failures
 	challenges     challenges
 }
@@ -228,7 +229,7 @@ type credentials struct {
 
 // Paths: what ServeHTTP answers (for the server's router).
 var Paths = []string{"/api/server", "/api/challenge", "/api/accounts", "/api/guest", "/api/login", "/api/logout", "/api/logout-all", "/api/password", "/api/me", "/api/servers", "/api/friends", "/api/stream-key", "/api/fedi", "/api/fedi/",
-	"/api/v1/", "/oauth/", "/.well-known/webfinger", "/api/oauth/"}
+	"/api/v1/", "/oauth/", "/.well-known/webfinger", "/api/oauth/", "/api/qr/"}
 
 func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	a.cors(w, r)
@@ -287,6 +288,14 @@ func (a *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		a.logoutAll(w, r)
 	case r.URL.Path == "/api/password" && r.Method == http.MethodPost:
 		a.changePassword(w, r)
+	case r.URL.Path == "/api/qr/start" && r.Method == http.MethodPost:
+		a.qrStart(w, r)
+	case r.URL.Path == "/api/qr/scan" && r.Method == http.MethodPost:
+		a.qrScan(w, r)
+	case r.URL.Path == "/api/qr/answer" && r.Method == http.MethodPost:
+		a.qrAnswer(w, r)
+	case r.URL.Path == "/api/qr/wait" && r.Method == http.MethodPost:
+		a.qrWait(w, r)
 	case r.URL.Path == "/api/oauth/request" && r.Method == http.MethodGet && a.Provider != nil:
 		a.oauthRequest(w, r)
 	case r.URL.Path == "/api/oauth/approve" && r.Method == http.MethodPost && a.Provider != nil:
@@ -781,11 +790,17 @@ func (a *Service) startSession(w http.ResponseWriter, r *http.Request, acc store
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cannot log in"})
 		return "", false
 	}
+	return a.handOutSession(w, r, token), true
+}
+
+// handOutSession sets a new session's cookie; its token for clients that
+// asked for it, else "".
+func (a *Service) handOutSession(w http.ResponseWriter, r *http.Request, token string) string {
 	a.setSessionCookie(w, r, token)
 	if r.Header.Get("X-Kallisti-Session") != "token" {
-		token = ""
+		return ""
 	}
-	return token, true
+	return token
 }
 
 // newSession is a new session's token.

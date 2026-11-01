@@ -39,6 +39,10 @@ webpki-roots = "1"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
 
+# Phones: scanning login codes (see the web app's lib/qrScan).
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
+
 # Linux: the WebView's media settings and permission requests (see
 # media.rs). The version wry uses.
 [target.'cfg(target_os = "linux")'.dependencies]

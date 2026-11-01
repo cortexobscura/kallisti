@@ -336,3 +336,5 @@
   - [x] [Webhooks: the endpoint](issues/webhooks-endpoint.md)
   - [x] [Webhooks: web client](issues/webhooks-web.md)
   - [x] [Webhooks: picture](issues/webhooks-picture.md)
+- [x] [QR login: server grants](issues/qr-login-server.md)
+- [x] [QR login: web](issues/qr-login-web.md)
