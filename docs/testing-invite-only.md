@@ -2,8 +2,8 @@
 
 Use the feature branch and a disposable database. The Compose project below
 is separate from the deployment projects: its only published ports are
-localhost HTTP 18080 and Mumble TCP/UDP 64739. It never mounts your existing
-server database. It needs Docker Compose and available ports 18080/64739.
+localhost HTTP 18081 and Mumble TCP/UDP 64739. It never mounts your existing
+server database. It needs Docker Compose and available ports 18081/64739.
 
 ## Automated checks
 
@@ -46,8 +46,9 @@ this test server only; it is not written into a tracked file or command-line
 argument. Leave the variable set until cleanup because Compose validates it
 on each invocation.
 
-Open **http://localhost:18080** on the same computer. Use `localhost`
-consistently; invitation links are specific to their server origin. In the
+Open **http://localhost:18081** or **http://127.0.0.1:18081** on the same
+computer. Keep using the same address; invitation links are specific to
+their server origin. In the
 **Log in** tab, use `SuperUser` and the password you just chose. The first
 build may take several minutes. This setup disables federation and external
 previews/push; federation is covered by the automated tests above. Testing
@@ -87,11 +88,11 @@ With invite-only enabled, both commands must return HTTP **403** and
 `"code":"invite_required"`:
 
 ```sh
-curl -i http://localhost:18080/api/accounts \
-  -H 'Origin: http://localhost:18080' -H 'Content-Type: application/json' \
+curl -i http://localhost:18081/api/accounts \
+  -H 'Origin: http://localhost:18081' -H 'Content-Type: application/json' \
   --data '{"name":"uninvited-probe","password":"disposable-test-only"}'
-curl -i http://localhost:18080/api/guest \
-  -H 'Origin: http://localhost:18080' -H 'Content-Type: application/json' \
+curl -i http://localhost:18081/api/guest \
+  -H 'Origin: http://localhost:18081' -H 'Content-Type: application/json' \
   --data '{"name":"uninvited-guest"}'
 ```
 
