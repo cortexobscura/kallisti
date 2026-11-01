@@ -698,6 +698,58 @@ func TestFediHandoff(t *testing.T) {
 	}
 }
 
+// A handoff to a page other than the login's server (the home server of
+// an account named after its fediverse home adds this one): the token
+// only after a yes on this server's page, for that page's exact origin.
+func TestFediHandoffToAnotherPage(t *testing.T) {
+	f := &fedifake.Instance{}
+	_, srv, inst := fediSetup(t, f)
+	host := strings.TrimPrefix(inst, "https://")
+	to := "https://home.example"
+	b := newBrowser(t, srv)
+	start := map[string]any{"instance": host, "handoff": true, "to": to}
+	wantRedirect(t, b.fediFlow(f, start, "Alice"), home+"?fedi=register")
+	if resp, v := b.do("POST", "/api/fedi/signup", map[string]any{"name": "alice"}); resp.StatusCode != http.StatusCreated || v["handoff"] != true {
+		t.Fatalf("signup: %d %v", resp.StatusCode, v)
+	}
+	// The question first: no token.
+	resp, v := b.do("POST", "/api/fedi/handoff", map[string]any{})
+	if resp.StatusCode != http.StatusOK || v["ask"] != true || v["name"] != "alice" || v["origin"] != to || v["token"] != nil {
+		t.Fatalf("handoff without a yes: %d %v", resp.StatusCode, v)
+	}
+	// A yes for another page: nothing.
+	if resp, v := b.do("POST", "/api/fedi/handoff", map[string]any{"allow": "https://other.example"}); resp.StatusCode != http.StatusForbidden || v["token"] != nil {
+		t.Fatalf("a yes for another page: %d %v", resp.StatusCode, v)
+	}
+	resp, v = b.do("POST", "/api/fedi/handoff", map[string]any{"allow": to})
+	if resp.StatusCode != http.StatusOK || v["name"] != "alice" || v["origin"] != to || v["token"] == "" {
+		t.Fatalf("handoff with a yes: %d %v", resp.StatusCode, v)
+	}
+	if resp, _ := b.do("POST", "/api/fedi/handoff", map[string]any{"allow": to}); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("a second handoff: %d", resp.StatusCode)
+	}
+	// A known account asks too.
+	wantRedirect(t, b.fediFlow(f, start, "Alice"), home+"?fedi=connect")
+	if _, v := b.do("POST", "/api/fedi/handoff", map[string]any{}); v["ask"] != true || v["token"] != nil {
+		t.Fatalf("known account without a yes: %v", v)
+	}
+	// The login's own server asks nothing (as without "to").
+	wantRedirect(t, b.fediFlow(f, map[string]any{"instance": host, "handoff": true, "to": inst}, "Alice"), home+"?fedi=connect")
+	if _, v := b.do("POST", "/api/fedi/handoff", map[string]any{}); v["ask"] != nil || v["token"] == "" || v["origin"] != inst {
+		t.Fatalf("handoff to the login's server: %v", v)
+	}
+	// Only an origin, and only with a handoff.
+	for _, bad := range []map[string]any{
+		{"instance": host, "handoff": true, "to": to + "/path"},
+		{"instance": host, "handoff": true, "to": "home.example"},
+		{"instance": host, "to": to},
+	} {
+		if resp, _ := b.do("POST", "/api/fedi/start", bad); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("start %v: %d", bad, resp.StatusCode)
+		}
+	}
+}
+
 // Without a name, the account gets its remote one (name@home, as the
 // fediverse writes it); taken: the name step.
 func TestFediSignupWithTheRemoteName(t *testing.T) {

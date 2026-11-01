@@ -146,7 +146,7 @@ func TestFediDelegationPreservesExistingLinks(t *testing.T) {
 }
 
 func TestFediDelegatedLink(t *testing.T) {
-	_, srv, f, _, domain := delegatedFediSetup(t)
+	_, srv, f, apiURL, domain := delegatedFediSetup(t)
 	b := newBrowser(t, srv)
 	if resp, v := b.do("POST", "/api/accounts", map[string]any{"name": "local", "password": "local-password"}); resp.StatusCode != http.StatusCreated {
 		t.Fatalf("local account: %d %v", resp.StatusCode, v)
@@ -161,5 +161,10 @@ func TestFediDelegatedLink(t *testing.T) {
 	wantRedirect(t, other.fediFlow(f, map[string]any{"instance": "@alice@" + domain}, "alice"), home)
 	if _, v := other.do("GET", "/api/me", nil); v["name"] != "local" || v["fedi"].(map[string]any)["handle"] != "@alice@"+domain {
 		t.Fatalf("linked login: %v", v)
+	}
+	// The server it logs in with (for another server's login): the API's,
+	// not the handle's.
+	if _, v := other.do("GET", "/api/me", nil); v["fedi"].(map[string]any)["host"] != strings.TrimPrefix(apiURL, "https://") {
+		t.Fatalf("linked login's host: %v", v)
 	}
 }
