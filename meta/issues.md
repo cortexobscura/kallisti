@@ -1,5 +1,7 @@
 # Open issues
 
+- [ ] [Invite-only registration](issues/invite-only-registration.md)
+
 - [ ] [Desktop app (Tauri)](issues/desktop-app-tauri.md)
   - [ ] [Desktop: overlay of who is talking](issues/desktop-overlay.md)
   - [ ] [Activity status: game and music](issues/activity-status.md)

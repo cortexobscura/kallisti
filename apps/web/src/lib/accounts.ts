@@ -95,8 +95,8 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       const c = await call("/api/challenge").catch(() => null);
       return c?.challenge && c.bits ? { challenge: c.challenge, bits: c.bits } : null;
     },
-    create: async (name: string, password: string, proof?: Proof) =>
-      (await call("/api/accounts", { name, password, ...proof })).name ?? name,
+    create: async (name: string, password: string, proof?: Proof, invite?: string) =>
+      (await call("/api/accounts", { name, password, ...proof, ...(invite && { invite }) })).name ?? name,
     // A temporary account for a guest; null: join as a classic guest (the
     // server has no guest accounts, too many right now, or no answer).
     // Name problems and a failed browser check (403) are errors.
@@ -166,9 +166,9 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
     // its logo's version (null: not known, with Murmur or an older server;
     // no logo).
     serverInfo: async () => {
-      const v = (await call("/api/server").catch(() => ({}))) as { password?: boolean; name?: unknown; logo?: unknown };
+      const v = (await call("/api/server").catch(() => ({}))) as { password?: boolean; name?: unknown; logo?: unknown; inviteOnly?: boolean };
       const text = (x: unknown) => (typeof x === "string" && x ? x : null);
-      return { password: v.password !== false, name: text(v.name), logo: text(v.logo) };
+      return { password: v.password !== false, name: text(v.name), logo: text(v.logo), ...(typeof v.inviteOnly === "boolean" && { inviteOnly: v.inviteOnly }) };
     },
     // Fediverse logins (see lib/fedi): on for this server?
     fediEnabled: async () => (await call("/api/fedi").catch(() => ({}) as Answer & { enabled?: boolean })).enabled === true,
@@ -199,8 +199,8 @@ export const createAccountsApi = (base: string, fetchFn: typeof fetch = fetch, s
       return url;
     },
     // handoff: its token waits for the popup (see Connect), no session here.
-    fediCreate: async (name: string, proof?: Proof) => {
-      const data = (await call("/api/fedi/signup", { name, ...proof })) as Answer & { handoff?: boolean };
+    fediCreate: async (name: string, proof?: Proof, invite?: string) => {
+      const data = (await call("/api/fedi/signup", { name, ...proof, ...(invite && { invite }) })) as Answer & { handoff?: boolean };
       return { name: data.name ?? name, handoff: data.handoff === true };
     },
     // A handoff's token, once, for its origin (see Connect); or first its

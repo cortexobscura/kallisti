@@ -91,3 +91,69 @@ func TestAccountLoginChecksTheAccountPassword(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinUsesSavedRegistrationPolicy(t *testing.T) {
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	certPEM, keyPEM, err := certs.Generate("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CreateAccount(store.Account{Name: "alice", CertPEM: certPEM, KeyPEM: keyPEM}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	cert, err := certs.Load(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := startBuiltin(&config.Builtin{Listen: "127.0.0.1:0", ServerName: "Test", CertDir: t.TempDir()}, db, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.close()
+	join := func(name string, account bool, wantReject bool) {
+		t.Helper()
+		up := bridge.Upstream{IP: "203.0.113.9"}
+		if account {
+			up.AccountName, up.Cert = name, &cert
+		}
+		conn, err := b.dial(context.Background(), up)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(3 * time.Second))
+		go conn.Write(append(mumble.MessageFrame(mumble.TypeVersion, &pb.Version{VersionV2: proto.Uint64(1<<48 | 5<<32)}),
+			mumble.MessageFrame(mumble.TypeAuthenticate, &pb.Authenticate{Username: proto.String(name), Opus: proto.Bool(true)})...))
+		for {
+			var header [6]byte
+			if _, err := io.ReadFull(conn, header[:]); err != nil {
+				t.Fatal(err)
+			}
+			body := make([]byte, binary.BigEndian.Uint32(header[2:]))
+			if _, err := io.ReadFull(conn, body); err != nil {
+				t.Fatal(err)
+			}
+			typ := binary.BigEndian.Uint16(header[:2])
+			if typ == mumble.TypeReject || typ == mumble.TypeServerSync {
+				if (typ == mumble.TypeReject) != wantReject {
+					t.Fatalf("%s: response %d, want reject %v", name, typ, wantReject)
+				}
+				return
+			}
+		}
+	}
+	join("before", false, false)
+	if err := db.SetInviteOnly(true); err != nil {
+		t.Fatal(err)
+	}
+	join("blocked", false, true)
+	join("alice", true, false)
+	if err := db.SetInviteOnly(false); err != nil {
+		t.Fatal(err)
+	}
+	join("after", false, false)
+}

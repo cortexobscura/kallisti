@@ -233,8 +233,10 @@ type MumbleUser struct {
 }
 
 type Hub struct {
-	store *store.Store
-	now   func() time.Time
+	// Keep registration policy writes and their notifications in order.
+	registrationMu sync.Mutex
+	store          *store.Store
+	now            func() time.Time
 	// Posts per webhook (see webhookpost.go).
 	webhookLimits webhookLimits
 	// Nil: no voice channel chats (a Murmur server).
@@ -828,6 +830,9 @@ func (c *Conn) Handle(raw []byte) {
 		return
 	case "invites":
 		c.invites(*id, req)
+		return
+	case "set-invite-only", "registration-invites", "create-registration-invite", "delete-registration-invite":
+		c.registrationRequest(*id, req)
 		return
 	case "create-invite":
 		c.createInvite(*id, req)

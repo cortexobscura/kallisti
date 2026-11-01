@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import QrShowDialog from "./QrShowDialog.svelte";
   import { thisDevice } from "../lib/qrLogin";
+  import { registrationToken } from "../lib/registration";
   import { parseInviteLink } from "../lib/invites";
   import UserName from "./UserName.svelte";
   import { serverOrigin } from "../lib/serverList";
@@ -69,8 +70,21 @@
     ["create", "Create account"],
     ["guest", "Guest"],
   ];
-  // A guest who tried an account's name gets the Log in tab right away.
-  let mode = $state<Mode>(untrack(() => modeForError(error)));
+  // An account invitation opens signup; a guest who tried an account's
+  // name gets the Log in tab right away.
+  let accountInvite = $state(untrack(() => !desktop ? registrationToken(location.href, api.base || location.origin) ?? "" : ""));
+  let inviteOnly = $state(false);
+  const inviteToken = () => {
+    if (!accountInvite.trim()) return undefined;
+    const token = registrationToken(accountInvite.trim(), api.base || location.origin);
+    if (!token) throw new Error("Enter an account invitation for this server.");
+    return token;
+  };
+  const clearInvite = () => {
+    accountInvite = "";
+    if (location.pathname === "/register") history.replaceState(history.state, "", "/");
+  };
+  let mode = $state<Mode>(untrack(() => accountInvite ? "create" : modeForError(error)));
   let username = $state(safeGet(localStore(), "username") ?? "");
   let password = $state("");
   let serverPassword = $state("");
@@ -140,8 +154,9 @@
         return connectAs(guest.name, true);
       }
       const result =
-        mode === "login" ? await used.login(name, password) : { name: await used.create(name, password, await prove()), mumble: false };
+        mode === "login" ? await used.login(name, password) : { name: await used.create(name, password, await prove(), inviteToken()), mumble: false };
       if (!current(used, at)) return;
+      if (mode === "create") clearInvite();
       const pw = password;
       password = "";
       // A Mumble registration (SuperUser, for example) logs in to Mumble with
@@ -168,7 +183,12 @@
   let logo = $state<string | null>(null);
   $effect(() => {
     if (desktop?.kind === "mumble") return;
-    void api.serverInfo().then((info) => {
+    const used = api;
+    const at = shown();
+    void used.serverInfo().then((info) => {
+      if (!current(used, at)) return;
+      inviteOnly = info.inviteOnly === true;
+      if (inviteOnly && mode === "guest") mode = "login";
       askServerPassword = info.password;
       serverName = info.name;
       logo = info.logo && iconHref(api.base, 192, info.logo);
@@ -189,11 +209,12 @@
     busy = true;
     apiError = null;
     try {
+      const token = inviteToken();
       const url = await api.fediStart(instance.trim());
       safeSet(localStore(), "fediInstance", instance.trim());
       // A link to come back to (an invite here, a ?join): kept over the
       // login's pages (see App keptInvite); none: none.
-      safeSet(tabStorage(), "kallisti-invite", keep ?? (invite ? location.pathname : ""));
+      safeSet(tabStorage(), "kallisti-invite", token ? `/register#${token}` : keep ?? (invite ? location.pathname : ""));
       location.assign(url); // to the instance, and back to the server
     } catch (err) {
       apiError = err instanceof Error ? err.message : String(err);
@@ -233,7 +254,8 @@
     busy = true;
     apiError = null;
     try {
-      const { name: made, handoff } = await api.fediCreate(name, await prove());
+      const { name: made, handoff } = await api.fediCreate(name, await prove(), inviteToken());
+      clearInvite();
       if (handoff) return void onHandoff?.();
       onAccountChange({ name: made, temporary: false, password: false, fedi: { handle: signup.handle, public: false, host: signup.host } });
       onFediSignupDone?.();
@@ -313,6 +335,9 @@
         {#if checking}<p class="hint" role="status">Checking your browser…</p>{/if}
         {#if apiError}
           <p class="error" role="alert">{apiError}</p>
+          <label>Account invitation
+            <input bind:value={accountInvite} autocomplete="off" spellcheck={false} placeholder="Paste your invitation link" />
+          </label>
           <button class="primary" disabled={busy} onclick={() => void createFromFedi()}>Try again</button>
           <button type="button" class="link" onclick={onFediSignupDone}>Cancel</button>
         {/if}
@@ -325,6 +350,11 @@
           Name
           <input bind:value={username} required maxlength="32" autocomplete="username" />
         </label>
+        {#if inviteOnly || accountInvite}
+          <label>Account invitation
+            <input bind:value={accountInvite} required={inviteOnly} autocomplete="off" spellcheck={false} placeholder="Paste your invitation link" />
+          </label>
+        {/if}
         {#if apiError}<p class="error" role="alert">{apiError}</p>{/if}
         {#if checking}<p class="hint" role="status">Checking your browser…</p>{/if}
         <button class="primary" type="submit" disabled={busy}>Create account</button>
@@ -360,7 +390,7 @@
       {@render serverLine()}
       {#if !mumbleOnly}
       <div class="tabs" role="group" aria-label="How to join">
-        {#each MODES as [value, label] (value)}
+        {#each MODES.filter(([value]) => !inviteOnly || value !== "guest") as [value, label] (value)}
           <button
             type="button"
             aria-pressed={mode === value}
@@ -373,6 +403,7 @@
         {/each}
       </div>
       {/if}
+      {#if inviteOnly}<p class="hint">This server is invite-only. Existing users can log in; new accounts need an invitation from an admin.</p>{/if}
       <label>
         Name
         <input bind:value={username} required maxlength={mode === "login" ? 128 : 32} autocomplete="username" />
@@ -401,6 +432,11 @@
       </label>
       {/if}
       {#if apiError ?? error}<p class="error" role="alert">{apiError ?? error}</p>{/if}
+      {#if mode === "create" && (inviteOnly || accountInvite)}
+        <label>Account invitation
+          <input bind:value={accountInvite} required={inviteOnly} autocomplete="off" spellcheck={false} placeholder="Paste your invitation link" />
+        </label>
+      {/if}
       {#if mode === "create"}
         <p class="hint">An account keeps your name: nobody else can use it.</p>
       {/if}
