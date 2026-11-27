@@ -14,7 +14,7 @@ SHA = 'a' * 40
 
 def resolve(command=None, *, updated='2026-01-01T00:00:00Z', author='cortexobscura', edited=False, fork=False):
     pr = dict(state='open', draft=True, base=dict(ref='main'),
-              head=dict(sha=SHA, repo=dict(full_name='fork/kallisti' if fork else 'kallisti-chat/kallisti')),
+              head=dict(sha=SHA, repo=dict(full_name='fork/kallisti' if fork else 'cortexobscura/kallisti')),
               updated_at=updated)
     comment = dict(id=7, body=command, user=dict(login=author), created_at='2026-01-02T00:00:00Z',
                    updated_at='2026-01-03T00:00:00Z' if edited else '2026-01-02T00:00:00Z')
@@ -25,7 +25,7 @@ const outputs = {}, failures = [];
 const core = {setOutput: (k,v) => outputs[k]=v, setFailed: v => failures.push(v)};
 const context = {eventName: input.event, repo: {}, payload: {
   pull_request: {number: 31}, issue: {number: 31, pull_request: {}},
-  repository: {full_name: 'kallisti-chat/kallisti'}, comment: {id: 7}}};
+  repository: {full_name: 'cortexobscura/kallisti'}, comment: {id: 7}}};
 const github = {rest: {pulls: {get: async () => ({data: input.pr})},
   issues: {getComment: async () => ({data: input.comment})}}};
 await (async () => { SCRIPT })();

@@ -27,7 +27,7 @@ jobs:
       - run: cd server && go vet ./cmd/preview-init && go test -race ./cmd/preview-init
   image:
     needs: test
-    if: github.repository == 'kallisti-chat/kallisti' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.repository == 'cortexobscura/kallisti' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -48,4 +48,4 @@ jobs:
           file: deploy/preview/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/kallisti-chat/kallisti-preview-controller:${{ github.sha }}
+          tags: ghcr.io/cortexobscura/kallisti-preview-controller:${{ github.sha }}

@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-const Repository = "kallisti-chat/kallisti"
-const ImageRepository = "ghcr.io/kallisti-chat/kallisti-preview"
+const Repository = "cortexobscura/kallisti"
+const ImageRepository = "ghcr.io/cortexobscura/kallisti-preview"
 const Workflow = ".github/workflows/preview.yml"
 
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)

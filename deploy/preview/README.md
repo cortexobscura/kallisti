@@ -1,6 +1,9 @@
+> Pilot configuration: trusts only cortexobscura/kallisti and its GHCR images.
+> Keep this configuration separate from upstream PR #39.
+
 # Kallisti pull-request previews
 
-This separate Go module polls `kallisti-chat/kallisti` and maintains three
+This separate Go module polls `cortexobscura/kallisti` and maintains three
 short-lived previews at `https://pr-N.kallisti.fans`. It is an infrastructure
 controller, with a separate release and trust boundary from the application.
 Keeping it here makes the tested image handoff and bootstrap schema reviewable
@@ -181,7 +184,7 @@ Required environment:
 | `POD_CIDRS` | Comma-separated allowed IPv4 Pod CIDRs, e.g. `10.248.0.0/16` |
 
 The API token needs metadata/contents, Actions, checks/statuses and pull requests
-read access, plus issue comments write access on **only** `kallisti-chat/kallisti`.
+read access, plus issue comments write access on **only** `cortexobscura/kallisti`.
 It does not need workflow dispatch, registry write, administration or cluster
 permissions. A separately rotated GitHub App installation token is suitable; this
 controller rereads the token file each poll and does not mint installation tokens.
