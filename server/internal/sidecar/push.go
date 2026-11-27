@@ -3,6 +3,7 @@ package sidecar
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"kallisti.chat/server/internal/mumble"
@@ -131,9 +132,21 @@ func (h *Hub) pushFor(c chat, m store.Message) {
 	for _, name := range all {
 		wantsAll[name] = true
 	}
+	// A direct message is for its peers only (see offlineMay), whose
+	// registrations have their accounts' names (see PushUser). Without both
+	// names (an error, a deleted user) all are asked, as before.
+	var peers []string
+	if c.direct && c.parent == 0 {
+		if found := h.voice.UserNames(c.peers[:]); len(found) == 2 {
+			peers = []string{names.Key(found[c.peers[0]]), names.Key(found[c.peers[1]])}
+		}
+	}
 	online, where := h.voice.Online(), h.where(c)
 	note := push.Note{Channel: c.id, Parent: c.parent, Author: m.Author, URL: fmt.Sprintf("/channels/%d/%d", c.id, m.ID)}
 	for _, name := range subscribed {
+		if peers != nil && !slices.Contains(peers, names.Key(name)) {
+			continue
+		}
 		// What needs no lookup first: most names are neither pinged nor
 		// want all of the chat's messages.
 		ping := mayPing && pinged(m, c.direct, name)

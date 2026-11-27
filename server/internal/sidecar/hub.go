@@ -321,7 +321,8 @@ type Hub struct {
 	// none; see push.go). It must not block.
 	Push func(name string, n push.Note)
 	// PushUser: the registered user of the web account with this name, by
-	// its certificate (a Mumble user may have the name too).
+	// its certificate (a Mumble user may have the name too); none unless
+	// the registration has the account's name (names.Key).
 	PushUser func(name string) (uint32, bool)
 	// Per voice server session: the last message seen in each mirror.
 	visitsMu sync.Mutex
