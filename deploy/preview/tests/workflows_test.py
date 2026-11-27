@@ -39,7 +39,7 @@ const input = JSON.parse(process.argv[1]);
 const outputs = {}, failures = [];
 const core = {setOutput: (k,v) => outputs[k]=v, setFailed: v => failures.push(v)};
 const context = {eventName: input.event, actor: input.actor,
-  repo: {owner: 'kallisti-chat', repo: 'kallisti'}, payload: {
+  repo: {owner: 'cortexobscura', repo: 'kallisti'}, payload: {
   issue: {number: 31, pull_request: input.is_pr ? {} : undefined},
   workflow_run: {id: 42}, comment: {id: 7}}};
 const github = {rest: {
